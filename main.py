@@ -972,12 +972,28 @@ async def get_replay(ativo: str = Query("WIN"), contratos: int = Query(1)):
                 preco = float(window['close'].iloc[-1])
                 ema9 = float(window['close'].ewm(span=9, adjust=False).mean().iloc[-1])
                 ema21 = float(window['close'].ewm(span=21, adjust=False).mean().iloc[-1])
-                if preco > vwap_v and ema9 > ema21:
-                    tend = "ALTA"
-                elif preco < vwap_v and ema9 < ema21:
-                    tend = "BAIXA"
+                # Detect trend: if VWAP is NaN (no volume data), use only EMAs
+                import math
+                vwap_valid = not (math.isnan(vwap_v) if isinstance(vwap_v, float) else False)
+                if vwap_valid:
+                    if preco > vwap_v and ema9 > ema21:
+                        tend = "ALTA"
+                    elif preco < vwap_v and ema9 < ema21:
+                        tend = "BAIXA"
+                    else:
+                        tend = "LATERAL"
                 else:
-                    tend = "LATERAL"
+                    # No VWAP: use EMA crossover + price position
+                    if ema9 > ema21 and preco > ema9:
+                        tend = "ALTA"
+                    elif ema9 < ema21 and preco < ema9:
+                        tend = "BAIXA"
+                    elif ema9 > ema21:
+                        tend = "ALTA"  # EMA bullish even if price pulled back
+                    elif ema9 < ema21:
+                        tend = "BAIXA"  # EMA bearish even if price bounced
+                    else:
+                        tend = "LATERAL"
                 tend_raw = tend  # Save raw trend for fallback
                 if lat.get("lateral"):
                     tend = "LATERAL"
