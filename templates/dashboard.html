@@ -1120,10 +1120,6 @@ function ptComprar() { ptExecutarTrade('COMPRA'); }
 function ptVender() { ptExecutarTrade('VENDA'); }
 
 function ptExecutarTrade(tipo) {
-    if (!ptState.precoAtual || ptState.precoAtual <= 0) {
-        alert('Preco nao disponivel. Aguarde a atualizacao.');
-        return;
-    }
     if (ptState.balance <= 0) {
         alert('Saldo insuficiente! Adicione dinheiro demonstracao primeiro.');
         return;
@@ -1132,13 +1128,29 @@ function ptExecutarTrade(tipo) {
     const qtd = parseInt(document.getElementById(isBuy ? 'ptQtdBuy' : 'ptQtdSell').value) || 1;
     const stopPts = parseFloat(document.getElementById(isBuy ? 'ptStopBuy' : 'ptStopSell').value) || 0;
     const alvoPts = parseFloat(document.getElementById(isBuy ? 'ptAlvoBuy' : 'ptAlvoSell').value) || 0;
+    
+    if (!stopPts || !alvoPts) {
+        alert('Defina Stop Loss e Take Profit antes de operar!');
+        return;
+    }
+
+    // Check if market is open
+    const isOpen = ptCheckMarket();
+    
+    if (!isOpen) {
+        // MERCADO FECHADO: simular com dados REAIS do dia anterior
+        ptSimularComDadosReais(tipo, qtd, stopPts, alvoPts);
+        return;
+    }
+    
+    // MERCADO ABERTO: paper trading ao vivo
+    if (!ptState.precoAtual || ptState.precoAtual <= 0) {
+        alert('Preco nao disponivel. Aguarde a atualizacao.');
+        return;
+    }
+    
     const spec = PT_SPECS[ptState.ativo] || PT_SPECS.WIN;
-
-    // Calculate margin requirement (simplified: 20% of notional)
-    const margin = ptState.ativo === 'WIN'
-        ? qtd * 100  // R$100 per mini contract margin
-        : qtd * 150; // R$150 per WDO contract
-
+    const margin = ptState.ativo === 'WIN' ? qtd * 100 : qtd * 150;
     if (margin > ptState.balance) {
         alert('Margem insuficiente! Necessario R$ ' + margin.toLocaleString('pt-BR') + ' para ' + qtd + ' contrato(s).');
         return;
@@ -1164,6 +1176,151 @@ function ptExecutarTrade(tipo) {
     ptState.balance -= margin;
     ptSalvar();
     ptAtualizarUI();
+}
+
+// =====================================================
+// SIMULACAO COM DADOS REAIS (mercado fechado)
+// =====================================================
+async function ptSimularComDadosReais(tipo, contratos, stopPts, alvoPts) {
+    // Load replay candles if not loaded
+    if (!window.simVelas) {
+        try {
+            const res = await fetch('/api/replay-velas?ativo=' + ptState.ativo);
+            window.simVelas = await res.json();
+            if (window.simVelas.erro) {
+                alert('Erro ao carregar dados do dia anterior: ' + window.simVelas.erro);
+                return;
+            }
+        } catch(e) {
+            alert('Erro ao carregar dados: ' + e.message);
+            return;
+        }
+    }
+    
+    const velas = window.simVelas.velas;
+    if (!velas || velas.length === 0) {
+        alert('Sem dados do dia anterior para simular.');
+        return;
+    }
+    
+    // Pick next candle to simulate from (auto-advance through the day)
+    if (!window.ptSimIdx) window.ptSimIdx = 0;
+    if (window.ptSimIdx >= velas.length - 1) {
+        window.ptSimIdx = 0; // Reset to beginning
+    }
+    const velaIdx = window.ptSimIdx;
+    window.ptSimIdx++;
+    
+    const vela = velas[velaIdx];
+    
+    // Show loading state in positions area
+    const posTable = document.getElementById('ptPosTable');
+    posTable.innerHTML = '<div style="text-align:center;padding:16px;"><div style="color:var(--text-muted);font-size:12px;">Simulando ' + tipo + ' na vela ' + vela.hora + ' do dia anterior...</div></div>';
+    
+    try {
+        const res = await fetch('/api/simular-entrada', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                ativo: ptState.ativo,
+                vela_idx: velaIdx,
+                tipo: tipo,
+                stop_pts: stopPts,
+                alvo_pts: alvoPts,
+                contratos: contratos
+            })
+        });
+        const data = await res.json();
+        
+        if (data.erro) {
+            posTable.innerHTML = '<div style="text-align:center;padding:16px;color:#ef4444;">' + data.erro + '</div>';
+            return;
+        }
+        
+        const e = data.entrada;
+        const s = data.saida;
+        const isWin = s.resultado === 'WIN';
+        const cor = isWin ? '#22c55e' : '#ef4444';
+        const spec = PT_SPECS[ptState.ativo] || PT_SPECS.WIN;
+        
+        // Update balance
+        ptState.balance += s.resultado_rs;
+        ptState.pnlDia += s.resultado_rs;
+        ptState.pnlTotal += s.resultado_rs;
+        
+        // Save to history with correct fields
+        ptState.history.push({
+            id: Date.now(),
+            tipo: e.tipo,
+            ativo: ptState.ativo,
+            contrato: window.simVelas.contrato || ptState.ativo,
+            entrada: e.preco,
+            saida: s.preco,
+            pts: s.pts,
+            pontos: s.pts,
+            resultado: s.resultado_rs,
+            financeiro: s.resultado_rs,
+            win: isWin,
+            status: isWin ? 'gain' : 'loss',
+            horaEntrada: e.hora,
+            horaSaida: s.hora,
+            horaAbertura: e.hora,
+            horaFechamento: s.hora,
+            data: new Date().toLocaleDateString('pt-BR'),
+            motivo: isWin ? 'Take Profit' : (s.fechamento_forcado ? 'Fechamento pregao' : 'Stop Loss'),
+            contratos: contratos,
+            dataISO: new Date().toISOString().split('T')[0],
+            origem: 'simulacao_real'
+        });
+        ptSalvar();
+        ptAtualizarUI();
+        
+        // Show result in positions area
+        let rhtml = '<div style="padding:12px;border:2px solid ' + cor + ';border-radius:8px;background:' + (isWin ? 'rgba(34,197,94,0.06)' : 'rgba(239,68,68,0.06)') + ';margin:8px 0;">';
+        rhtml += '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">';
+        rhtml += '<div style="display:flex;align-items:center;gap:12px;">';
+        rhtml += '<span style="font-size:24px;font-weight:900;color:' + cor + ';">' + s.resultado + '</span>';
+        rhtml += '<span style="font-size:18px;font-weight:800;color:' + cor + ';">' + (s.pts >= 0 ? '+' : '') + s.pts + ' pts</span>';
+        rhtml += '<span style="font-size:16px;font-weight:700;color:' + cor + ';">' + (s.resultado_rs >= 0 ? '+' : '') + 'R$ ' + s.resultado_rs.toFixed(2) + '</span>';
+        rhtml += '</div>';
+        rhtml += '<span style="font-size:10px;padding:3px 8px;border-radius:4px;background:rgba(255,255,255,0.05);color:var(--text-muted);">DADOS REAIS DO DIA ANTERIOR</span>';
+        rhtml += '</div>';
+        
+        rhtml += '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:10px;font-size:11px;">';
+        rhtml += '<div style="text-align:center;padding:6px;background:rgba(255,255,255,0.03);border-radius:4px;">';
+        rhtml += '<div style="font-size:9px;color:var(--text-muted);">ENTRADA</div>';
+        rhtml += '<div style="font-weight:700;">' + e.tipo + ' @ ' + e.preco.toLocaleString("pt-BR") + '</div>';
+        rhtml += '<div style="color:var(--text-muted);">' + e.hora + '</div></div>';
+        
+        rhtml += '<div style="text-align:center;padding:6px;background:rgba(255,255,255,0.03);border-radius:4px;">';
+        rhtml += '<div style="font-size:9px;color:var(--text-muted);">SAIDA</div>';
+        rhtml += '<div style="font-weight:700;color:' + cor + ';">' + s.preco.toLocaleString("pt-BR") + '</div>';
+        rhtml += '<div style="color:var(--text-muted);">' + s.hora + ' (' + s.velas_na_operacao + ' velas)</div></div>';
+        
+        rhtml += '<div style="text-align:center;padding:6px;background:rgba(255,255,255,0.03);border-radius:4px;">';
+        rhtml += '<div style="font-size:9px;color:var(--text-muted);">DETALHES</div>';
+        rhtml += '<div>Max favor: <span style="color:#22c55e;">+' + data.detalhes.max_favoravel_pts + '</span></div>';
+        rhtml += '<div>Max contra: <span style="color:#ef4444;">-' + data.detalhes.max_adverso_pts + '</span></div></div>';
+        rhtml += '</div>';
+        
+        // Caminho
+        if (data.detalhes.caminho && data.detalhes.caminho.length > 0) {
+            rhtml += '<div style="font-size:10px;margin-top:6px;color:var(--text-muted);border-top:1px solid var(--border);padding-top:6px;">Caminho real: ';
+            data.detalhes.caminho.forEach(function(c) {
+                const cc = c.favoravel > 0 ? '#22c55e' : '#ef4444';
+                rhtml += '<span style="color:' + cc + ';">' + c.hora + '(' + c.close.toLocaleString("pt-BR") + ') </span>';
+            });
+            rhtml += '</div>';
+        }
+        
+        rhtml += '<div style="margin-top:8px;font-size:10px;color:var(--text-muted);text-align:center;">Vela ' + (velaIdx+1) + '/' + velas.length + ' do pregao anterior (' + window.simVelas.dia + ')</div>';
+        rhtml += '</div>';
+        
+        posTable.innerHTML = rhtml;
+        
+    } catch(err) {
+        posTable.innerHTML = '<div style="text-align:center;padding:16px;color:#ef4444;">Erro: ' + err.message + '</div>';
+    }
 }
 
 // ---- Close Position ----
