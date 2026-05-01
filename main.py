@@ -322,6 +322,162 @@ async def get_analise(
         return JSONResponse({"erro": str(e), "traceback": tb}, status_code=500)
 
 
+
+
+@app.get("/api/book")
+async def get_book(ativo: str = Query("WIN")):
+    """Simula Book de Ofertas (DOM) baseado em dados reais de preço e volume"""
+    try:
+        provider = app_state["provider"]
+        preco_rt = provider.preco_realtime.get(ativo, {})
+        preco = preco_rt.get("preco", 0)
+        
+        if not preco:
+            dados = await provider.obter_dados(ativo, "5m")
+            if dados is not None and len(dados) > 0:
+                preco = float(dados['close'].iloc[-1])
+        
+        if not preco:
+            return JSONResponse({"erro": "Preço não disponível"})
+        
+        contrato = provider.get_contrato_info(ativo)
+        tick = contrato.get("tick", 5 if ativo == "WIN" else 0.5)
+        
+        # Gerar book simulado realista baseado no preço real
+        import random
+        random.seed(int(preco * 100) % 10000)  # Seed consistente por preço
+        
+        niveis_compra = []
+        niveis_venda = []
+        
+        for i in range(10):
+            # Compradores (abaixo do preço)
+            nivel_preco = preco - (i + 1) * tick
+            # Volume maior perto do preço, menor longe
+            base_vol = max(50, int(800 * (1 - i * 0.08) + random.randint(-100, 200)))
+            qtd_ordens = max(1, int(15 * (1 - i * 0.06) + random.randint(-3, 5)))
+            niveis_compra.append({
+                "preco": round(nivel_preco, 2),
+                "quantidade": base_vol,
+                "ordens": qtd_ordens,
+            })
+            
+            # Vendedores (acima do preço)
+            nivel_preco = preco + (i + 1) * tick
+            base_vol = max(50, int(750 * (1 - i * 0.08) + random.randint(-100, 200)))
+            qtd_ordens = max(1, int(14 * (1 - i * 0.06) + random.randint(-3, 5)))
+            niveis_venda.append({
+                "preco": round(nivel_preco, 2),
+                "quantidade": base_vol,
+                "ordens": qtd_ordens,
+            })
+        
+        total_compra = sum(n["quantidade"] for n in niveis_compra)
+        total_venda = sum(n["quantidade"] for n in niveis_venda)
+        ratio = total_compra / total_venda if total_venda > 0 else 1
+        
+        if ratio > 1.15:
+            pressao = "COMPRADORES"
+        elif ratio < 0.85:
+            pressao = "VENDEDORES"
+        else:
+            pressao = "EQUILIBRIO"
+        
+        return JSONResponse(converter_numpy({
+            "ativo": ativo,
+            "preco_referencia": round(preco, 2),
+            "tick": tick,
+            "compra": niveis_compra,
+            "venda": niveis_venda,
+            "total_compra": total_compra,
+            "total_venda": total_venda,
+            "ratio": round(ratio, 2),
+            "pressao": pressao,
+            "timestamp": datetime.now(BRT).strftime("%H:%M:%S"),
+        }))
+    except Exception as e:
+        return JSONResponse({"erro": str(e)})
+
+
+@app.get("/api/tape")
+async def get_tape(ativo: str = Query("WIN")):
+    """Simula Times & Trades (Tape Reading) baseado em dados reais"""
+    try:
+        provider = app_state["provider"]
+        preco_rt = provider.preco_realtime.get(ativo, {})
+        preco = preco_rt.get("preco", 0)
+        
+        if not preco:
+            dados = await provider.obter_dados(ativo, "5m")
+            if dados is not None and len(dados) > 0:
+                preco = float(dados['close'].iloc[-1])
+        
+        if not preco:
+            return JSONResponse({"erro": "Preço não disponível"})
+        
+        contrato = provider.get_contrato_info(ativo)
+        tick = contrato.get("tick", 5 if ativo == "WIN" else 0.5)
+        
+        import random
+        agora = datetime.now(BRT)
+        
+        trades = []
+        preco_ref = preco
+        total_compra = 0
+        total_venda = 0
+        
+        for i in range(30):
+            segundos_atras = i * random.randint(2, 15)
+            ts = agora - timedelta(seconds=segundos_atras)
+            
+            # Tipo: agressão compradora ou vendedora
+            tipo = random.choice(["COMPRA", "VENDA"])
+            
+            # Preço varia em torno do preço atual
+            variacao = random.randint(-3, 3) * tick
+            trade_preco = round(preco_ref + variacao, 2)
+            
+            # Volume (lotes) - distribuição lognormal
+            qtd = max(1, int(random.lognormvariate(2, 1.2)))
+            is_grande = qtd >= 20
+            
+            if tipo == "COMPRA":
+                total_compra += qtd
+            else:
+                total_venda += qtd
+            
+            trades.append({
+                "hora": ts.strftime("%H:%M:%S"),
+                "preco": trade_preco,
+                "quantidade": qtd,
+                "tipo": tipo,
+                "grande": is_grande,
+            })
+        
+        total = total_compra + total_venda
+        pct_compra = round(total_compra / total * 100, 1) if total > 0 else 50
+        
+        if pct_compra > 60:
+            agressao = "COMPRADORA"
+        elif pct_compra < 40:
+            agressao = "VENDEDORA"
+        else:
+            agressao = "EQUILIBRIO"
+        
+        return JSONResponse(converter_numpy({
+            "ativo": ativo,
+            "trades": trades,
+            "total_compra": total_compra,
+            "total_venda": total_venda,
+            "pct_compra": pct_compra,
+            "pct_venda": round(100 - pct_compra, 1),
+            "agressao": agressao,
+            "lotes_grandes": sum(1 for t in trades if t["grande"]),
+            "timestamp": agora.strftime("%H:%M:%S"),
+        }))
+    except Exception as e:
+        return JSONResponse({"erro": str(e)})
+
 @app.get("/api/debug")
 async def debug_analise():
     resultado = {"steps": [], "errors": []}
@@ -433,9 +589,11 @@ async def get_status():
         "contratos_vigentes": contratos,
         "timeframes": TIMEFRAMES,
         "intervalo_refresh": "5 minutos",
-        "versao": "3.3.0",
+        "versao": "3.4.0",
         "fontes_dados": ["yfinance (candles OHLCV)",
-            "Investing.com (preço futuro real)", "HG Brasil (preço tempo real)"],
+            "Investing.com (preço futuro real)",
+            "Book de Ofertas (simulado)",
+            "Tape Reading (simulado)", "HG Brasil (preço tempo real)"],
         "mercado_aberto": mercado_aberto(),
         "usando_cache": app_state["usando_cache"],
         "cache_data_pregao": app_state["cache_data_pregao"],
