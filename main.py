@@ -2401,11 +2401,17 @@ async def simulador_real(ativo: str = Query("WIN")):
             # Em ALTA: RSI sobrevendido = COMPRA (pullback). RSI sobrecomprado = NAO vender, trend forte
             # Em BAIXA: RSI sobrecomprado = VENDA (pullback). RSI sobrevendido = NAO comprar
             if rsi_v < 30:
-                if tend != "BAIXA":  # Nao comprar contra tendencia baixa
+                if tend == "BAIXA":
+                    # RSI sobrevendido em BAIXA = pode ser continuacao ou bounce
+                    # Se RSI < 20 = muito esticado, pode ter bounce. Se 20-30 = forca vendedora
+                    if rsi_v < 20:
+                        motivos_nao_operar.append(f"RSI muito sobrevendido ({rsi_v}) em BAIXA - bounce provavel")
+                    else:
+                        score += 1; tipo_sinal = "VENDA"
+                        motivos_operar.append(f"RSI vendedor ({rsi_v}) em tendencia BAIXA - momentum confirmado")
+                else:
                     score += 2; tipo_sinal = "COMPRA"
                     motivos_operar.append(f"RSI sobrevendido ({rsi_v}) - pullback p/ compra")
-                else:
-                    motivos_nao_operar.append(f"RSI sobrevendido ({rsi_v}) mas tendencia BAIXA - nao compre contra")
             elif rsi_v > 70:
                 if tend != "ALTA":  # Nao vender contra tendencia alta
                     score += 2; tipo_sinal = "VENDA"
@@ -2460,10 +2466,14 @@ async def simulador_real(ativo: str = Query("WIN")):
                 motivos_nao_operar.append(f"MACD negativo ({macd_h}) CONTRA sinal de compra")
             
             # 6. ATR (volatilidade minima p/ day trade)
-            if atr_v > 80:
-                score += 1; motivos_operar.append(f"ATR {atr_v} - volatilidade suficiente")
+            _atr_min = 80 if ativo == "WIN" else 0.005  # WIN=pontos, WDO=reais (centavos)
+            if atr_v > _atr_min:
+                score += 1; motivos_operar.append(f"ATR {atr_v:.4f} - volatilidade suficiente")
+            elif atr_v > 0:
+                # Tem volatilidade mas baixa - nao penaliza, so nao soma
+                motivos_nao_operar.append(f"ATR {atr_v:.4f} - volatilidade moderada")
             else:
-                motivos_nao_operar.append(f"ATR {atr_v} - volatilidade baixa (spread pode comer lucro)")
+                motivos_nao_operar.append(f"ATR {atr_v:.4f} - sem volatilidade")
             
             # 7. Volume (se disponivel)
             if vol > 0:
@@ -2682,12 +2692,15 @@ async def simulador_real(ativo: str = Query("WIN")):
                 # ===== STOP E ALVO PRO (Williams + Bellafiore) =====
                 # Stop = 1.5x ATR (mais largo para respirar) com cap inteligente
                 stop_pts = round(atr_v * 1.5)
-                stop_pts = max(round(stop_pts / 5) * 5, 80)  # round to tick, min 80pts
+                if ativo == "WIN":
+                    stop_pts = max(round(stop_pts / 5) * 5, 80)  # round to tick, min 80pts WIN
+                else:
+                    stop_pts = max(round(stop_pts * 200) / 200, 0.005)  # WDO: min 0.5 centavo (0.005)
                 if ativo == "WIN":
                     stop_pts = min(stop_pts, 350)  # cap stop WIN
                 else:
-                    # WDO tem escala diferente
-                    stop_pts = min(stop_pts, 30)
+                    # WDO: precos em reais (ex: 5.67), ATR em centavos (ex: 0.02)
+                    stop_pts = min(stop_pts, 0.10)  # max 10 centavos
                 
                 # Alvo = 2x stop (R:R minimo 1:2 - Van Tharp: risco/retorno positivo)
                 alvo_pts = round(stop_pts * 2.0)
@@ -2724,7 +2737,7 @@ async def simulador_real(ativo: str = Query("WIN")):
                 if ativo == "WIN":
                     _slippage = _rnd.randint(5, 20)
                 else:
-                    _slippage = round(_rnd.uniform(0.5, 2.0), 1)
+                    _slippage = round(_rnd.uniform(0.001, 0.005), 4)  # WDO: 0.1-0.5 centavo
                 
                 # Slippage vai contra: compra mais caro, vende mais barato
                 if is_compra:
@@ -2736,7 +2749,7 @@ async def simulador_real(ativo: str = Query("WIN")):
                 if ativo == "WIN":
                     _custo_pts = 5  # ~R$1.00 por contrato (emolumentos B3)
                 else:
-                    _custo_pts = 1  # ~R$10.00 por contrato WDO
+                    _custo_pts = 0.001  # ~R$0.01 custo WDO
                 
                 # Stop e alvo baseados no preco REAL de entrada (com slippage)
                 stop_price = round(preco_entrada_real - stop_pts, 2) if is_compra else round(preco_entrada_real + stop_pts, 2)
