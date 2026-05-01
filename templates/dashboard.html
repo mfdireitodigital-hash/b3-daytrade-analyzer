@@ -3209,10 +3209,14 @@ async function simRealAnalisar() {
     document.getElementById('simRealOps').innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-muted);">Processando todas as velas do pregao...</div>';
     
     try {
+        const _ativo = state.ativo || 'WIN';
+        const controller = new AbortController();
+        const _timeout = setTimeout(() => controller.abort(), 60000); // 60s timeout
         const [simRes, notRes] = await Promise.all([
-            fetch('/api/simulador-real?ativo=WIN').then(r => r.json()),
-            fetch('/api/noticias-impacto').then(r => r.json()).catch(e => null),
+            fetch('/api/simulador-real?ativo=' + _ativo, {signal: controller.signal}).then(r => r.json()),
+            fetch('/api/noticias-impacto', {signal: controller.signal}).then(r => r.json()).catch(e => null),
         ]);
+        clearTimeout(_timeout);
         
         if (simRes.erro) {
             veredEl.textContent = 'ERRO'; veredEl.style.color = '#ef4444';
@@ -3429,8 +3433,9 @@ async function simRealAnalisar() {
             oH += '</div>';
         }
         
-        // RELATORIO COMPLETO VELA POR VELA
-        oH += '<div style="font-size:12px;font-weight:800;color:var(--accent-blue);margin:12px 0 8px 0;padding:6px 0;border-bottom:1px solid var(--border);">RELATORIO COMPLETO 09:00-18:00 (' + velas.length + ' velas)</div>';
+        // RELATORIO COMPLETO VELA POR VELA (colapsavel)
+        oH += '<details style="margin-top:12px;"><summary style="cursor:pointer;font-size:12px;font-weight:800;color:var(--accent-blue);padding:6px 0;border-bottom:1px solid var(--border);">RELATORIO COMPLETO 09:00-18:00 (' + velas.length + ' velas) - Clique para expandir</summary>';
+        oH += '<div style="margin-top:8px;">';
         
         // Table header
         oH += '<div style="display:grid;grid-template-columns:55px 1fr 40px 55px 55px 80px;gap:2px;font-size:9px;font-weight:700;color:var(--text-muted);padding:4px 6px;background:var(--bg-secondary);border-radius:4px 4px 0 0;position:sticky;top:0;z-index:1;">';
@@ -3469,11 +3474,14 @@ async function simRealAnalisar() {
             oH += '</div>';
         });
         
+        oH += '</div></details>'; // Close vela-by-vela collapsible
         document.getElementById('simRealOps').innerHTML = oH;
         
     } catch(e) {
         if (veredEl) { veredEl.textContent = 'ERRO'; veredEl.style.color = '#ef4444'; }
-        if (veredSub) { veredSub.textContent = e.message; }
+        const _msg = e.name === 'AbortError' ? 'Timeout: API demorou mais de 60s. Tente novamente.' : e.message;
+        if (veredSub) { veredSub.textContent = _msg; }
+        document.getElementById('simRealOps').innerHTML = '<div style="text-align:center;padding:20px;"><div style="color:#ef4444;font-weight:700;margin-bottom:8px;">Erro na analise</div><div style="color:var(--text-muted);font-size:11px;">' + _msg + '</div><button class="btn" onclick="simRealAnalisar()" style="margin-top:10px;font-size:11px;padding:6px 16px;">TENTAR NOVAMENTE</button></div>';
         console.error('simRealAnalisar error:', e);
     }
 }

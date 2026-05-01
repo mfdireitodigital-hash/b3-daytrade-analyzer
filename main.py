@@ -2638,24 +2638,86 @@ async def simulador_real(ativo: str = Query("WIN")):
                 and not dia_bloqueado  # Limite de perda
             )
             
+            # ===== FILTROS PRO TRADER - PROTEGER CAPITAL =====
+            # Filtro 1: NAO entrar em topo/fundo local (exaustao)
+            _exaustao = False
+            if pode_operar and len(w) >= 5:
+                try:
+                    _recent_5h = [float(w.iloc[j]['high']) for j in range(-5, 0)]
+                    _recent_5l = [float(w.iloc[j]['low']) for j in range(-5, 0)]
+                    if tipo_sinal == "COMPRA" and c >= max(_recent_5h):
+                        _exaustao = True  # comprando no topo das ultimas 5 velas
+                        motivos_nao_operar.append("FILTRO EXAUSTAO: preco no topo local (5 velas)")
+                    elif tipo_sinal == "VENDA" and c <= min(_recent_5l):
+                        _exaustao = True  # vendendo no fundo das ultimas 5 velas
+                        motivos_nao_operar.append("FILTRO EXAUSTAO: preco no fundo local (5 velas)")
+                except: pass
+            
+            # Filtro 2: NAO re-entrar no mesmo nivel apos loss recente
+            _mesmo_nivel = False
+            if pode_operar and operacoes_recomendadas:
+                _last_op = operacoes_recomendadas[-1]
+                if _last_op["resultado"] == "LOSS":
+                    _dist_last = abs(c - _last_op["preco_entrada"])
+                    if _dist_last < atr_v * 0.5:
+                        _mesmo_nivel = True
+                        motivos_nao_operar.append(f"FILTRO RE-ENTRADA: muito proximo do loss anterior ({round(_dist_last,0)}pts)")
+            
+            # Filtro 3: RSI pullback obrigatorio (Grimes: pullback in trend = melhor WR)
+            _rsi_pullback_ok = True
             if pode_operar:
-                # Day trade: stop = 1x ATR (max 300pts WIN), alvo = 1.5x stop
-                stop_pts = round(atr_v * 1.0)
-                stop_pts = max(round(stop_pts / 5) * 5, 50)  # round to tick, min 50
+                if tipo_sinal == "COMPRA" and tend == "ALTA":
+                    # Em alta, melhor comprar com RSI entre 35-55 (pullback) do que >65 (esticado)
+                    if rsi_v > 65:
+                        _rsi_pullback_ok = False
+                        motivos_nao_operar.append(f"FILTRO RSI: RSI {rsi_v} esticado demais pra compra (ideal 35-55 em pullback)")
+                elif tipo_sinal == "VENDA" and tend == "BAIXA":
+                    if rsi_v < 35:
+                        _rsi_pullback_ok = False
+                        motivos_nao_operar.append(f"FILTRO RSI: RSI {rsi_v} esticado demais pra venda (ideal 45-65 em pullback)")
+            
+            # Aplicar filtros: so entra se passar TODOS
+            pode_operar = pode_operar and not _exaustao and not _mesmo_nivel and _rsi_pullback_ok
+            
+            if pode_operar:
+                # ===== STOP E ALVO PRO (Williams + Bellafiore) =====
+                # Stop = 1.5x ATR (mais largo para respirar) com cap inteligente
+                stop_pts = round(atr_v * 1.5)
+                stop_pts = max(round(stop_pts / 5) * 5, 80)  # round to tick, min 80pts
                 if ativo == "WIN":
-                    stop_pts = min(stop_pts, 300)  # cap stop WIN
-                alvo_pts = round(stop_pts * 1.5)
+                    stop_pts = min(stop_pts, 350)  # cap stop WIN
+                else:
+                    # WDO tem escala diferente
+                    stop_pts = min(stop_pts, 30)
+                
+                # Alvo = 2x stop (R:R minimo 1:2 - Van Tharp: risco/retorno positivo)
+                alvo_pts = round(stop_pts * 2.0)
                 
                 is_compra = tipo_sinal == "COMPRA"
+                
+                # Stop abaixo do suporte se COMPRA (protecao estrutural)
+                if is_compra and suporte and abs(c - suporte) < stop_pts:
+                    _structural_stop = round(c - suporte + atr_v * 0.3)
+                    if _structural_stop > stop_pts * 0.5 and _structural_stop < stop_pts * 2:
+                        stop_pts = max(round(_structural_stop / 5) * 5, 80)
+                        alvo_pts = round(stop_pts * 2.0)
+                elif not is_compra and resistencia and abs(resistencia - c) < stop_pts:
+                    _structural_stop = round(resistencia - c + atr_v * 0.3)
+                    if _structural_stop > stop_pts * 0.5 and _structural_stop < stop_pts * 2:
+                        stop_pts = max(round(_structural_stop / 5) * 5, 80)
+                        alvo_pts = round(stop_pts * 2.0)
+                
                 stop_price = round(c - stop_pts, 2) if is_compra else round(c + stop_pts, 2)
                 alvo_price = round(c + alvo_pts, 2) if is_compra else round(c - alvo_pts, 2)
                 
-                # Walk forward (max 30 velas = 2.5h timeout)
+                # ===== WALK FORWARD COM TRAILING STOP =====
                 resultado = None
                 preco_saida = 0
                 hora_saida = ""
                 velas_na_op = 0
-                max_velas_op = 30  # timeout
+                max_velas_op = 24  # timeout 2h (menos que antes)
+                _best_price = c  # tracking melhor preco para trailing
+                _trailing_active = False
                 
                 future_start = day_indices.index(pos_idx) + 1
                 for fi in range(future_start, len(day_indices)):
@@ -2665,7 +2727,7 @@ async def simulador_real(ativo: str = Query("WIN")):
                     f_hora = dados.index[day_indices[fi]].strftime("%H:%M")
                     velas_na_op += 1
                     
-                    # Timeout: fecha no preco atual apos 30 velas
+                    # Timeout: fecha no preco atual
                     if velas_na_op >= max_velas_op:
                         preco_saida = fc
                         hora_saida = f_hora
@@ -2674,15 +2736,57 @@ async def simulador_real(ativo: str = Query("WIN")):
                         break
                     
                     if is_compra:
-                        if fl <= stop_price:
-                            resultado = "LOSS"; preco_saida = stop_price; hora_saida = f_hora; break
+                        # Atualiza melhor preco
+                        if fh > _best_price:
+                            _best_price = fh
+                        
+                        # Trailing stop: quando lucro >= 1x stop, move stop pro breakeven+20%
+                        _lucro_corrente = _best_price - c
+                        if _lucro_corrente >= stop_pts and not _trailing_active:
+                            _trailing_active = True
+                            # Move stop para breakeven + 20% do lucro
+                            _novo_stop = c + _lucro_corrente * 0.2
+                            if _novo_stop > stop_price:
+                                stop_price = round(_novo_stop, 2)
+                        elif _trailing_active and _lucro_corrente >= stop_pts * 1.5:
+                            # Trail agressivo: move stop para 50% do lucro maximo
+                            _novo_stop = c + _lucro_corrente * 0.5
+                            if _novo_stop > stop_price:
+                                stop_price = round(_novo_stop, 2)
+                        
+                        # Check alvo PRIMEIRO (favorece o trader)
                         if fh >= alvo_price:
                             resultado = "WIN"; preco_saida = alvo_price; hora_saida = f_hora; break
+                        # Depois check stop
+                        if fl <= stop_price:
+                            preco_saida = stop_price; hora_saida = f_hora
+                            pts_t = preco_saida - c
+                            resultado = "WIN" if pts_t > 0 else "LOSS"
+                            break
                     else:
-                        if fh >= stop_price:
-                            resultado = "LOSS"; preco_saida = stop_price; hora_saida = f_hora; break
+                        # VENDA - espelho
+                        if fl < _best_price:
+                            _best_price = fl
+                        
+                        _lucro_corrente = c - _best_price
+                        if _lucro_corrente >= stop_pts and not _trailing_active:
+                            _trailing_active = True
+                            _novo_stop = c - _lucro_corrente * 0.2
+                            if _novo_stop < stop_price:
+                                stop_price = round(_novo_stop, 2)
+                        elif _trailing_active and _lucro_corrente >= stop_pts * 1.5:
+                            _novo_stop = c - _lucro_corrente * 0.5
+                            if _novo_stop < stop_price:
+                                stop_price = round(_novo_stop, 2)
+                        
+                        # Check alvo PRIMEIRO
                         if fl <= alvo_price:
                             resultado = "WIN"; preco_saida = alvo_price; hora_saida = f_hora; break
+                        if fh >= stop_price:
+                            preco_saida = stop_price; hora_saida = f_hora
+                            pts_t = c - preco_saida
+                            resultado = "WIN" if pts_t > 0 else "LOSS"
+                            break
                 
                 if resultado is None:
                     last_v = dados.iloc[day_indices[-1]]
@@ -2721,7 +2825,7 @@ async def simulador_real(ativo: str = Query("WIN")):
                         if not problemas:
                             problemas.append("Setup estava correto - loss faz parte (nem todo setup ganha)")
                         detalhes_perda += "PROBLEMAS: " + "; ".join(problemas) + ". "
-                        detalhes_perda += f"Score era {score}/11 ({conf_label}). "
+                        detalhes_perda += f"Score era {score}/15 ({conf_label}). "
                         detalhes_perda += "Licao: " + ("Volatilidade alta exige stop mais conservador ou esperar pullback." if atr_v > 250 else "Verifique alinhamento do TF maior antes de entrar. Loss com setup correto e normal - disciplina e seguir o plano.")
                     else:
                         detalhes_perda = f"STOP atingido em {hora_saida} ({velas_na_op} velas = {velas_na_op*5}min). "
@@ -2740,7 +2844,7 @@ async def simulador_real(ativo: str = Query("WIN")):
                         if not problemas:
                             problemas.append("Setup estava correto - loss faz parte do jogo")
                         detalhes_perda += "PROBLEMAS: " + "; ".join(problemas) + ". "
-                        detalhes_perda += f"Score era {score}/11 ({conf_label}). "
+                        detalhes_perda += f"Score era {score}/15 ({conf_label}). "
                         detalhes_perda += "Licao: Nunca venda em tendencia de alta clara. Disciplina > opiniao."
                 
                 # ---- ANALISE COMPLETA (PRO TRADER) ----
@@ -2776,7 +2880,7 @@ async def simulador_real(ativo: str = Query("WIN")):
                 
                 analise_completa += f"\n4. ATR (Volatilidade): {atr_v} pts\n"
                 analise_completa += f"   {'Volatilidade suficiente para day trade.' if atr_v > 80 else 'Volatilidade baixa - risco de spread.'}\n"
-                analise_completa += f"   Stop calculado: {stop_pts}pts (1x ATR, max 300 WIN). Alvo: {alvo_pts}pts (1.5x stop).\n"
+                analise_completa += f"   Stop calculado: {stop_pts}pts (1.5x ATR, estrutural). Alvo: {alvo_pts}pts (2x stop, R:R 1:2).\n"
                 
                 if suporte and resistencia:
                     analise_completa += f"\n5. SUPORTE/RESISTENCIA (Murphy):\n"
@@ -2852,7 +2956,7 @@ async def simulador_real(ativo: str = Query("WIN")):
                             detalhes_vitoria += "Tendencia BAIXA confirmou a direcao - Triple Screen alinhado. "
                         if macd_h < 0:
                             detalhes_vitoria += f"MACD negativo ({macd_h}) deu momentum vendedor. "
-                    detalhes_vitoria += f"Score {score}/11 ({conf_label}) - setup de alta confluencia. "
+                    detalhes_vitoria += f"Score {score}/15 ({conf_label}) - setup de alta confluencia. "
                     if velas_na_op <= 6:
                         detalhes_vitoria += f"Operacao rapida ({velas_na_op} velas = {velas_na_op*5}min) - mercado ja estava no ponto. "
                     detalhes_vitoria += "Licao: Setups com alta confluencia e a favor da tendencia tem maior taxa de acerto."
