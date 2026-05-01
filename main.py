@@ -1701,12 +1701,14 @@ def _sinal_principal(painel: dict) -> dict:
 
 @app.get("/api/sinais-ia")
 async def get_sinais_ia(ativo: str = Query("WIN")):
-    """Sinais IA estilo Vortex Trade - detecta setups com entrada/stop/alvo"""
+    """Sinais IA - Triple Screen (Elder) + Confluencia 7 pontos + Escala Confianca"""
     ativo = ativo.upper()
     try:
         analise_5m = app_state["analises"].get(ativo, {}).get("5m", {})
         analise_15m = app_state["analises"].get(ativo, {}).get("15m", {})
         analise_1h = app_state["analises"].get(ativo, {}).get("1h", {})
+        analise_4h = app_state["analises"].get(ativo, {}).get("4h", {})
+        analise_1d = app_state["analises"].get(ativo, {}).get("1d", {})
         
         preco = analise_5m.get("preco_atual", 0)
         if not preco:
@@ -1716,120 +1718,178 @@ async def get_sinais_ia(ativo: str = Query("WIN")):
         spec = {"WIN": {"tick": 5, "vp": 0.20, "atr_mult": 1.5}, "WDO": {"tick": 0.5, "vp": 10.0, "atr_mult": 1.2}}
         s = spec.get(ativo, spec["WIN"])
         
-        sinais_gerados = []
+        # === EXTRAIR INDICADORES DE TODOS OS TIMEFRAMES ===
+        def get_val(analise, key, default=None):
+            v = analise.get(key, default) if analise else default
+            if isinstance(v, dict): return v.get("valor", v.get("status", default))
+            return v
         
-        # Get indicators
-        rsi = analise_5m.get("rsi", {}).get("valor", 50) if isinstance(analise_5m.get("rsi"), dict) else analise_5m.get("rsi", 50)
-        if isinstance(rsi, dict): rsi = rsi.get("valor", 50)
-        tendencia_5m = analise_5m.get("tendencia", "LATERAL")
-        tendencia_15m = analise_15m.get("tendencia", "LATERAL") if analise_15m else "N/A"
-        tendencia_1h = analise_1h.get("tendencia", "LATERAL") if analise_1h else "N/A"
-        macd_status = analise_5m.get("macd", {}).get("status", "NEUTRO") if isinstance(analise_5m.get("macd"), dict) else "NEUTRO"
+        rsi_5m = get_val(analise_5m, "rsi", 50) or 50
+        rsi_15m = get_val(analise_15m, "rsi", 50) or 50
+        tendencia_5m = get_val(analise_5m, "tendencia", "LATERAL")
+        tendencia_15m = get_val(analise_15m, "tendencia", "LATERAL")
+        tendencia_1h = get_val(analise_1h, "tendencia", "LATERAL")
+        tendencia_4h = get_val(analise_4h, "tendencia", "LATERAL")
+        tendencia_1d = get_val(analise_1d, "tendencia", "LATERAL")
         
-        atr = analise_5m.get("atr", 150) if ativo == "WIN" else analise_5m.get("atr", 15)
-        if isinstance(atr, dict): atr = atr.get("valor", 150 if ativo == "WIN" else 15)
-        if not atr or atr == 0: atr = 150 if ativo == "WIN" else 15
+        macd_5m = get_val(analise_5m, "macd", "NEUTRO")
+        if isinstance(macd_5m, dict): macd_5m = macd_5m.get("status", "NEUTRO")
+        macd_15m = get_val(analise_15m, "macd", "NEUTRO")
+        if isinstance(macd_15m, dict): macd_15m = macd_15m.get("status", "NEUTRO")
         
+        ema9 = get_val(analise_5m, "ema9", 0) or 0
+        ema21 = get_val(analise_5m, "ema21", 0) or 0
+        ema50 = get_val(analise_5m, "ema50", 0) or 0
+        ema200 = get_val(analise_5m, "ema200", 0) or 0
+        vwap = get_val(analise_5m, "vwap", 0) or 0
+        
+        atr = get_val(analise_5m, "atr", 150 if ativo == "WIN" else 15) or (150 if ativo == "WIN" else 15)
+        
+        # Bollinger
+        bb = analise_5m.get("bollinger", {}) if analise_5m else {}
+        bb_upper = bb.get("upper", 0) if isinstance(bb, dict) else 0
+        bb_lower = bb.get("lower", 0) if isinstance(bb, dict) else 0
+        
+        # ADX
+        adx_val = get_val(analise_5m, "adx", 0)
+        if isinstance(adx_val, dict): adx_val = adx_val.get("adx", 0)
+        adx_val = adx_val or 0
+        
+        # === TRIPLE SCREEN (Elder) ===
+        # Tela 1 (longo): 1h/4h/1d - TENDENCIA
+        tela1_score = 0
+        tela1_detail = []
+        for tf_name, tf_tend in [("1h", tendencia_1h), ("4h", tendencia_4h), ("1d", tendencia_1d)]:
+            if tf_tend == "ALTA": tela1_score += 1; tela1_detail.append(f"{tf_name} ALTA")
+            elif tf_tend == "BAIXA": tela1_score -= 1; tela1_detail.append(f"{tf_name} BAIXA")
+            else: tela1_detail.append(f"{tf_name} LATERAL")
+        tela1_dir = "ALTA" if tela1_score > 0 else "BAIXA" if tela1_score < 0 else "LATERAL"
+        
+        # Tela 2 (medio): 15m - SINAL contra tendencia (pullback)
+        tela2_sinal = "NEUTRO"
+        tela2_detail = []
+        if rsi_15m < 35 and tela1_dir == "ALTA":
+            tela2_sinal = "COMPRA"; tela2_detail.append(f"RSI 15m sobrevendido ({rsi_15m:.0f}) em tendencia de alta")
+        elif rsi_15m > 65 and tela1_dir == "BAIXA":
+            tela2_sinal = "VENDA"; tela2_detail.append(f"RSI 15m sobrecomprado ({rsi_15m:.0f}) em tendencia de baixa")
+        elif tendencia_15m == tela1_dir:
+            tela2_sinal = "COMPRA" if tela1_dir == "ALTA" else "VENDA" if tela1_dir == "BAIXA" else "NEUTRO"
+            tela2_detail.append(f"15m confirmando {tela1_dir}")
+        
+        # Tela 3 (curto): 5m - ENTRADA precisa
+        tela3_entrada = "NEUTRO"
+        tela3_detail = []
+        if ema9 > 0 and ema21 > 0:
+            if ema9 > ema21 and tela2_sinal == "COMPRA":
+                tela3_entrada = "COMPRA"; tela3_detail.append("EMA9 > EMA21 confirmando compra")
+            elif ema9 < ema21 and tela2_sinal == "VENDA":
+                tela3_entrada = "VENDA"; tela3_detail.append("EMA9 < EMA21 confirmando venda")
+        if rsi_5m < 30 and tela2_sinal == "COMPRA":
+            tela3_entrada = "COMPRA"; tela3_detail.append(f"RSI 5m sobrevendido ({rsi_5m:.0f})")
+        elif rsi_5m > 70 and tela2_sinal == "VENDA":
+            tela3_entrada = "VENDA"; tela3_detail.append(f"RSI 5m sobrecomprado ({rsi_5m:.0f})")
+        
+        # === CHECKLIST DE CONFLUENCIA (7 pontos) ===
+        confluencia = {"checks": [], "score": 0, "total": 7}
+        
+        # 1. Tendencia TF maior
+        if tela1_dir in ("ALTA", "BAIXA"):
+            confluencia["checks"].append({"nome": "Tendencia TF maior", "status": True, "detalhe": f"{tela1_dir} ({', '.join(tela1_detail)})"})
+            confluencia["score"] += 1
+        else:
+            confluencia["checks"].append({"nome": "Tendencia TF maior", "status": False, "detalhe": "LATERAL - sem direcao clara"})
+        
+        # 2. S/R (usar VWAP e Bollinger como referencia)
+        sr_ok = False
+        sr_detail = ""
+        if preco and vwap and vwap > 0:
+            dist_vwap = abs(preco - vwap) / preco * 100
+            if dist_vwap < 0.3:
+                sr_ok = True; sr_detail = f"Preco proximo VWAP ({vwap:.0f})"
+            elif preco > vwap and tela1_dir == "ALTA":
+                sr_ok = True; sr_detail = f"Acima VWAP ({vwap:.0f}) - vies comprador"
+            elif preco < vwap and tela1_dir == "BAIXA":
+                sr_ok = True; sr_detail = f"Abaixo VWAP ({vwap:.0f}) - vies vendedor"
+        if bb_upper and bb_lower and preco:
+            if preco <= bb_lower: sr_ok = True; sr_detail += " | Banda inferior Bollinger"
+            elif preco >= bb_upper: sr_ok = True; sr_detail += " | Banda superior Bollinger"
+        confluencia["checks"].append({"nome": "Suporte/Resistencia", "status": sr_ok, "detalhe": sr_detail or "Sem nivel S/R claro"})
+        if sr_ok: confluencia["score"] += 1
+        
+        # 3. Volume/Fluxo
+        vol_ok = adx_val > 20
+        confluencia["checks"].append({"nome": "Volume/Forca (ADX)", "status": vol_ok, "detalhe": f"ADX {adx_val:.0f}" + (" - tendencia forte" if adx_val > 25 else " - fraco" if adx_val < 20 else "")})
+        if vol_ok: confluencia["score"] += 1
+        
+        # 4. Indicadores (RSI + MACD)
+        ind_ok = False
+        ind_detail = []
+        macd_str = str(macd_5m).upper()
+        if rsi_5m < 35 or rsi_5m > 65: ind_ok = True; ind_detail.append(f"RSI {rsi_5m:.0f}")
+        if "ALTA" in macd_str or "COMPRA" in macd_str or "BAIXA" in macd_str or "VENDA" in macd_str:
+            ind_ok = True; ind_detail.append(f"MACD {macd_5m}")
+        confluencia["checks"].append({"nome": "Indicadores (RSI/MACD)", "status": ind_ok, "detalhe": ", ".join(ind_detail) if ind_detail else "Neutros"})
+        if ind_ok: confluencia["score"] += 1
+        
+        # 5. Catalisador (horario de alta volatilidade)
+        agora = datetime.now(BRT)
+        hora_atual = agora.hour
+        catalisador = hora_atual in [9, 10, 15, 16, 17]
+        confluencia["checks"].append({"nome": "Catalisador/Timing", "status": catalisador, "detalhe": f"{agora.strftime('%H:%M')}" + (" - horario de alta volatilidade" if catalisador else " - horario de baixa volatilidade")})
+        if catalisador: confluencia["score"] += 1
+        
+        # 6. Risco definido (R:R)
         stop_pts = round(atr * s["atr_mult"])
-        # Round to tick
         stop_pts = max(round(stop_pts / s["tick"]) * s["tick"], s["tick"] * 10)
-        alvo_pts = round(stop_pts * 2)  # R:R 1:2
+        alvo_pts = round(stop_pts * 2)
+        rr_ratio = round(alvo_pts / stop_pts, 1) if stop_pts > 0 else 0
+        rr_ok = rr_ratio >= 2.0
+        confluencia["checks"].append({"nome": "Risco R:R", "status": rr_ok, "detalhe": f"R:R 1:{rr_ratio} | Stop {stop_pts}pts | Alvo {alvo_pts}pts"})
+        if rr_ok: confluencia["score"] += 1
         
-        score_alta = 0
-        score_baixa = 0
-        motivos_alta = []
-        motivos_baixa = []
+        # 7. Alinhamento Triple Screen
+        ts_ok = tela1_dir != "LATERAL" and tela2_sinal != "NEUTRO" and tela3_entrada != "NEUTRO"
+        ts_aligned = tela1_dir == ("ALTA" if tela3_entrada == "COMPRA" else "BAIXA" if tela3_entrada == "VENDA" else "")
+        confluencia["checks"].append({"nome": "Triple Screen alinhado", "status": ts_ok and ts_aligned, "detalhe": f"T1:{tela1_dir} T2:{tela2_sinal} T3:{tela3_entrada}"})
+        if ts_ok and ts_aligned: confluencia["score"] += 1
         
-        # RSI
-        if rsi and rsi < 30:
-            score_alta += 2
-            motivos_alta.append(f"RSI sobrevendido ({rsi:.0f})")
-        elif rsi and rsi < 40:
-            score_alta += 1
-            motivos_alta.append(f"RSI baixo ({rsi:.0f})")
-        elif rsi and rsi > 70:
-            score_baixa += 2
-            motivos_baixa.append(f"RSI sobrecomprado ({rsi:.0f})")
-        elif rsi and rsi > 60:
-            score_baixa += 1
-            motivos_baixa.append(f"RSI alto ({rsi:.0f})")
+        # === ESCALA DE CONFIANCA (Bellafiore) ===
+        cs = confluencia["score"]
+        if cs >= 6: escala = {"nota": 5, "label": "A+ SETUP", "acao": "Tamanho cheio", "cor": "#22c55e"}
+        elif cs >= 5: escala = {"nota": 4, "label": "SETUP BOM", "acao": "Tamanho normal", "cor": "#16a34a"}
+        elif cs == 4: escala = {"nota": 3, "label": "SETUP OK", "acao": "Tamanho reduzido (-50%)", "cor": "#ca8a04"}
+        elif cs == 3: escala = {"nota": 2, "label": "DUVIDOSO", "acao": "Minimo ou nao opere", "cor": "#ea580c"}
+        else: escala = {"nota": 1, "label": "SEM SETUP", "acao": "NAO OPERE", "cor": "#ef4444"}
         
-        # Tendencia 5m
-        if tendencia_5m == "ALTA":
-            score_alta += 1
-            motivos_alta.append("Tendencia 5m ALTA")
-        elif tendencia_5m == "BAIXA":
-            score_baixa += 1
-            motivos_baixa.append("Tendencia 5m BAIXA")
+        # === GERAR SINAIS ===
+        sinais_gerados = []
+        direcao_final = tela3_entrada if tela3_entrada != "NEUTRO" else tela2_sinal
         
-        # Tendencia 15m (peso maior)
-        if tendencia_15m == "ALTA":
-            score_alta += 2
-            motivos_alta.append("Tendencia 15m ALTA")
-        elif tendencia_15m == "BAIXA":
-            score_baixa += 2
-            motivos_baixa.append("Tendencia 15m BAIXA")
-        
-        # Tendencia 1h (peso maior ainda)
-        if tendencia_1h == "ALTA":
-            score_alta += 3
-            motivos_alta.append("Tendencia 1h ALTA")
-        elif tendencia_1h == "BAIXA":
-            score_baixa += 3
-            motivos_baixa.append("Tendencia 1h BAIXA")
-        
-        # MACD
-        if "ALTA" in macd_status.upper() or "COMPRA" in macd_status.upper():
-            score_alta += 1
-            motivos_alta.append("MACD comprador")
-        elif "BAIXA" in macd_status.upper() or "VENDA" in macd_status.upper():
-            score_baixa += 1
-            motivos_baixa.append("MACD vendedor")
-        
-        # EMA crossover
-        ema9 = analise_5m.get("ema9", 0)
-        ema21 = analise_5m.get("ema21", 0)
-        if isinstance(ema9, dict): ema9 = ema9.get("valor", 0)
-        if isinstance(ema21, dict): ema21 = ema21.get("valor", 0)
-        if ema9 and ema21 and ema9 > 0 and ema21 > 0:
-            if ema9 > ema21:
-                score_alta += 1
-                motivos_alta.append(f"EMA9 > EMA21")
-            else:
-                score_baixa += 1
-                motivos_baixa.append(f"EMA9 < EMA21")
-        
-        max_score = max(score_alta, score_baixa)
-        total_possible = 10
-        confianca = min(round(max_score / total_possible * 100), 95)
-        
-        if score_alta >= 3 and score_alta > score_baixa:
+        if direcao_final in ("COMPRA", "VENDA") and cs >= 3:
+            is_compra = direcao_final == "COMPRA"
+            motivos = tela1_detail + tela2_detail + tela3_detail
+            
+            # Setup name (PlayBook style)
+            setup_name = ""
+            if rsi_5m < 30 or rsi_5m > 70: setup_name = "Divergencia RSI"
+            elif ema9 > 0 and ema21 > 0 and abs(ema9 - ema21) / ema21 * 100 < 0.1: setup_name = "Cruzamento EMA"
+            elif preco and vwap and abs(preco - vwap) / preco * 100 < 0.2: setup_name = "VWAP Bounce"
+            elif adx_val > 25: setup_name = "Tendencia + ADX Forte"
+            else: setup_name = "Confluencia Multi-TF"
+            
             sinais_gerados.append({
-                "tipo": "COMPRA",
+                "tipo": direcao_final,
                 "ativo": ativo,
+                "setup": setup_name,
                 "preco_entrada": preco,
-                "stop_loss": round(preco - stop_pts, 2),
-                "take_profit": round(preco + alvo_pts, 2),
+                "stop_loss": round(preco - stop_pts, 2) if is_compra else round(preco + stop_pts, 2),
+                "take_profit": round(preco + alvo_pts, 2) if is_compra else round(preco - alvo_pts, 2),
                 "stop_pts": stop_pts,
                 "alvo_pts": alvo_pts,
-                "rr": "1:2",
-                "confianca": confianca,
-                "motivos": motivos_alta,
-                "timestamp": datetime.now(BRT).strftime("%H:%M:%S"),
-            })
-        
-        if score_baixa >= 3 and score_baixa > score_alta:
-            sinais_gerados.append({
-                "tipo": "VENDA",
-                "ativo": ativo,
-                "preco_entrada": preco,
-                "stop_loss": round(preco + stop_pts, 2),
-                "take_profit": round(preco - alvo_pts, 2),
-                "stop_pts": stop_pts,
-                "alvo_pts": alvo_pts,
-                "rr": "1:2",
-                "confianca": confianca,
-                "motivos": motivos_baixa,
+                "rr": f"1:{rr_ratio}",
+                "confianca": escala["nota"],
+                "escala": escala,
+                "motivos": motivos,
                 "timestamp": datetime.now(BRT).strftime("%H:%M:%S"),
             })
         
@@ -1837,22 +1897,39 @@ async def get_sinais_ia(ativo: str = Query("WIN")):
             sinais_gerados.append({
                 "tipo": "NEUTRO",
                 "ativo": ativo,
+                "setup": "Aguardando",
                 "confianca": 0,
-                "motivos": ["Sem confluencia suficiente - aguardar setup"],
+                "escala": escala,
+                "motivos": ["Sem confluencia suficiente - aguardar setup com 4+ pontos"],
                 "timestamp": datetime.now(BRT).strftime("%H:%M:%S"),
             })
         
         return JSONResponse({
             "sinais": sinais_gerados,
+            "triple_screen": {
+                "tela1_tendencia": {"direcao": tela1_dir, "detalhes": tela1_detail},
+                "tela2_sinal": {"direcao": tela2_sinal, "detalhes": tela2_detail},
+                "tela3_entrada": {"direcao": tela3_entrada, "detalhes": tela3_detail},
+            },
+            "confluencia": confluencia,
+            "escala_confianca": escala,
             "indicadores": {
-                "rsi": round(rsi, 1) if rsi else None,
+                "rsi_5m": round(rsi_5m, 1),
+                "rsi_15m": round(rsi_15m, 1),
                 "tendencia_5m": tendencia_5m,
                 "tendencia_15m": tendencia_15m,
                 "tendencia_1h": tendencia_1h,
-                "macd": macd_status,
+                "tendencia_4h": tendencia_4h,
+                "tendencia_1d": tendencia_1d,
+                "macd_5m": str(macd_5m),
+                "macd_15m": str(macd_15m),
                 "ema9": round(ema9, 2) if ema9 else None,
                 "ema21": round(ema21, 2) if ema21 else None,
-                "atr": round(atr, 2) if atr else None,
+                "vwap": round(vwap, 2) if vwap else None,
+                "adx": round(adx_val, 1),
+                "atr": round(atr, 2),
+                "bb_upper": round(bb_upper, 2) if bb_upper else None,
+                "bb_lower": round(bb_lower, 2) if bb_lower else None,
             },
             "mercado_aberto": mercado_aberto(),
             "preco_atual": preco,
@@ -1860,6 +1937,7 @@ async def get_sinais_ia(ativo: str = Query("WIN")):
         })
     except Exception as e:
         logger.error(f"Erro sinais-ia: {e}")
+        import traceback; traceback.print_exc()
         return JSONResponse({"sinais": [], "erro": str(e)}, status_code=500)
 
 
