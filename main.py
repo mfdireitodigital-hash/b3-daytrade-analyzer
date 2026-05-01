@@ -2667,7 +2667,7 @@ async def simulador_real(ativo: str = Query("WIN")):
                                 motivos_nao_operar.append(f"Volume baixo ({round(_vol_ratio,1)}x) - sem participacao")
                 except: pass
             
-            vela_info["price_action"] = price_action
+            # price_action sera adicionado apos vela_info ser criado
             
             # 13. SMC - Smart Money Concepts (FVG, Liquidity Sweep, Order Block, BOS/CHoCH)
             smc_data = {}
@@ -2715,6 +2715,7 @@ async def simulador_real(ativo: str = Query("WIN")):
                 "fib_level": fib_level,
                 "smc": smc_data,
             }
+            vela_info["price_action"] = price_action
             velas_analisadas.append(vela_info)
             
             # Check if position closed (+ cooldown)
