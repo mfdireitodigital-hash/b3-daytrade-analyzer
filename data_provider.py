@@ -1,12 +1,13 @@
 """
-B3 Day Trade Analyzer - Provedor de Dados v3.0
-Multi-source: yfinance (candles) + HG Brasil (preço tempo real) + fallback simulado.
+B3 Day Trade Analyzer - Provedor de Dados v4.0
+Multi-source: TradingView (futuro real) + yfinance (candles) + HG Brasil (fallback).
 
-Estratégia de dados:
-1. yfinance: candles OHLCV intraday (5m, 15m, 1h) - delay ~15min
-2. HG Brasil API: preço atual em tempo real (IBOVESPA e USD/BRL)
-3. Fallback simulado: apenas quando todas as fontes falham
+Estratégia de preço tempo real:
+0. TradingView Scanner API: preço real do contrato futuro (WIN1!/WDO1!)
+1. HG Brasil + Basis estimado: calcula futuro a partir do spot
+2. HG Brasil spot puro: último fallback
 
+Candles OHLCV: yfinance (^BVSP / BRL=X) com delay ~15min.
 Rolagem automática de contratos B3 (WIN/WDO) por mês.
 Filtro estrito de horário B3: 09:00-18:00 BRT (UTC-3).
 """
@@ -178,115 +179,58 @@ class DataProvider:
         """
         Obtém preço em tempo real dos FUTUROS B3 (WIN/WDO).
         Estratégia multi-source com fallback:
-        1. Investing.com (scraping HTML) - preço real do contrato futuro
-        2. Google Finance (JSON embedded) - preço real do futuro
-        3. HG Brasil API (fallback) - IBOVESPA à vista / USD spot
+        0. TradingView Scanner API (preço real do contrato futuro contínuo)
+        1. HG Brasil + Basis estimado (fallback)
+        2. HG Brasil spot puro (último fallback)
         """
         precos = {}
 
-        # === SOURCE 1: Investing.com ===
+        # === SOURCE 0: TradingView Scanner API (PRINCIPAL - preço real do futuro) ===
         try:
-            headers = {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
-                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-                "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
-                "Accept-Encoding": "gzip, deflate, br",
-                "Referer": "https://www.google.com/",
-                "DNT": "1",
-                "Sec-Fetch-Dest": "document",
-                "Sec-Fetch-Mode": "navigate",
-                "Sec-Fetch-Site": "cross-site",
-            }
-            async with httpx.AsyncClient(timeout=12, follow_redirects=True) as client:
-                for ativo, url in INVESTING_URLS.items():
-                    try:
-                        resp = await client.get(url, headers=headers)
-                        if resp.status_code == 200:
-                            html = resp.text
-                            # Method 1: data-test attribute
-                            price_match = re.search(
-                                r'data-test="instrument-price-last">([\d.,]+)',
-                                html
-                            )
-                            # Method 2: JSON embedded current_price
-                            if not price_match:
-                                if ativo == "WIN":
-                                    price_match = re.search(r'"pair_id":941613[^}]*?"current_price":(\d+)', html)
-                                else:
-                                    price_match = re.search(r'"pair_id":996708[^}]*?"current_price":(\d+)', html)
-
-                            if price_match:
-                                price_str = price_match.group(1)
-                                # Parse price based on format
-                                if ',' in price_str and '.' in price_str:
-                                    price_str = price_str.replace('.', '').replace(',', '.')
-                                elif '.' in price_str:
-                                    parts = price_str.split('.')
-                                    if len(parts) == 2 and len(parts[1]) == 3:
-                                        price_str = price_str.replace('.', '')
-                                preco = float(price_str)
-
-                                var_match = re.search(
-                                    r'data-test="instrument-price-change-percent">\(?([+-]?[\d.,]+)%?\)?',
-                                    html
-                                )
-                                variacao = 0.0
-                                if var_match:
-                                    var_str = var_match.group(1).replace(',', '.')
-                                    try:
-                                        variacao = float(var_str)
-                                    except:
-                                        pass
-
-                                precos[ativo] = {
-                                    "preco": preco,
-                                    "variacao": variacao,
-                                    "fonte": "Investing.com (futuro real)",
-                                }
-                                logger.info(f"Investing.com {ativo}: {preco} ({variacao:+.2f}%)")
-                    except Exception as e:
-                        logger.warning(f"Erro Investing.com {ativo}: {e}")
+            async with httpx.AsyncClient(timeout=10) as client:
+                resp = await client.post(
+                    "https://scanner.tradingview.com/futures/scan",
+                    headers={"Content-Type": "application/json"},
+                    json={
+                        "symbols": {"tickers": ["BMFBOVESPA:WIN1!", "BMFBOVESPA:WDO1!"]},
+                        "columns": ["close", "change", "change_abs", "high", "low", "open", "volume"]
+                    }
+                )
+                if resp.status_code == 200:
+                    data = resp.json()
+                    for item in data.get("data", []):
+                        ticker = item["s"]  # e.g. "BMFBOVESPA:WIN1!"
+                        cols = item["d"]    # [close, change%, change_abs, high, low, open, volume]
+                        if "WIN" in ticker:
+                            precos["WIN"] = {
+                                "preco": float(cols[0]),
+                                "variacao": round(float(cols[1]), 2),
+                                "variacao_pts": float(cols[2]),
+                                "high": float(cols[3]),
+                                "low": float(cols[4]),
+                                "open": float(cols[5]),
+                                "volume": int(cols[6]) if cols[6] else 0,
+                                "fonte": "TradingView (futuro real)",
+                            }
+                            logger.info(f"TradingView WIN: {cols[0]} ({cols[1]:+.2f}%)")
+                        elif "WDO" in ticker:
+                            precos["WDO"] = {
+                                "preco": float(cols[0]),
+                                "variacao": round(float(cols[1]), 2),
+                                "variacao_pts": round(float(cols[2]), 1),
+                                "high": float(cols[3]),
+                                "low": float(cols[4]),
+                                "open": float(cols[5]),
+                                "volume": int(cols[6]) if cols[6] else 0,
+                                "fonte": "TradingView (futuro real)",
+                            }
+                            logger.info(f"TradingView WDO: {cols[0]} ({cols[1]:+.2f}%)")
         except Exception as e:
-            logger.warning(f"Erro geral Investing.com: {e}")
+            logger.warning(f"Erro TradingView Scanner: {e}")
 
-        # === SOURCE 2: Google Finance (alternative) ===
+        # === SOURCE 1: HG Brasil + Basis (fallback) ===
         ativos_faltando = [a for a in ["WIN", "WDO"] if a not in precos]
         if ativos_faltando:
-            try:
-                gf_urls = {
-                    "WIN": "https://www.google.com/finance/quote/WINM26:BVMF",
-                    "WDO": "https://www.google.com/finance/quote/WDOK26:BVMF",
-                }
-                headers_gf = {
-                    "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
-                    "Accept": "text/html",
-                    "Accept-Language": "pt-BR,pt;q=0.9",
-                }
-                async with httpx.AsyncClient(timeout=10, follow_redirects=True) as client:
-                    for ativo in ativos_faltando:
-                        if ativo in gf_urls:
-                            try:
-                                resp = await client.get(gf_urls[ativo], headers=headers_gf)
-                                if resp.status_code == 200:
-                                    # Google Finance stores price in data-last-price
-                                    m = re.search(r'data-last-price="([\d.]+)"', resp.text)
-                                    if m:
-                                        preco_gf = float(m.group(1))
-                                        precos[ativo] = {
-                                            "preco": preco_gf,
-                                            "variacao": 0,
-                                            "fonte": "Google Finance (futuro)",
-                                        }
-                                        logger.info(f"Google Finance {ativo}: {preco_gf}")
-                            except Exception as e:
-                                logger.warning(f"Erro Google Finance {ativo}: {e}")
-            except Exception as e:
-                logger.warning(f"Erro geral Google Finance: {e}")
-
-        # === SOURCE 2.5: Cálculo do Basis (se scraping falhou, estimar futuro a partir do spot) ===
-        ativos_faltando = [a for a in ["WIN", "WDO"] if a not in precos]
-        if ativos_faltando:
-            # Tentar obter spot do HG Brasil e calcular o futuro
             try:
                 async with httpx.AsyncClient(timeout=8) as client:
                     resp = await client.get(
@@ -304,7 +248,7 @@ class DataProvider:
                                 precos["WIN"] = {
                                     "preco": futuro_est,
                                     "variacao": float(ibov.get("variation", 0)),
-                                    "fonte": "HG Brasil + Basis estimado (futuro)",
+                                    "fonte": "HG Brasil + Basis estimado",
                                 }
                                 logger.info(f"Basis WIN: spot={spot} -> futuro={futuro_est}")
                         if "WDO" in ativos_faltando:
@@ -315,13 +259,13 @@ class DataProvider:
                                 precos["WDO"] = {
                                     "preco": futuro_est,
                                     "variacao": float(usd.get("variation", 0)),
-                                    "fonte": "HG Brasil + Basis estimado (futuro)",
+                                    "fonte": "HG Brasil + Basis estimado",
                                 }
                                 logger.info(f"Basis WDO: spot={spot} -> futuro={futuro_est}")
             except Exception as e:
-                logger.error(f"Erro cálculo basis: {e}")
+                logger.error(f"Erro HG Brasil + Basis: {e}")
 
-                # === SOURCE 3: HG Brasil (último fallback) ===
+        # === SOURCE 2: HG Brasil spot puro (último fallback) ===
         ativos_faltando = [a for a in ["WIN", "WDO"] if a not in precos]
         if ativos_faltando:
             try:
