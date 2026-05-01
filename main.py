@@ -433,8 +433,9 @@ async def get_status():
         "contratos_vigentes": contratos,
         "timeframes": TIMEFRAMES,
         "intervalo_refresh": "5 minutos",
-        "versao": "3.2.0",
-        "fontes_dados": ["yfinance (candles OHLCV)", "HG Brasil (preço tempo real)"],
+        "versao": "3.3.0",
+        "fontes_dados": ["yfinance (candles OHLCV)",
+            "Investing.com (preço futuro real)", "HG Brasil (preço tempo real)"],
         "mercado_aberto": mercado_aberto(),
         "usando_cache": app_state["usando_cache"],
         "cache_data_pregao": app_state["cache_data_pregao"],
@@ -750,12 +751,18 @@ async def get_demo(ativo: str = Query("WIN"), contratos: int = Query(1)):
 
 @app.get("/api/preco-realtime")
 async def get_preco_realtime():
-    """Retorna preço em tempo real via HG Brasil API"""
+    """Retorna preço em tempo real dos futuros B3 (Investing.com + HG Brasil fallback)"""
     try:
         precos = await app_state["provider"].obter_preco_realtime()
+        # Detectar fonte principal dinamicamente
+        fontes = set()
+        for info in precos.values():
+            if isinstance(info, dict) and "fonte" in info:
+                fontes.add(info["fonte"])
+        fonte_str = " + ".join(sorted(fontes)) if fontes else "Multi-source"
         return JSONResponse({
             "precos": precos,
-            "fonte": "HG Brasil API (tempo real)",
+            "fonte": fonte_str,
             "timestamp": datetime.now(BRT).strftime("%Y-%m-%d %H:%M:%S"),
         })
     except Exception as e:
