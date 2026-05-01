@@ -412,39 +412,26 @@
                     </div>
                 </div>
 
-                <!-- Trading Panel -->
-                <div class="pt-trading-panel" style="margin-top:8px;">
-                    <div class="pt-trade-side buy">
-                        <div class="pt-price-live buy-price" id="ptPrecoBuy">--</div>
+                <!-- Trading Panel - Unified -->
+                <div style="margin-top:8px;background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:14px;">
+                    <div class="pt-price-live" id="ptPrecoUnified" style="color:var(--accent-blue);font-size:26px;font-weight:800;text-align:center;padding:8px 0;font-family:monospace;">--</div>
+                    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:12px;">
                         <div class="pt-input-group">
-                            <label>Contratos</label>
-                            <input type="number" id="ptQtdBuy" value="1" min="1" max="999">
+                            <label>CONTRATOS</label>
+                            <input type="number" id="ptQtd" value="1" min="1" max="999">
                         </div>
                         <div class="pt-input-group">
-                            <label>Stop Loss (pts)</label>
-                            <input type="number" id="ptStopBuy" placeholder="Ex: 150" step="5">
+                            <label>STOP (pts)</label>
+                            <input type="number" id="ptStop" placeholder="150" step="5">
                         </div>
                         <div class="pt-input-group">
-                            <label>Take Profit (pts)</label>
-                            <input type="number" id="ptAlvoBuy" placeholder="Ex: 300" step="5">
+                            <label>ALVO (pts)</label>
+                            <input type="number" id="ptAlvo" placeholder="300" step="5">
                         </div>
-                        <button class="pt-trade-btn buy" id="ptBtnBuy" onclick="ptComprar()">COMPRAR</button>
                     </div>
-                    <div class="pt-trade-side sell">
-                        <div class="pt-price-live sell-price" id="ptPrecoSell">--</div>
-                        <div class="pt-input-group">
-                            <label>Contratos</label>
-                            <input type="number" id="ptQtdSell" value="1" min="1" max="999">
-                        </div>
-                        <div class="pt-input-group">
-                            <label>Stop Loss (pts)</label>
-                            <input type="number" id="ptStopSell" placeholder="Ex: 150" step="5">
-                        </div>
-                        <div class="pt-input-group">
-                            <label>Take Profit (pts)</label>
-                            <input type="number" id="ptAlvoSell" placeholder="Ex: 300" step="5">
-                        </div>
-                        <button class="pt-trade-btn sell" id="ptBtnSell" onclick="ptVender()">VENDER</button>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+                        <button class="pt-trade-btn buy" id="ptBtnBuy" onclick="ptComprar()" style="padding:14px;font-size:15px;">COMPRAR</button>
+                        <button class="pt-trade-btn sell" id="ptBtnSell" onclick="ptVender()" style="padding:14px;font-size:15px;">VENDER</button>
                     </div>
                 </div>
 
@@ -1057,8 +1044,7 @@ async function ptAtualizarPreco() {
         ptState.precoAtual = a.preco_atual || 0;
     }
     const fmt = ptState.precoAtual ? ptState.precoAtual.toLocaleString('pt-BR') : '--';
-    document.getElementById('ptPrecoBuy').textContent = fmt;
-    document.getElementById('ptPrecoSell').textContent = fmt;
+    document.getElementById('ptPrecoUnified').textContent = fmt;
 }
 
 // ---- Live Tick (every 5s) ----
@@ -1125,9 +1111,9 @@ function ptExecutarTrade(tipo) {
         return;
     }
     const isBuy = tipo === 'COMPRA';
-    const qtd = parseInt(document.getElementById(isBuy ? 'ptQtdBuy' : 'ptQtdSell').value) || 1;
-    const stopPts = parseFloat(document.getElementById(isBuy ? 'ptStopBuy' : 'ptStopSell').value) || 0;
-    const alvoPts = parseFloat(document.getElementById(isBuy ? 'ptAlvoBuy' : 'ptAlvoSell').value) || 0;
+    const qtd = parseInt(document.getElementById('ptQtd').value) || 1;
+    const stopPts = parseFloat(document.getElementById('ptStop').value) || 0;
+    const alvoPts = parseFloat(document.getElementById('ptAlvo').value) || 0;
     
     if (!stopPts || !alvoPts) {
         alert('Defina Stop Loss e Take Profit antes de operar!');
@@ -2546,15 +2532,11 @@ async function carregarSinaisIA() {
 
 function usarSinalIA(sinal) {
     if (sinal.tipo === 'COMPRA') {
-        document.getElementById('ptStopBuy').value = sinal.stop_pts;
-        document.getElementById('ptAlvoBuy').value = sinal.alvo_pts;
-        document.getElementById('ptStopSell').value = '';
-        document.getElementById('ptAlvoSell').value = '';
+        document.getElementById('ptStop').value = sinal.stop_pts;
+        document.getElementById('ptAlvo').value = sinal.alvo_pts;
     } else if (sinal.tipo === 'VENDA') {
-        document.getElementById('ptStopSell').value = sinal.stop_pts;
-        document.getElementById('ptAlvoSell').value = sinal.alvo_pts;
-        document.getElementById('ptStopBuy').value = '';
-        document.getElementById('ptAlvoBuy').value = '';
+        document.getElementById('ptStop').value = sinal.stop_pts;
+        document.getElementById('ptAlvo').value = sinal.alvo_pts;
     }
 }
 

@@ -1710,22 +1710,28 @@ async def get_sinais_ia(ativo: str = Query("WIN")):
         analise_4h = app_state["analises"].get(ativo, {}).get("4h", {})
         analise_1d = app_state["analises"].get(ativo, {}).get("1d", {})
         
-        preco = analise_5m.get("preco_atual", 0)
-        if not preco:
-            rt = app_state.get("preco_realtime", {}).get(ativo, {})
-            preco = rt.get("preco", 0)
-        
-        spec = {"WIN": {"tick": 5, "vp": 0.20, "atr_mult": 1.5}, "WDO": {"tick": 0.5, "vp": 10.0, "atr_mult": 1.2}}
-        s = spec.get(ativo, spec["WIN"])
-        
-        # === EXTRAIR INDICADORES DE TODOS OS TIMEFRAMES ===
+        # === HELPERS ===
         def get_val(analise, key, default=None):
             v = analise.get(key, default) if analise else default
             if isinstance(v, dict): return v.get("valor", v.get("status", default))
             return v
         
-        rsi_5m = get_val(analise_5m, "rsi", 50) or 50
-        rsi_15m = get_val(analise_15m, "rsi", 50) or 50
+        def safe_float(v, default=0):
+            try: return float(v) if v is not None else default
+            except (ValueError, TypeError): return default
+        
+        preco = safe_float(analise_5m.get("preco_atual", 0))
+        if not preco:
+            rt = app_state.get("preco_realtime", {}).get(ativo, {})
+            preco = safe_float(rt.get("preco", 0))
+        
+        spec = {"WIN": {"tick": 5, "vp": 0.20, "atr_mult": 1.5}, "WDO": {"tick": 0.5, "vp": 10.0, "atr_mult": 1.2}}
+        s = spec.get(ativo, spec["WIN"])
+        
+        # === EXTRAIR INDICADORES DE TODOS OS TIMEFRAMES ===
+        
+        rsi_5m = safe_float(get_val(analise_5m, "rsi", 50), 50)
+        rsi_15m = safe_float(get_val(analise_15m, "rsi", 50), 50)
         tendencia_5m = get_val(analise_5m, "tendencia", "LATERAL")
         tendencia_15m = get_val(analise_15m, "tendencia", "LATERAL")
         tendencia_1h = get_val(analise_1h, "tendencia", "LATERAL")
@@ -1737,23 +1743,23 @@ async def get_sinais_ia(ativo: str = Query("WIN")):
         macd_15m = get_val(analise_15m, "macd", "NEUTRO")
         if isinstance(macd_15m, dict): macd_15m = macd_15m.get("status", "NEUTRO")
         
-        ema9 = get_val(analise_5m, "ema9", 0) or 0
-        ema21 = get_val(analise_5m, "ema21", 0) or 0
-        ema50 = get_val(analise_5m, "ema50", 0) or 0
-        ema200 = get_val(analise_5m, "ema200", 0) or 0
-        vwap = get_val(analise_5m, "vwap", 0) or 0
+        ema9 = safe_float(get_val(analise_5m, "ema9", 0))
+        ema21 = safe_float(get_val(analise_5m, "ema21", 0))
+        ema50 = safe_float(get_val(analise_5m, "ema50", 0))
+        ema200 = safe_float(get_val(analise_5m, "ema200", 0))
+        vwap = safe_float(get_val(analise_5m, "vwap", 0))
         
-        atr = get_val(analise_5m, "atr", 150 if ativo == "WIN" else 15) or (150 if ativo == "WIN" else 15)
+        atr = safe_float(get_val(analise_5m, "atr", 150 if ativo == "WIN" else 15), 150 if ativo == "WIN" else 15)
         
         # Bollinger
         bb = analise_5m.get("bollinger", {}) if analise_5m else {}
-        bb_upper = bb.get("upper", 0) if isinstance(bb, dict) else 0
-        bb_lower = bb.get("lower", 0) if isinstance(bb, dict) else 0
+        bb_upper = safe_float(bb.get("upper", 0)) if isinstance(bb, dict) else 0
+        bb_lower = safe_float(bb.get("lower", 0)) if isinstance(bb, dict) else 0
         
         # ADX
         adx_val = get_val(analise_5m, "adx", 0)
         if isinstance(adx_val, dict): adx_val = adx_val.get("adx", 0)
-        adx_val = adx_val or 0
+        adx_val = safe_float(adx_val)
         
         # === TRIPLE SCREEN (Elder) ===
         # Tela 1 (longo): 1h/4h/1d - TENDENCIA
