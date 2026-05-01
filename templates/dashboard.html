@@ -3,9 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>B3 TRADE IRMAOS DOMINGUES - Mini-Indice & Mini-Dolar</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-annotation/3.0.1/chartjs-plugin-annotation.min.js"></script>
+    <title>ANALISE B3 - 24/7 - MINI-INDICE & MINI-DOLAR</title>
+    <script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -1014,7 +1013,7 @@
 <div class="login-screen" id="loginScreen">
     <div class="login-particles" id="loginParticles"></div>
     <div class="login-container">
-        <div class="login-logo">B3 TRADE IRMAOS DOMINGUES</div>
+        <div class="login-logo">ANALISE B3 - 24/7</div>
         <div class="login-subtitle">Analise Tecnica Inteligente</div>
         <div class="login-box">
             <div class="login-title">Acesso ao Sistema</div>
@@ -1029,7 +1028,7 @@
             <button class="login-btn" id="loginBtn" onclick="fazerLogin()">ENTRAR</button>
             <div class="login-error" id="loginError"></div>
         </div>
-        <div class="login-version">v2.0.0 - Estrategia Institucional</div>
+        <div class="login-version">v2.0.0 - ESTRATEGIA INSTITUCIONAL</div>
     </div>
 </div>
 
@@ -1039,8 +1038,8 @@
 <div class="landing-screen" id="landingScreen">
     <div class="landing-bg-lines"></div>
     <div class="landing-content">
-        <div class="landing-logo-big">B3 TRADE IRMAOS DOMINGUES</div>
-        <div class="landing-tagline">Mini-Indice & Mini-Dolar em Tempo Real</div>
+        <div class="landing-logo-big">ANALISE B3 - 24/7</div>
+        <div class="landing-tagline">MINI-INDICE & MINI-DOLAR em Tempo Real</div>
 
         <div class="landing-features">
             <div class="landing-feature">
@@ -1099,7 +1098,7 @@
     <!-- HEADER -->
     <div class="header">
         <div class="header-left">
-            <div class="logo">B3 TRADE IRMAOS DOMINGUES</div>
+            <div class="logo">ANALISE B3 - 24/7</div>
             <div class="header-status">
                 <div class="status-dot" id="statusDot"></div>
                 <span id="statusText">Conectando...</span>
@@ -1168,7 +1167,7 @@
 
             <div class="chart-container">
                 <div class="chart-label">PRICE + FIBONACCI</div>
-                <canvas id="priceChart"></canvas>
+                <div id="priceChart" style="width:100%;height:100%;"></div>
             </div>
 
             <div class="chart-sub-container">
@@ -1414,7 +1413,7 @@ function renderizarDemo(data) {
 
     let html = `
         <div style="text-align:center; margin-bottom:16px; font-size:13px; color:var(--text-muted);">
-            ${data.ativo} - ${data.data} | Estrategia Institucional com VWAP + EMA 9/21
+            ${data.ativo} - ${data.data} | ESTRATEGIA INSTITUCIONAL com VWAP + EMA 9/21
         </div>
         <div class="demo-summary">
             <div class="demo-stat">
@@ -1511,9 +1510,80 @@ function atualizarBanner(a){const banner=document.getElementById('sinalBanner'),
 
 function atualizarGraficos(a){if(!a.dados||a.dados.length===0)return;renderPriceChart(a);renderRSIChart(a);renderMACDChart(a);renderVolumeChart(a);}
 
-function renderPriceChart(a){const canvas=document.getElementById('priceChart'),ctx=canvas.getContext('2d');canvas.width=canvas.parentElement.clientWidth;canvas.height=canvas.parentElement.clientHeight;const W=canvas.width,H=canvas.height;ctx.clearRect(0,0,W,H);const dados=a.dados,closes=dados.map(d=>d.close);const mn=Math.min(...closes)*0.999,mx=Math.max(...closes)*1.001,rng=mx-mn||1,step=W/(closes.length-1||1);ctx.beginPath();ctx.strokeStyle='#60a5fa';ctx.lineWidth=2;closes.forEach((c,i)=>{const x=i*step,y=H-((c-mn)/rng)*H;i===0?ctx.moveTo(x,y):ctx.lineTo(x,y);});ctx.stroke();if(a.vwap){const vy=H-((a.vwap-mn)/rng)*H;ctx.beginPath();ctx.strokeStyle='#facc15';ctx.lineWidth=1;ctx.setLineDash([5,3]);ctx.moveTo(0,vy);ctx.lineTo(W,vy);ctx.stroke();ctx.setLineDash([]);}if(a.ema9){const ey=H-((a.ema9-mn)/rng)*H;ctx.beginPath();ctx.strokeStyle='#34d399';ctx.lineWidth=1;ctx.setLineDash([3,2]);ctx.moveTo(0,ey);ctx.lineTo(W,ey);ctx.stroke();ctx.setLineDash([]);}if(a.fibonacci){const fc={'0.0':'#888','0.236':'#60a5fa','0.382':'#a78bfa','0.5':'#facc15','0.618':'#f97316','0.786':'#ef4444','1.0':'#888'};Object.entries(a.fibonacci).forEach(([l,p])=>{if(p>=mn&&p<=mx){const fy=H-((p-mn)/rng)*H;ctx.beginPath();ctx.strokeStyle=fc[l]||'#555';ctx.lineWidth=0.5;ctx.setLineDash([2,4]);ctx.moveTo(0,fy);ctx.lineTo(W,fy);ctx.stroke();ctx.setLineDash([]);ctx.fillStyle=fc[l]||'#555';ctx.font='9px monospace';ctx.fillText(l+' ('+p.toLocaleString('pt-BR')+')',4,fy-3);}});}}
-
-function renderRSIChart(a){const canvas=document.getElementById('rsiChart'),ctx=canvas.getContext('2d');canvas.width=canvas.parentElement.clientWidth;canvas.height=canvas.parentElement.clientHeight;const W=canvas.width,H=canvas.height;ctx.clearRect(0,0,W,H);ctx.fillStyle='rgba(239,68,68,0.08)';ctx.fillRect(0,0,W,H*0.3);ctx.fillStyle='rgba(52,211,153,0.08)';ctx.fillRect(0,H*0.7,W,H*0.3);[0.3,0.7].forEach(l=>{ctx.beginPath();ctx.strokeStyle='rgba(255,255,255,0.1)';ctx.setLineDash([3,3]);ctx.moveTo(0,H*(1-l));ctx.lineTo(W,H*(1-l));ctx.stroke();ctx.setLineDash([]);});const rv=a.rsi||50,y=H*(1-rv/100);ctx.beginPath();ctx.arc(W-10,y,4,0,Math.PI*2);ctx.fillStyle=rv>70?'#ef4444':rv<30?'#34d399':'#60a5fa';ctx.fill();ctx.font='11px monospace';ctx.fillText('RSI: '+rv.toFixed(1),8,14);}
+function renderPriceChart(a){
+    const container = document.getElementById('priceChart');
+    container.innerHTML = '';
+    const W = container.clientWidth;
+    const H = container.clientHeight || 300;
+    
+    if (!a.dados || a.dados.length === 0) return;
+    
+    const chart = LightweightCharts.createChart(container, {
+        width: W, height: H,
+        layout: { background: { type: 'solid', color: 'transparent' }, textColor: '#9ca3af', fontSize: 10 },
+        grid: { vertLines: { color: 'rgba(255,255,255,0.03)' }, horzLines: { color: 'rgba(255,255,255,0.03)' } },
+        crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+        rightPriceScale: { borderColor: 'rgba(255,255,255,0.1)' },
+        timeScale: { borderColor: 'rgba(255,255,255,0.1)', timeVisible: true, secondsVisible: false },
+    });
+    
+    const candleSeries = chart.addCandlestickSeries({
+        upColor: '#22c55e', downColor: '#ef4444',
+        borderUpColor: '#22c55e', borderDownColor: '#ef4444',
+        wickUpColor: '#22c55e', wickDownColor: '#ef4444',
+    });
+    
+    const candles = a.dados.map(d => ({
+        time: Math.floor(new Date(d.time || d.date || Date.now()).getTime() / 1000),
+        open: d.open, high: d.high, low: d.low, close: d.close,
+    })).filter(c => !isNaN(c.time) && c.open > 0);
+    
+    if (candles.length > 0) {
+        // Sort by time and remove duplicates
+        candles.sort((a,b) => a.time - b.time);
+        const unique = [candles[0]];
+        for (let i = 1; i < candles.length; i++) {
+            if (candles[i].time > unique[unique.length-1].time) unique.push(candles[i]);
+        }
+        candleSeries.setData(unique);
+    }
+    
+    // VWAP line
+    if (a.vwap) {
+        const vwapLine = chart.addLineSeries({ color: '#facc15', lineWidth: 1, lineStyle: 2, title: 'VWAP' });
+        const vwapData = candles.map(c => ({ time: c.time, value: a.vwap }));
+        if (vwapData.length > 0) vwapLine.setData(vwapData);
+    }
+    
+    // EMA 9
+    if (a.ema9) {
+        const ema9Line = chart.addLineSeries({ color: '#34d399', lineWidth: 1, lineStyle: 2, title: 'EMA9' });
+        const ema9Data = candles.map(c => ({ time: c.time, value: a.ema9 }));
+        if (ema9Data.length > 0) ema9Line.setData(ema9Data);
+    }
+    
+    // EMA 21
+    if (a.ema21) {
+        const ema21Line = chart.addLineSeries({ color: '#f97316', lineWidth: 1, lineStyle: 2, title: 'EMA21' });
+        const ema21Data = candles.map(c => ({ time: c.time, value: a.ema21 }));
+        if (ema21Data.length > 0) ema21Line.setData(ema21Data);
+    }
+    
+    // Fibonacci levels
+    if (a.fibonacci) {
+        const fibColors = {'0.0':'#888','0.236':'#60a5fa','0.382':'#a78bfa','0.5':'#facc15','0.618':'#f97316','0.786':'#ef4444','1.0':'#888'};
+        Object.entries(a.fibonacci).forEach(([level, price]) => {
+            if (price > 0) {
+                const fibLine = chart.addLineSeries({ color: fibColors[level] || '#555', lineWidth: 0.5, lineStyle: 3, title: 'Fib ' + level });
+                fibLine.setData(candles.map(c => ({ time: c.time, value: price })));
+            }
+        });
+    }
+    
+    chart.timeScale().fitContent();
+    window._priceChart = chart;
+}
+function renderRSIChart(a){const canvas=document.getElementById('rsiChart'),ctx=canvas.getContext('2d');canvas.width=canvas.parentElement.clientWidth;canvas.height=canvas.parentElement.clientHeight;const W=canvas.width,H=canvas.height;ctx.clearRect(0,0,W,H);ctx.fillStyle='rgba(239,68,68,0.08)';ctx.fillRect(0,0,W,H*0.2);ctx.fillStyle='rgba(52,211,153,0.08)';ctx.fillRect(0,H*0.8,W,H*0.2);[0.2,0.8].forEach(l=>{ctx.beginPath();ctx.strokeStyle='rgba(255,255,255,0.1)';ctx.setLineDash([3,3]);ctx.moveTo(0,H*(1-l));ctx.lineTo(W,H*(1-l));ctx.stroke();ctx.setLineDash([]);});const rv=a.rsi||50,y=H*(1-rv/100);ctx.beginPath();ctx.arc(W-10,y,4,0,Math.PI*2);ctx.fillStyle=rv>80?'#ef4444':rv<20?'#34d399':'#60a5fa';ctx.fill();ctx.font='11px monospace';ctx.fillText('RSI: '+rv.toFixed(1),8,14);}
 
 function renderMACDChart(a){const canvas=document.getElementById('macdChart'),ctx=canvas.getContext('2d');canvas.width=canvas.parentElement.clientWidth;canvas.height=canvas.parentElement.clientHeight;const W=canvas.width,H=canvas.height;ctx.clearRect(0,0,W,H);ctx.beginPath();ctx.strokeStyle='rgba(255,255,255,0.1)';ctx.moveTo(0,H/2);ctx.lineTo(W,H/2);ctx.stroke();const macd=a.macd||0,signal=a.macd_signal||0,hist=a.macd_hist||0;ctx.fillStyle=hist>=0?'rgba(52,211,153,0.6)':'rgba(239,68,68,0.6)';const bH=Math.min(Math.abs(hist)*2,H/2-5);ctx.fillRect(W/2-20,hist>=0?H/2-bH:H/2,40,bH);ctx.fillStyle='#e2e8f0';ctx.font='10px monospace';ctx.fillText('MACD: '+macd.toFixed(2)+'  Signal: '+signal.toFixed(2)+'  Hist: '+hist.toFixed(2),8,14);}
 
@@ -1534,6 +1604,109 @@ function atualizarSR(p){const el=document.getElementById('srSection'),sr=p.supor
 function atualizarMultiTF(p){const grid=document.getElementById('multiTfGrid'),mtf=p.multi_timeframe||{};const tfs=['5m','15m','1h','4h','1d'],labels=['5M','15M','1H','4H','1D'];let h='';tfs.forEach((tf,i)=>{const info=mtf[tf]||{},tend=info.tendencia||'--';let c='var(--text-muted)';if(tend==='ALTA')c='var(--accent-green)';else if(tend==='BAIXA')c='var(--accent-red)';h+='<div class="tf-cell"><div class="tf-cell-header">'+labels[i]+'</div><div class="tf-cell-value" style="color:'+c+'">'+tend+'</div></div>';});grid.innerHTML=h;}
 
 carregarDados();
+
+
+
+// Fetch real candle data for charts
+async function fetchCandles(ativo, timeframe) {
+    try {
+        const res = await fetch('/api/candles?ativo=' + ativo + '&timeframe=' + timeframe);
+        const data = await res.json();
+        if (data.candles && data.candles.length > 0) {
+            // Update contract display
+            const contratoEl = document.getElementById('contratoInfo');
+            if (contratoEl) contratoEl.textContent = data.contrato;
+            return data.candles;
+        }
+    } catch(e) { console.log('Candles fetch error:', e); }
+    return null;
+}
+
+// User Management
+let currentUserAdmin = false;
+let currentUserName = '';
+
+function abrirUserMgmt() {
+    document.getElementById('userOverlay').classList.add('active');
+    if (!currentUserAdmin) {
+        document.getElementById('criarUserBox').style.display = 'none';
+    }
+}
+
+function fecharUserMgmt() {
+    document.getElementById('userOverlay').classList.remove('active');
+}
+
+async function alterarSenha() {
+    const senhaAtual = document.getElementById('senhaAtual').value;
+    const senhaNova = document.getElementById('senhaNova').value;
+    if (!senhaAtual || !senhaNova) { document.getElementById('senhaMsg').innerHTML = '<span style="color:var(--accent-red)">Preencha todos os campos</span>'; return; }
+    if (senhaNova.length < 6) { document.getElementById('senhaMsg').innerHTML = '<span style="color:var(--accent-red)">Senha deve ter no minimo 6 caracteres</span>'; return; }
+    try {
+        const res = await fetch('/api/usuarios/alterar-senha', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ usuario: currentUserName, senha_atual: senhaAtual, senha_nova: senhaNova })
+        });
+        const data = await res.json();
+        if (data.sucesso) {
+            document.getElementById('senhaMsg').innerHTML = '<span style="color:var(--accent-green)">Senha alterada com sucesso!</span>';
+            document.getElementById('senhaAtual').value = '';
+            document.getElementById('senhaNova').value = '';
+        } else {
+            document.getElementById('senhaMsg').innerHTML = '<span style="color:var(--accent-red)">' + data.mensagem + '</span>';
+        }
+    } catch (e) {
+        document.getElementById('senhaMsg').innerHTML = '<span style="color:var(--accent-red)">Erro ao alterar senha</span>';
+    }
+}
+
+async function criarUsuario() {
+    const novoUser = document.getElementById('novoUser').value.trim().toLowerCase();
+    const novoSenha = document.getElementById('novoUserSenha').value;
+    if (!novoUser || !novoSenha) { document.getElementById('criarMsg').innerHTML = '<span style="color:var(--accent-red)">Preencha todos os campos</span>'; return; }
+    try {
+        const res = await fetch('/api/usuarios/criar', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ usuario: novoUser, senha: novoSenha, admin_user: currentUserName })
+        });
+        const data = await res.json();
+        if (data.sucesso) {
+            document.getElementById('criarMsg').innerHTML = '<span style="color:var(--accent-green)">' + data.mensagem + '</span>';
+            document.getElementById('novoUser').value = '';
+            document.getElementById('novoUserSenha').value = '';
+        } else {
+            document.getElementById('criarMsg').innerHTML = '<span style="color:var(--accent-red)">' + data.mensagem + '</span>';
+        }
+    } catch (e) {
+        document.getElementById('criarMsg').innerHTML = '<span style="color:var(--accent-red)">Erro ao criar usuario</span>';
+    }
+}
+
+// Capital Simulation
+async function carregarSimulacao() {
+    try {
+        const res = await fetch('/api/simulacao-capital?ativo=' + (document.querySelector('.tab-btn.active')?.dataset?.ativo || 'WIN'));
+        const data = await res.json();
+        if (data.simulacoes) {
+            let simHtml = '<div style="margin-top:12px;"><h4 style="color:var(--accent-blue); margin-bottom:8px;">SIMULACAO DE CAPITAL - ' + data.contrato + '</h4>';
+            simHtml += '<div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(120px, 1fr)); gap:8px;">';
+            data.simulacoes.forEach(s => {
+                const color = s.resultado >= 0 ? 'var(--accent-green)' : 'var(--accent-red)';
+                simHtml += '<div style="background:var(--bg-card); border:1px solid var(--border); border-radius:8px; padding:10px; text-align:center;">';
+                simHtml += '<div style="font-size:11px; color:var(--text-muted);">' + s.contratos + ' CONTRATO' + (s.contratos > 1 ? 'S' : '') + '</div>';
+                simHtml += '<div style="font-size:16px; font-weight:700; color:' + color + ';">R$ ' + s.resultado.toLocaleString('pt-BR') + '</div>';
+                simHtml += '<div style="font-size:10px; color:var(--text-muted);">' + s.pontos + ' pts</div>';
+                simHtml += '</div>';
+            });
+            simHtml += '</div></div>';
+            const simContainer = document.getElementById('simulacaoCapital');
+            if (simContainer) simContainer.innerHTML = simHtml;
+        }
+    } catch(e) { console.log('Simulacao error:', e); }
+}
+
 </script>
 </body>
 </html>
