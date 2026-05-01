@@ -1,7 +1,8 @@
 """
-B3 Day Trade Analyzer - Engine de Análise Técnica
+B3 TRADE IRMÃOS DOMINGUES - Engine de Análise Técnica
 Foco: Mini-Índice (WIN) e Mini-Dólar (WDO)
-Indicadores: Fibonacci, RSI, MACD, Volume, Anti-Violinada
+Indicadores: VWAP, EMA 9/21, Fibonacci, RSI, MACD, ATR, Volume, Anti-Violinada
+Estratégia: Pullback em EMA/VWAP com confirmação de candle
 Timeframes: 5min, 15min, 1h, 4h, Diário
 """
 
@@ -121,6 +122,85 @@ def calcular_macd(dados: pd.DataFrame, rapida: int = 12, lenta: int = 26, sinal:
     macd_histograma = macd_linha - macd_sinal
 
     return macd_linha, macd_sinal, macd_histograma
+
+
+def calcular_vwap(dados: pd.DataFrame) -> pd.Series:
+    """Calcula VWAP (Volume Weighted Average Price)."""
+    tp = (dados['high'] + dados['low'] + dados['close']) / 3
+    vwap = (tp * dados['volume']).cumsum() / dados['volume'].cumsum()
+    return vwap
+
+
+def calcular_atr_series(dados: pd.DataFrame, periodo: int = 14) -> pd.Series:
+    """Calcula ATR como série completa."""
+    high = dados['high']
+    low = dados['low']
+    close = dados['close']
+    tr1 = high - low
+    tr2 = abs(high - close.shift(1))
+    tr3 = abs(low - close.shift(1))
+    tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+    atr = tr.rolling(window=periodo, min_periods=1).mean()
+    return atr
+
+
+def detectar_lateralizacao(dados: pd.DataFrame, lookback: int = 20) -> dict:
+    """Detecta mercado lateralizado. Bloqueia entradas em range."""
+    recente = dados.tail(lookback)
+    ema9 = recente['close'].ewm(span=9, adjust=False).mean()
+    ema21 = recente['close'].ewm(span=21, adjust=False).mean()
+    diff = ema9 - ema21
+    cruzamentos = 0
+    for i in range(1, len(diff)):
+        if (diff.iloc[i] > 0 and diff.iloc[i-1] <= 0) or (diff.iloc[i] < 0 and diff.iloc[i-1] >= 0):
+            cruzamentos += 1
+    preco_range = recente['high'].max() - recente['low'].min()
+    deslocamento = abs(recente['close'].iloc[-1] - recente['close'].iloc[0])
+    ratio_desloc = deslocamento / preco_range if preco_range > 0 else 0
+    atr = calcular_atr_series(recente)
+    atr_vs_range = atr.mean() / preco_range if preco_range > 0 else 0
+    score = 0
+    if cruzamentos >= 3: score += 40
+    elif cruzamentos >= 2: score += 25
+    if ratio_desloc < 0.15: score += 35
+    elif ratio_desloc < 0.30: score += 20
+    if atr_vs_range > 0.25: score += 25
+    lateral = score >= 50
+    return {"lateral": lateral, "score": min(score, 100), "cruzamentos_ema": cruzamentos,
+            "deslocamento_pct": round(ratio_desloc * 100, 1),
+            "status": "LATERAL - BLOQUEADO" if lateral else "TENDENCIAL"}
+
+
+def detectar_pullback(dados: pd.DataFrame, tendencia: str) -> dict:
+    """Detecta pullback a favor da tendência em EMA 9 ou VWAP."""
+    if len(dados) < 21:
+        return {"pullback": False, "tipo": "NENHUM", "zona": "N/A", "candle_reversao": False, "confirmado": False}
+    preco = dados['close'].iloc[-1]
+    open_atual = dados['open'].iloc[-1]
+    high_atual = dados['high'].iloc[-1]
+    low_atual = dados['low'].iloc[-1]
+    ema9 = dados['close'].ewm(span=9, adjust=False).mean().iloc[-1]
+    vwap = calcular_vwap(dados).iloc[-1]
+    atr = calcular_atr_series(dados).iloc[-1]
+    tolerancia = atr * 0.5
+    pullback = False
+    zona = "N/A"
+    candle_reversao = False
+    if tendencia == "ALTA":
+        if abs(low_atual - ema9) < tolerancia or (low_atual <= ema9 <= preco):
+            pullback = True; zona = "EMA 9"
+        elif abs(low_atual - vwap) < tolerancia or (low_atual <= vwap <= preco):
+            pullback = True; zona = "VWAP"
+        candle_reversao = preco > open_atual and preco > ema9
+    elif tendencia == "BAIXA":
+        if abs(high_atual - ema9) < tolerancia or (preco <= ema9 <= high_atual):
+            pullback = True; zona = "EMA 9"
+        elif abs(high_atual - vwap) < tolerancia or (preco <= vwap <= high_atual):
+            pullback = True; zona = "VWAP"
+        candle_reversao = preco < open_atual and preco < ema9
+    return {"pullback": pullback,
+            "tipo": f"PULLBACK {'COMPRA' if tendencia == 'ALTA' else 'VENDA'}" if pullback else "NENHUM",
+            "zona": zona, "candle_reversao": candle_reversao, "confirmado": pullback and candle_reversao}
 
 
 def calcular_fibonacci(dados: pd.DataFrame, lookback: int = 50) -> FibonacciLevels:
@@ -370,11 +450,16 @@ def gerar_sinais(
     macd_sinal: float,
     macd_hist: float,
     volume: AnaliseVolume,
-    violinada_score: float
+    violinada_score: float,
+    tendencia: str = "LATERAL",
+    pullback_info: dict = None,
+    lateralizacao: dict = None,
+    vwap_atual: float = 0,
 ) -> list:
     """
-    Gera sinais de entrada com base na confluência de indicadores.
-    Requer pelo menos 3 confirmações para gerar sinal.
+    Gera sinais com estratégia institucional.
+    Hierarquia: Contexto > Zonas de Preço > Fluxo > Execução.
+    Pullback em EMA 9/VWAP com candle de reversão + confluência.
     """
     sinais = []
     preco = dados['close'].iloc[-1]
@@ -382,6 +467,39 @@ def gerar_sinais(
     motivos_venda = []
     confianca_compra = 0
     confianca_venda = 0
+
+    # === BLOQUEIO: Mercado lateralizado ===
+    if lateralizacao and lateralizacao.get("lateral"):
+        return []
+
+    # === FILTRO DE TENDÊNCIA (EMA 9/21 + VWAP) ===
+    if tendencia == "ALTA":
+        motivos_compra.append("Tendência de alta (EMA 9 > EMA 21, preço acima VWAP)")
+        confianca_compra += 15
+    elif tendencia == "BAIXA":
+        motivos_venda.append("Tendência de baixa (EMA 9 < EMA 21, preço abaixo VWAP)")
+        confianca_venda += 15
+    else:
+        confianca_compra -= 20
+        confianca_venda -= 20
+
+    # === PULLBACK + CANDLE DE REVERSÃO ===
+    if pullback_info and pullback_info.get("confirmado"):
+        zona = pullback_info.get("zona", "")
+        if tendencia == "ALTA":
+            motivos_compra.append(f"Pullback confirmado na {zona} com candle de reversão")
+            confianca_compra += 30
+        elif tendencia == "BAIXA":
+            motivos_venda.append(f"Pullback confirmado na {zona} com candle de reversão")
+            confianca_venda += 30
+    elif pullback_info and pullback_info.get("pullback"):
+        zona = pullback_info.get("zona", "")
+        if tendencia == "ALTA":
+            motivos_compra.append(f"Pullback na {zona} (aguardando confirmação)")
+            confianca_compra += 15
+        elif tendencia == "BAIXA":
+            motivos_venda.append(f"Pullback na {zona} (aguardando confirmação)")
+            confianca_venda += 15
 
     # --- RSI ---
     if rsi < 30:
@@ -463,16 +581,26 @@ def gerar_sinais(
         confianca_compra -= 15
         confianca_venda -= 15
 
-    # --- Gerar sinais se houver confluência suficiente ---
+    # === ATR volatilidade (filtro) ===
     atr = _calcular_atr(dados)
+    atr_medio_hist = calcular_atr_series(dados, 50).mean() if len(dados) >= 50 else atr
+    if atr < atr_medio_hist * 0.5:
+        confianca_compra -= 15
+        confianca_venda -= 15
+        motivos_compra.append("Baixa volatilidade (ATR reduzido)")
+        motivos_venda.append("Baixa volatilidade (ATR reduzido)")
 
-    if confianca_compra >= 40 and len(motivos_compra) >= 2:
-        stop = preco - atr * 2
-        tp1 = preco + atr * 1.5
-        tp2 = preco + atr * 3
-        tp3 = preco + atr * 5
+    # === GERAR SINAIS (stop técnico em estrutura de preço) ===
+    if confianca_compra >= 40 and len(motivos_compra) >= 2 and tendencia == "ALTA":
+        ultimos_lows = dados['low'].tail(10)
+        stop = round(float(ultimos_lows.min()), 2)
+        risco = preco - stop
+        if risco <= 0: risco = atr * 2; stop = round(preco - risco, 2)
+        tp1 = round(preco + risco * 1.0, 2)
+        tp2 = round(preco + risco * 2.0, 2)
+        tp3 = round(preco + risco * 3.0, 2)
 
-        rr = (tp1 - preco) / (preco - stop) if preco > stop else 0
+        rr = 2.0
 
         violinada_risco = "BAIXO" if violinada_score < 30 else ("MEDIO" if violinada_score < 60 else "ALTO")
 
@@ -493,13 +621,16 @@ def gerar_sinais(
             violinada_risco=violinada_risco
         ))
 
-    if confianca_venda >= 40 and len(motivos_venda) >= 2:
-        stop = preco + atr * 2
-        tp1 = preco - atr * 1.5
-        tp2 = preco - atr * 3
-        tp3 = preco - atr * 5
+    if confianca_venda >= 40 and len(motivos_venda) >= 2 and tendencia == "BAIXA":
+        ultimos_highs = dados['high'].tail(10)
+        stop = round(float(ultimos_highs.max()), 2)
+        risco = stop - preco
+        if risco <= 0: risco = atr * 2; stop = round(preco + risco, 2)
+        tp1 = round(preco - risco * 1.0, 2)
+        tp2 = round(preco - risco * 2.0, 2)
+        tp3 = round(preco - risco * 3.0, 2)
 
-        rr = (preco - tp1) / (stop - preco) if stop > preco else 0
+        rr = 2.0
 
         violinada_risco = "BAIXO" if violinada_score < 30 else ("MEDIO" if violinada_score < 60 else "ALTO")
 
@@ -582,19 +713,34 @@ def analisar_completo(dados: pd.DataFrame, timeframe: str, ativo: str) -> dict:
     violinada = detectar_violinada(dados)
     suportes, resistencias = calcular_suportes_resistencias(dados)
 
-    sinais = gerar_sinais(dados, fibonacci, rsi_atual, macd_v, macd_s, macd_h, volume, violinada)
+    # Novos indicadores - Estratégia Irmãos Domingues
+    vwap_series = calcular_vwap(dados)
+    vwap_atual = vwap_series.iloc[-1]
+    atr_series_data = calcular_atr_series(dados)
+    atr_atual = atr_series_data.iloc[-1]
+    lateralizacao = detectar_lateralizacao(dados)
 
-    # Determinar tendência geral
+    # Tendência baseada em EMA 9/21 + VWAP
+    ema_9 = dados['close'].ewm(span=9, adjust=False).mean().iloc[-1]
+    ema_21 = dados['close'].ewm(span=21, adjust=False).mean().iloc[-1]
     ema_20 = dados['close'].ewm(span=20, adjust=False).mean().iloc[-1]
     ema_50 = dados['close'].ewm(span=50, adjust=False).mean().iloc[-1]
     preco = dados['close'].iloc[-1]
 
-    if preco > ema_20 > ema_50:
+    if preco > vwap_atual and ema_9 > ema_21:
         tendencia = "ALTA"
-    elif preco < ema_20 < ema_50:
+    elif preco < vwap_atual and ema_9 < ema_21:
         tendencia = "BAIXA"
     else:
         tendencia = "LATERAL"
+    if lateralizacao["lateral"]:
+        tendencia = "LATERAL"
+
+    pullback_info = detectar_pullback(dados, tendencia)
+
+    sinais = gerar_sinais(dados, fibonacci, rsi_atual, macd_v, macd_s, macd_h,
+        volume, violinada, tendencia=tendencia, pullback_info=pullback_info,
+        lateralizacao=lateralizacao, vwap_atual=vwap_atual)
 
     # RSI status
     if rsi_atual > 70:
@@ -698,6 +844,17 @@ def analisar_completo(dados: pd.DataFrame, timeframe: str, ativo: str) -> dict:
         "resistencias": resistencias,
         "violinada_score": round(violinada, 1),
         "candles": candles_data,
+        "ema_9": round(float(ema_9), 2),
+        "ema_21": round(float(ema_21), 2),
         "ema_20": round(float(ema_20), 2),
         "ema_50": round(float(ema_50), 2),
+        "vwap": round(float(vwap_atual), 2),
+        "atr": round(float(atr_atual), 2),
+        "lateralizacao": lateralizacao,
+        "pullback": pullback_info,
+        "horario_operacional": {
+            "janela_1": "09:05 - 11:30",
+            "janela_2": "14:00 - 16:30",
+            "aviso": "Evitar primeiros 5 min e horários de notícias",
+        },
     }
