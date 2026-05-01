@@ -978,6 +978,7 @@ async def get_replay(ativo: str = Query("WIN"), contratos: int = Query(1)):
                     tend = "BAIXA"
                 else:
                     tend = "LATERAL"
+                tend_raw = tend  # Save raw trend for fallback
                 if lat.get("lateral"):
                     tend = "LATERAL"
                 pb = detectar_pullback(window, tend)
@@ -986,6 +987,7 @@ async def get_replay(ativo: str = Query("WIN"), contratos: int = Query(1)):
                     lateralizacao=lat, vwap_atual=vwap_v)
                 return {
                     "tendencia": tend,
+                    "tendencia_raw": tend_raw,
                     "rsi": round(rsi_v, 1),
                     "macd_hist": round(mhv, 2),
                     "volume_pressao": vol.pressao,
@@ -1061,7 +1063,7 @@ async def get_replay(ativo: str = Query("WIN"), contratos: int = Query(1)):
                 w5 = dados_5m.iloc[max(0, pos_idx - 100):pos_idx + 1]
                 a5 = analisar_tf(w5) if len(w5) >= 30 else None
 
-                if a5 and (a5["sinais"] or a5.get("tendencia") in ("ALTA", "BAIXA")):
+                if a5 and (a5["sinais"] or a5.get("tendencia_raw", a5.get("tendencia")) in ("ALTA", "BAIXA")):
                     # Confirm with 15m and 1h
                     w15 = get_window(dados_15m, ts)
                     w1h = get_window(dados_1h, ts)
@@ -1076,7 +1078,7 @@ async def get_replay(ativo: str = Query("WIN"), contratos: int = Query(1)):
                         # Estrategia simplificada: RSI + MACD + tendencia
                         rsi5 = a5.get("rsi", 50)
                         macd5 = a5.get("macd_hist", 0)
-                        tend5 = a5["tendencia"]
+                        tend5 = a5.get("tendencia_raw", a5["tendencia"])  # Use raw trend, ignore lateralization
                         atr_s = calcular_atr_series(w5)
                         atr_val = float(atr_s.iloc[-1]) if len(atr_s) > 0 else 100
                         p = a5["preco"]
@@ -1118,13 +1120,14 @@ async def get_replay(ativo: str = Query("WIN"), contratos: int = Query(1)):
                     motivo_conf = []
 
                     if a15:
-                        if tipo_5m == "COMPRA" and a15["tendencia"] in ("ALTA",):
+                        t15 = a15.get("tendencia_raw", a15["tendencia"])
+                        if tipo_5m == "COMPRA" and t15 in ("ALTA",):
                             conf_15m = True
-                            motivo_conf.append(f"15m: Tendencia {a15['tendencia']} | RSI {a15['rsi']}")
-                        elif tipo_5m == "VENDA" and a15["tendencia"] in ("BAIXA",):
+                            motivo_conf.append(f"15m: Tendencia {t15} | RSI {a15['rsi']}")
+                        elif tipo_5m == "VENDA" and t15 in ("BAIXA",):
                             conf_15m = True
-                            motivo_conf.append(f"15m: Tendencia {a15['tendencia']} | RSI {a15['rsi']}")
-                        elif a15["tendencia"] == "LATERAL":
+                            motivo_conf.append(f"15m: Tendencia {t15} | RSI {a15['rsi']}")
+                        elif t15 == "LATERAL":
                             conf_15m = True  # Lateral nao contradiz
                             motivo_conf.append(f"15m: Lateral (nao contradiz)")
                     else:
@@ -1132,12 +1135,13 @@ async def get_replay(ativo: str = Query("WIN"), contratos: int = Query(1)):
                         motivo_conf.append("15m: Sem dados suficientes")
 
                     if a1h:
-                        if tipo_5m == "COMPRA" and a1h["tendencia"] in ("ALTA", "LATERAL"):
+                        t1h = a1h.get("tendencia_raw", a1h["tendencia"])
+                        if tipo_5m == "COMPRA" and t1h in ("ALTA", "LATERAL"):
                             conf_1h = True
-                            motivo_conf.append(f"1h: Tendencia {a1h['tendencia']} | RSI {a1h['rsi']}")
-                        elif tipo_5m == "VENDA" and a1h["tendencia"] in ("BAIXA", "LATERAL"):
+                            motivo_conf.append(f"1h: Tendencia {t1h} | RSI {a1h['rsi']}")
+                        elif tipo_5m == "VENDA" and t1h in ("BAIXA", "LATERAL"):
                             conf_1h = True
-                            motivo_conf.append(f"1h: Tendencia {a1h['tendencia']} | RSI {a1h['rsi']}")
+                            motivo_conf.append(f"1h: Tendencia {t1h} | RSI {a1h['rsi']}")
                     else:
                         conf_1h = True
                         motivo_conf.append("1h: Sem dados suficientes")
