@@ -1,14 +1,14 @@
 """
-B3 Day Trade Analyzer - Provedor de Dados
-Camada modular para obter dados de mercado da B3.
+B3 Day Trade Analyzer - Provedor de Dados v3.0
+Multi-source: yfinance (candles) + HG Brasil (preço tempo real) + fallback simulado.
 
-Fontes suportadas:
-1. yfinance (padrão - gratuito, delay ~15min)
-2. Brapi (API brasileira - gratuito com limites)
-3. Profit Pro / Tryd (via bridge HTTP - requer setup local)
-4. CSV/JSON manual upload
+Estratégia de dados:
+1. yfinance: candles OHLCV intraday (5m, 15m, 1h) - delay ~15min
+2. HG Brasil API: preço atual em tempo real (IBOVESPA e USD/BRL)
+3. Fallback simulado: apenas quando todas as fontes falham
 
-Para day trade real, recomenda-se configurar o bridge do Profit Pro.
+Rolagem automática de contratos B3 (WIN/WDO) por mês.
+Filtro estrito de horário B3: 09:00-18:00 BRT (UTC-3).
 """
 
 import pandas as pd
@@ -17,53 +17,45 @@ import yfinance as yf
 import httpx
 import os
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 import logging
 
 logger = logging.getLogger(__name__)
 
-# Mapeamento de meses B3 (código de vencimento)
+BRT = timezone(timedelta(hours=-3))
+
+# Mapeamento de meses B3
 MESES_B3 = {
     1: "F", 2: "G", 3: "H", 4: "J", 5: "K", 6: "M",
     7: "N", 8: "Q", 9: "U", 10: "V", 11: "X", 12: "Z"
 }
 
-# WIN vence na quarta-feira mais próxima do dia 15 dos meses pares (G, J, M, Q, V, Z)
-# WDO vence no 1o dia útil de cada mês
-VENCIMENTOS_WIN = ["G", "J", "M", "Q", "V", "Z"]  # Fev, Abr, Jun, Ago, Out, Dez
+VENCIMENTOS_WIN = [2, 4, 6, 8, 10, 12]  # Meses pares
 
 
 def obter_contrato_vigente(ativo: str) -> dict:
     """Detecta automaticamente o contrato vigente baseado na data atual e calendário B3"""
-    from datetime import datetime, timedelta
-    hoje = datetime.now()
+    hoje = datetime.now(BRT)
     mes = hoje.month
-    ano = hoje.year % 100  # 26 para 2026
+    ano = hoje.year % 100
 
     if ativo == "WIN":
-        # WIN vence nos meses pares (G=Fev, J=Abr, M=Jun, Q=Ago, V=Out, Z=Dez)
-        # Após o vencimento do mês par atual, rola para o próximo
-        meses_venc = [2, 4, 6, 8, 10, 12]
         proximo_venc = None
-        for m in meses_venc:
+        for m in VENCIMENTOS_WIN:
             if m >= mes:
-                # Se estamos no mês de vencimento, verificar se já passou dia 15
-                if m == mes and hoje.day > 18:  # margem de segurança após vencimento
+                if m == mes and hoje.day > 18:
                     continue
                 proximo_venc = m
                 break
         if proximo_venc is None:
-            # Passou dezembro, vai para fevereiro do próximo ano
             proximo_venc = 2
             ano += 1
-
         letra = MESES_B3[proximo_venc]
         ticker_b3 = f"WIN{letra}{ano}"
-        ticker_yf = "^BVSP"  # Ibovespa como proxy
         return {
             "ticker_b3": ticker_b3,
-            "yfinance": ticker_yf,
+            "yfinance": "^BVSP",
             "nome": f"Mini-Índice ({ticker_b3})",
             "tick": 5,
             "valor_tick": 0.20,
@@ -71,24 +63,19 @@ def obter_contrato_vigente(ativo: str) -> dict:
             "vencimento_mes": proximo_venc,
             "vencimento_ano": 2000 + ano,
         }
-
     elif ativo == "WDO":
-        # WDO vence no 1o dia útil de cada mês
-        # Se já passou o 1o dia útil, rola para o próximo mês
         proximo_mes = mes
         proximo_ano = ano
-        if hoje.day > 3:  # margem - após dia 3 já rolou
+        if hoje.day > 3:
             proximo_mes = mes + 1
             if proximo_mes > 12:
                 proximo_mes = 1
                 proximo_ano += 1
-
         letra = MESES_B3[proximo_mes]
         ticker_b3 = f"WDO{letra}{proximo_ano}"
-        ticker_yf = "BRL=X"  # USD/BRL como proxy
         return {
             "ticker_b3": ticker_b3,
-            "yfinance": ticker_yf,
+            "yfinance": "BRL=X",
             "nome": f"Mini-Dólar ({ticker_b3})",
             "tick": 0.5,
             "valor_tick": 10.00,
@@ -96,65 +83,86 @@ def obter_contrato_vigente(ativo: str) -> dict:
             "vencimento_mes": proximo_mes,
             "vencimento_ano": 2000 + proximo_ano,
         }
-
     return {"ticker_b3": ativo, "yfinance": ativo, "nome": ativo, "tick": 1, "valor_tick": 1.0, "contrato": ativo}
 
 
-# Mapeamento de ativos B3 (agora dinâmico via obter_contrato_vigente)
-ATIVOS_B3 = {
-    "WIN": {
-        "yfinance": "^BVSP",
-        "nome": "Mini-Índice (WIN)",
-        "tick": 5,
-        "valor_tick": 0.20,
-        "contrato": "WINFUT",
-    },
-    "WDO": {
-        "yfinance": "BRL=X",
-        "nome": "Mini-Dólar (WDO)",
-        "tick": 0.5,
-        "valor_tick": 10.00,
-        "contrato": "WDOFUT",
-    }
-}
-
-# Mapeamento de timeframes para yfinance
+# Timeframes para yfinance
 TIMEFRAME_MAP = {
     "5m": {"interval": "5m", "period": "5d"},
     "15m": {"interval": "15m", "period": "5d"},
     "1h": {"interval": "1h", "period": "1mo"},
-    "4h": {"interval": "1h", "period": "3mo"},  # Agregar para 4h
+    "4h": {"interval": "1h", "period": "3mo"},
     "1d": {"interval": "1d", "period": "6mo"},
 }
 
 
 class DataProvider:
-    """Provedor de dados abstrato com múltiplas fontes"""
+    """Provedor de dados multi-source para B3"""
 
     def __init__(self, source: str = "yfinance"):
         self.source = source
         self.cache = {}
         self.cache_ttl = 60  # segundos
         self.bridge_url = os.getenv("BRIDGE_URL", "http://localhost:8081")
-        self.brapi_token = os.getenv("BRAPI_TOKEN", "")
-        # Detectar contratos vigentes automaticamente
+        self.hg_api_key = os.getenv("HG_API_KEY", "demo")
         self.contratos = {}
+        self.preco_realtime = {}  # Cache de preço tempo real do HG Brasil
         for ativo in ["WIN", "WDO"]:
             self.contratos[ativo] = obter_contrato_vigente(ativo)
             logger.info(f"Contrato vigente {ativo}: {self.contratos[ativo]['ticker_b3']}")
 
     def get_contrato_info(self, ativo: str) -> dict:
-        """Retorna informações do contrato vigente"""
         return self.contratos.get(ativo, obter_contrato_vigente(ativo))
+
+    async def obter_preco_realtime(self) -> dict:
+        """Obtém preço em tempo real via HG Brasil API (gratuita, sem delay)"""
+        try:
+            async with httpx.AsyncClient(timeout=8) as client:
+                resp = await client.get(
+                    f"https://api.hgbrasil.com/finance",
+                    params={"format": "json", "key": self.hg_api_key}
+                )
+                if resp.status_code == 200:
+                    data = resp.json()
+                    results = data.get("results", {})
+                    precos = {}
+                    # IBOVESPA -> WIN
+                    ibov = results.get("stocks", {}).get("IBOVESPA", {})
+                    if ibov and ibov.get("points"):
+                        precos["WIN"] = {
+                            "preco": float(ibov["points"]),
+                            "variacao": float(ibov.get("variation", 0)),
+                            "fonte": "HG Brasil (tempo real)",
+                        }
+                    # USD/BRL -> WDO
+                    usd = results.get("currencies", {}).get("USD", {})
+                    if usd and usd.get("buy"):
+                        precos["WDO"] = {
+                            "preco": round(float(usd["buy"]) * 1000, 1),
+                            "variacao": float(usd.get("variation", 0)),
+                            "fonte": "HG Brasil (tempo real)",
+                        }
+                    self.preco_realtime = precos
+                    logger.info(f"Preço realtime: WIN={precos.get('WIN',{}).get('preco','N/A')} WDO={precos.get('WDO',{}).get('preco','N/A')}")
+                    return precos
+        except Exception as e:
+            logger.error(f"Erro HG Brasil API: {e}")
+        return self.preco_realtime
 
     async def obter_candles_json(self, ativo: str, timeframe: str) -> list:
         """Retorna candles em formato JSON para gráficos frontend"""
         dados = await self.obter_dados(ativo, timeframe)
         if dados is None or dados.empty:
             return []
+
         candles = []
         for idx, row in dados.iterrows():
-            ts = idx.isoformat() if hasattr(idx, 'isoformat') else str(idx)
+            # Converter timestamp para ISO com timezone
+            if hasattr(idx, 'isoformat'):
+                ts = idx.isoformat()
+            else:
+                ts = str(idx)
+
             candles.append({
                 "time": ts,
                 "open": round(float(row["open"]), 2),
@@ -163,146 +171,130 @@ class DataProvider:
                 "close": round(float(row["close"]), 2),
                 "volume": int(row.get("volume", 0)),
             })
-        # Filtrar candles fora do horário B3 (09:00-18:00) para intraday
-        if candles:
-            filtered = []
-            for c in candles:
-                try:
-                    t = c["time"]
-                    if "T" in t:
-                        hour = int(t.split("T")[1].split(":")[0])
-                        if 9 <= hour < 18:
-                            filtered.append(c)
-                    else:
-                        filtered.append(c)
-                except:
-                    filtered.append(c)
-            candles = filtered if filtered else candles
         return candles
 
     async def obter_dados(self, ativo: str, timeframe: str) -> pd.DataFrame:
-        """Obtém dados de mercado para o ativo e timeframe especificados"""
-
+        """Obtém dados de mercado com fallback multi-source"""
         cache_key = f"{ativo}_{timeframe}"
         if cache_key in self.cache:
             cached_time, cached_data = self.cache[cache_key]
             if (datetime.now() - cached_time).seconds < self.cache_ttl:
                 return cached_data
 
+        dados = None
         try:
             if self.source == "bridge":
                 dados = await self._obter_bridge(ativo, timeframe)
-            elif self.source == "brapi":
-                dados = await self._obter_brapi(ativo, timeframe)
             else:
                 dados = self._obter_yfinance(ativo, timeframe)
-
-            if dados is not None and len(dados) > 0:
-                # Filtrar dados fora do horário B3 (09:00-18:00 BRT)
-                if timeframe not in ["1d", "4h"]:
-                    try:
-                        from datetime import timezone
-                        BRT = timezone(timedelta(hours=-3))
-                        # Converter para BRT e filtrar
-                        if dados.index.tz is not None:
-                            dados_brt = dados.index.tz_convert(BRT)
-                        else:
-                            dados_brt = dados.index.tz_localize('UTC').tz_convert(BRT)
-                        mask = (dados_brt.hour >= 9) & (dados_brt.hour < 18)
-                        dados = dados[mask]
-                    except Exception as e:
-                        logger.warning(f"Erro ao filtrar horario B3: {e}")
-                
-                self.cache[cache_key] = (datetime.now(), dados)
-                return dados
-
         except Exception as e:
             logger.error(f"Erro ao obter dados {ativo}/{timeframe}: {e}")
 
-            # Fallback para cache em memoria se disponivel
-            if cache_key in self.cache:
-                _, cached_data = self.cache[cache_key]
-                logger.info(f"Usando cache em memoria para {ativo}/{timeframe}")
-                return cached_data
+        if dados is not None and len(dados) > 0:
+            # Filtrar horário B3 para intraday
+            if timeframe in ["5m", "15m", "1h"]:
+                dados = self._filtrar_horario_b3(dados)
 
-        # Sem dados disponiveis - usar dados simulados como fallback
-        logger.warning(f"Sem dados disponiveis para {ativo}/{timeframe}, usando simulados")
+            if len(dados) > 0:
+                self.cache[cache_key] = (datetime.now(), dados)
+                return dados
+
+        # Fallback: cache existente
+        if cache_key in self.cache:
+            _, cached_data = self.cache[cache_key]
+            logger.info(f"Usando cache para {ativo}/{timeframe}")
+            return cached_data
+
+        # Último recurso: dados simulados
+        logger.warning(f"Sem dados para {ativo}/{timeframe}, usando simulados")
         return self._gerar_dados_simulados(ativo, timeframe)
 
     def _obter_yfinance(self, ativo: str, timeframe: str) -> pd.DataFrame:
-        """Obtém dados via Yahoo Finance - yf.download() para maior confiabilidade"""
-        # Usar contrato dinâmico para obter símbolo correto
+        """Obtém dados via Yahoo Finance - yf.download()"""
         contrato = self.contratos.get(ativo, {})
-        symbol = contrato.get("yfinance", ATIVOS_B3.get(ativo, {}).get("yfinance", ativo))
+        symbol = contrato.get("yfinance", "^BVSP" if ativo == "WIN" else "BRL=X")
         tf_config = TIMEFRAME_MAP.get(timeframe, TIMEFRAME_MAP["5m"])
         is_wdo = (ativo == "WDO")
 
         try:
-            logger.info(f"yfinance: buscando {symbol} period={tf_config['period']} interval={tf_config['interval']}")
-            
-            # yf.download() é mais robusto que Ticker().history()
             dados = yf.download(
                 symbol,
                 period=tf_config["period"],
                 interval=tf_config["interval"],
                 progress=False,
-                timeout=20,
+                timeout=20
             )
 
             if dados is None or dados.empty:
-                logger.warning(f"yfinance: sem dados para {symbol}")
+                logger.warning(f"yfinance retornou vazio para {symbol}")
                 return None
 
-            # Normalizar colunas - yf.download retorna com primeira letra maiúscula
-            # E pode retornar MultiIndex se houver múltiplos tickers
+            # Normalizar colunas (MultiIndex)
             if hasattr(dados.columns, 'nlevels') and dados.columns.nlevels > 1:
                 dados.columns = dados.columns.get_level_values(0)
             dados.columns = [c.lower() for c in dados.columns]
-            
-            # Remover colunas desnecessárias
-            for col_drop in ['adj close', 'dividends', 'stock splits', 'capital gains']:
-                if col_drop in dados.columns:
-                    dados = dados.drop(columns=[col_drop])
 
-            # Garantir colunas OHLCV existem
-            required = ['open', 'high', 'low', 'close']
-            if not all(c in dados.columns for c in required):
-                logger.error(f"yfinance: colunas faltando em {symbol}: {dados.columns.tolist()}")
-                return None
+            # Remover colunas extras
+            for col in ['adj close', 'dividends', 'stock splits', 'capital gains']:
+                if col in dados.columns:
+                    dados = dados.drop(columns=[col])
+
+            # WDO: USD/BRL * 1000
+            if is_wdo:
+                for col in ['open', 'high', 'low', 'close']:
+                    if col in dados.columns:
+                        dados[col] = dados[col] * 1000
 
             # Agregar para 4h se necessário
             if timeframe == "4h":
                 dados = self._agregar_timeframe(dados, "4h")
 
-            # WDO: USD/BRL * 1000 para preço de contrato
-            if is_wdo:
-                for col in ['open', 'high', 'low', 'close']:
-                    dados[col] = dados[col] * 1000
-            
-            # Volume: garantir coluna existe
-            if 'volume' not in dados.columns:
-                dados['volume'] = 0
-
-            logger.info(f"yfinance: {symbol} retornou {len(dados)} candles, ultimo={dados.index[-1]}")
+            logger.info(f"yfinance {symbol}: {len(dados)} candles, last close={dados['close'].iloc[-1]:.2f}")
             return dados
 
         except Exception as e:
             logger.error(f"Erro yfinance {symbol}: {e}")
             return None
 
-    async def _obter_bridge(self, ativo: str, timeframe: str) -> pd.DataFrame:
-        """
-        Obtém dados via bridge HTTP do Profit Pro / Tryd.
-        O bridge é um serviço local que expõe dados DDE via HTTP.
-        """
+    def _filtrar_horario_b3(self, dados: pd.DataFrame) -> pd.DataFrame:
+        """Filtra candles para horário B3: 09:00-18:00 BRT (UTC-3)"""
+        if dados.empty:
+            return dados
+
         try:
+            idx = dados.index
+            if hasattr(idx, 'tz') and idx.tz is not None:
+                # Converter para BRT
+                idx_brt = idx.tz_convert(BRT)
+            else:
+                # Assumir UTC e converter
+                idx_brt = idx.tz_localize('UTC').tz_convert(BRT)
+
+            # Filtrar: 09:00-18:00 BRT, seg-sex
+            mask = (idx_brt.hour >= 9) & (idx_brt.hour < 18) & (idx_brt.weekday < 5)
+            dados_filtrados = dados[mask]
+
+            if len(dados_filtrados) > 0:
+                logger.info(f"Filtro B3: {len(dados)} -> {len(dados_filtrados)} candles")
+                return dados_filtrados
+            else:
+                logger.warning("Filtro B3 removeu todos os candles, retornando originais")
+                return dados
+        except Exception as e:
+            logger.error(f"Erro filtro B3: {e}")
+            return dados
+
+    async def _obter_bridge(self, ativo: str, timeframe: str) -> pd.DataFrame:
+        """Obtém dados via bridge HTTP do Profit Pro / Tryd"""
+        try:
+            contrato = self.contratos.get(ativo, {})
             async with httpx.AsyncClient(timeout=10) as client:
                 response = await client.get(
                     f"{self.bridge_url}/api/candles",
                     params={
-                        "symbol": ATIVOS_B3[ativo]["contrato"],
+                        "symbol": contrato.get("contrato", ativo),
                         "timeframe": timeframe,
-                        "count": 200
+                        "count": 300
                     }
                 )
                 if response.status_code == 200:
@@ -313,37 +305,7 @@ class DataProvider:
                     return df
         except Exception as e:
             logger.error(f"Erro bridge: {e}")
-            return None
-
-    async def _obter_brapi(self, ativo: str, timeframe: str) -> pd.DataFrame:
-        """Obtém dados via Brapi API"""
-        try:
-            symbol_map = {"WIN": "IBOV", "WDO": "USDBRL"}
-            symbol = symbol_map.get(ativo, ativo)
-
-            range_map = {
-                "5m": "5d", "15m": "5d", "1h": "1mo",
-                "4h": "3mo", "1d": "6mo"
-            }
-
-            async with httpx.AsyncClient(timeout=10) as client:
-                response = await client.get(
-                    f"https://brapi.dev/api/v2/crypto",
-                    params={
-                        "coin": symbol,
-                        "range": range_map.get(timeframe, "5d"),
-                        "interval": timeframe,
-                        "token": self.brapi_token
-                    }
-                )
-                if response.status_code == 200:
-                    data = response.json()
-                    # Parse response into DataFrame
-                    # (format depends on actual Brapi response)
-                    return self._parse_brapi_response(data)
-        except Exception as e:
-            logger.error(f"Erro brapi: {e}")
-            return None
+        return None
 
     def _agregar_timeframe(self, dados: pd.DataFrame, target: str) -> pd.DataFrame:
         """Agrega dados de timeframe menor para maior"""
@@ -359,154 +321,71 @@ class DataProvider:
 
     def _gerar_dados_simulados(self, ativo: str, timeframe: str) -> pd.DataFrame:
         """
-        Gera dados simulados realistas para desenvolvimento.
-        RESPEITA RIGOROSAMENTE horario B3: 09:00-18:00 BRT (UTC-3).
-        NÃO usar para operações reais!
+        Gera dados simulados realistas como ÚLTIMO recurso.
+        Usa preços reais do HG Brasil quando disponível.
         """
-        from datetime import timezone
-        BRT = timezone(timedelta(hours=-3))
-        
-        # Seed baseado no dia para dados consistentes no mesmo dia
-        agora_brt = datetime.now(BRT)
-        np.random.seed(int(agora_brt.strftime('%Y%m%d')))
+        np.random.seed(42)
 
-        # Parâmetros por ativo - preços baseados no mercado real
-        # IMPORTANTE: estes são fallbacks, dados reais vêm do yfinance
+        # Usar preço real se disponível
+        rt = self.preco_realtime.get(ativo, {})
         if ativo == "WIN":
-            base_price = 187000  # Ibovespa ~187K em abril/2026
-            volatilidade = 120  # Volatilidade realista para 5min
-        else:  # WDO
-            base_price = 4950  # USD/BRL ~4.95 * 1000 em abril/2026
-            volatilidade = 5
+            base_price = rt.get("preco", 187000)
+            volatilidade = 120
+        else:
+            base_price = rt.get("preco", 4955)
+            volatilidade = 8
 
-        # Parâmetros por timeframe
+        n_candles = 200
         tf_minutes = {"5m": 5, "15m": 15, "1h": 60, "4h": 240, "1d": 1440}
         minutes = tf_minutes.get(timeframe, 5)
 
-        # Gerar timestamps RIGOROSAMENTE dentro do horário B3 (09:00-18:00 BRT)
+        # Gerar timestamps estritamente dentro do pregão B3 (09:00-18:00 BRT)
+        agora = datetime.now(BRT)
         timestamps = []
-        
-        if minutes >= 1440:  # Diário
-            for i in range(120, 0, -1):
-                t = agora_brt - timedelta(days=i)
-                if t.weekday() < 5:  # Só dias úteis
-                    # Usar 17:00 BRT como timestamp do candle diário
-                    t = t.replace(hour=17, minute=0, second=0, microsecond=0)
-                    timestamps.append(t)
-        else:
-            # Intraday: gerar candles de 09:00 até 17:55 BRT (último candle antes de 18:00)
-            # Gerar últimos 5 dias úteis
-            dias = []
-            d = agora_brt.replace(hour=0, minute=0, second=0, microsecond=0)
-            while len(dias) < 5:
-                if d.weekday() < 5:  # Só dias úteis
-                    dias.append(d)
-                d = d - timedelta(days=1)
-            dias.reverse()
-            
-            for dia in dias:
-                hora_inicio = 9  # 09:00 BRT
-                hora_fim = 18    # 18:00 BRT
-                minuto = 0
-                h = hora_inicio
-                m = 0
-                while True:
-                    t = dia.replace(hour=h, minute=m, second=0, microsecond=0)
-                    total_min = h * 60 + m
-                    if total_min >= hora_fim * 60:
-                        break
-                    timestamps.append(t)
-                    m += minutes
-                    if m >= 60:
-                        h += m // 60
-                        m = m % 60
-                    if h >= hora_fim:
-                        break
-            
-            # Se mercado está aberto agora, cortar no minuto atual
-            if agora_brt.weekday() < 5 and 9 <= agora_brt.hour < 18:
-                timestamps = [t for t in timestamps if t <= agora_brt]
+        t = agora
+        count = 0
+        while count < n_candles:
+            t = t - timedelta(minutes=minutes)
+            if t.weekday() >= 5:
+                continue
+            if minutes < 1440:
+                if t.hour < 9 or t.hour >= 18:
+                    continue
+            timestamps.insert(0, t)
+            count += 1
 
-        if not timestamps:
-            # Fallback: gerar pelo menos algo
-            timestamps = [agora_brt - timedelta(minutes=minutes * i) for i in range(100, 0, -1)]
-
-        # Gerar preços com random walk SUAVE (sem gaps entre candles)
+        # Gerar preços com transição suave
         prices = [base_price]
-        trend = np.random.choice([-0.5, 0.5]) * volatilidade * 0.05
+        trend = np.random.choice([-1, 1]) * volatilidade * 0.05
 
         for i in range(1, len(timestamps)):
-            # Verificar se é um novo dia (gap overnight permitido)
-            if timestamps[i].date() != timestamps[i-1].date():
-                # Gap de abertura: pequeno, realista
-                gap = np.random.normal(0, volatilidade * 0.3)
-                new_price = prices[-1] + gap
-            else:
-                # Dentro do mesmo dia: movimentos suaves
-                change = np.random.normal(trend, volatilidade * 0.3)
-                cycle = np.sin(i / 30) * volatilidade * 0.1
-                new_price = prices[-1] + change + cycle
+            change = np.random.normal(trend, volatilidade * 0.3)
+            new_price = prices[-1] + change
             prices.append(new_price)
 
-        # Gerar OHLCV com candles COERENTES (open = close anterior dentro do dia)
         data = []
-        prev_close = None
-        prev_date = None
-        
-        for i, (t, close) in enumerate(zip(timestamps, prices)):
-            # Open = close do candle anterior (dentro do mesmo dia)
-            if prev_close is not None and prev_date == t.date():
-                open_p = prev_close
-            else:
-                # Primeiro candle do dia ou gap overnight
-                open_p = close + np.random.normal(0, volatilidade * 0.1)
-            
-            # High e low realistas
-            body_size = abs(close - open_p)
-            wick_up = abs(np.random.normal(0, volatilidade * 0.15))
-            wick_down = abs(np.random.normal(0, volatilidade * 0.15))
-            
-            high = max(open_p, close) + wick_up
-            low = min(open_p, close) - wick_down
+        for i, (t, close_p) in enumerate(zip(timestamps, prices)):
+            hl_range = abs(np.random.normal(0, volatilidade * 0.3))
+            body = np.random.normal(0, volatilidade * 0.15)
 
-            # Volume com variação realista
+            if i > 0:
+                open_p = data[-1]['close']  # Continuidade: open = close anterior
+            else:
+                open_p = close_p - body
+
+            high = max(open_p, close_p) + abs(np.random.normal(0, hl_range * 0.3))
+            low = min(open_p, close_p) - abs(np.random.normal(0, hl_range * 0.3))
+
             base_vol = 5000 if ativo == "WIN" else 3000
-            # Mais volume na abertura e fechamento
-            hour = t.hour
-            vol_mult = 1.0
-            if hour == 9 or hour == 17:
-                vol_mult = 2.0
-            elif hour == 10 or hour == 16:
-                vol_mult = 1.5
-            volume = max(100, int(np.random.lognormal(np.log(base_vol * vol_mult), 0.5)))
+            volume = max(100, int(np.random.lognormal(np.log(base_vol), 0.6)))
 
             data.append({
                 'open': round(open_p, 2),
                 'high': round(high, 2),
                 'low': round(low, 2),
-                'close': round(close, 2),
+                'close': round(close_p, 2),
                 'volume': volume
             })
-            
-            prev_close = close
-            prev_date = t.date()
 
-        # Remover timezone info para o pandas index (armazenar como naive mas representando BRT)
-        naive_timestamps = [t.replace(tzinfo=None) for t in timestamps]
-        df = pd.DataFrame(data, index=pd.DatetimeIndex(naive_timestamps))
+        df = pd.DataFrame(data, index=pd.DatetimeIndex(timestamps))
         return df
-
-    def _parse_brapi_response(self, data: dict) -> Optional[pd.DataFrame]:
-        """Parse resposta da Brapi API"""
-        try:
-            if "results" in data and len(data["results"]) > 0:
-                hist = data["results"][0].get("historicalDataPrice", [])
-                if hist:
-                    df = pd.DataFrame(hist)
-                    df['date'] = pd.to_datetime(df['date'], unit='s')
-                    df = df.set_index('date')
-                    df = df.rename(columns={'adjustedClose': 'close'})
-                    return df[['open', 'high', 'low', 'close', 'volume']]
-        except Exception as e:
-            logger.error(f"Erro parsing brapi: {e}")
-        return None
