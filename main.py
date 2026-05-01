@@ -23,6 +23,7 @@ from fastapi import FastAPI, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from pydantic import BaseModel
 from dotenv import load_dotenv
 
 import numpy as np
@@ -48,12 +49,23 @@ app_state = {
     "analises": {},
     "provider": None,
     "auto_refresh_task": None,
-    "usando_cache": False,
-    "cache_data_pregao": None,
+    "usando_cache": False,           # True quando exibindo dados do cache
+    "cache_data_pregao": None,       # Data/hora do pregão cacheado
 }
 
 TIMEFRAMES = ["5m", "15m", "1h", "4h", "1d"]
 ATIVOS = ["WIN", "WDO"]
+
+# Usuários autorizados
+USUARIOS = {
+    "fabianodomingues": "123@mudar",
+    "fabiodomingues": "123@mudar",
+}
+
+
+class LoginRequest(BaseModel):
+    usuario: str
+    senha: str
 
 
 def converter_numpy(obj):
@@ -76,8 +88,10 @@ def converter_numpy(obj):
 def mercado_aberto() -> bool:
     """Verifica se o mercado B3 está aberto (9:00-18:00 BRT, seg-sex)"""
     agora = datetime.now(BRT)
+    # Fim de semana
     if agora.weekday() >= 5:
         return False
+    # Fora do horário (9h às 18h)
     if agora.hour < 9 or agora.hour >= 18:
         return False
     return True
@@ -143,9 +157,11 @@ async def atualizar_analises():
         app_state["ultima_atualizacao"] = datetime.now(BRT).strftime("%Y-%m-%d %H:%M:%S")
         app_state["usando_cache"] = False
         app_state["cache_data_pregao"] = None
+        # Salvar cache para uso fora do horário
         salvar_cache(resultados, app_state["ultima_atualizacao"])
         logger.info(f"Análises atualizadas em {app_state['ultima_atualizacao']}")
     else:
+        # Sem dados novos - usar cache se disponível
         if not app_state["analises"] or app_state["usando_cache"]:
             carregar_cache()
             logger.info("Sem dados novos, mantendo cache do último pregão")
@@ -159,12 +175,13 @@ async def auto_refresh_loop():
                 await atualizar_analises()
                 logger.info("Mercado aberto - dados atualizados")
             else:
+                # Fora do horário: garantir que temos cache carregado
                 if not app_state["analises"]:
                     carregar_cache()
                 logger.info("Mercado fechado - usando cache do último pregão")
         except Exception as e:
             logger.error(f"Erro no auto-refresh: {e}")
-        await asyncio.sleep(300)
+        await asyncio.sleep(300)  # 5 minutos
 
 
 @asynccontextmanager
@@ -174,22 +191,27 @@ async def lifespan(app: FastAPI):
     app_state["provider"] = DataProvider(source=source)
     logger.info(f"Data provider inicializado: {source}")
 
+    # Carregar cache primeiro (garante dados imediatos)
     cache_ok = carregar_cache()
 
     if mercado_aberto():
+        # Mercado aberto: tentar dados frescos
         logger.info("Mercado aberto, buscando dados atualizados...")
         await atualizar_analises()
     elif cache_ok:
         logger.info(f"Mercado fechado - exibindo dados do pregão de {app_state['cache_data_pregao']}")
     else:
+        # Sem cache e mercado fechado: tentar buscar mesmo assim (yfinance pode ter dados históricos)
         logger.info("Sem cache disponível, tentando buscar dados históricos...")
         await atualizar_analises()
 
+    # Iniciar loop de auto-refresh em background
     app_state["auto_refresh_task"] = asyncio.create_task(auto_refresh_loop())
     logger.info("Auto-refresh iniciado (intervalo: 5 minutos)")
 
     yield
 
+    # Cleanup
     if app_state["auto_refresh_task"]:
         app_state["auto_refresh_task"].cancel()
 
@@ -197,10 +219,11 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="B3 Day Trade Analyzer",
     description="Análise técnica em tempo real para Mini-Índice e Mini-Dólar da B3",
-    version="1.2.0",
+    version="1.0.0",
     lifespan=lifespan
 )
 
+# Servir arquivos estáticos
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 app.mount("/static", StaticFiles(directory=os.path.join(BASE_DIR, "static")), name="static")
 templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
@@ -210,6 +233,16 @@ templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
 async def dashboard(request: Request):
     """Página principal do dashboard"""
     return templates.TemplateResponse("dashboard.html", {"request": request})
+
+
+@app.post("/api/login")
+async def login(req: LoginRequest):
+    """Autenticação de usuário"""
+    usuario = req.usuario.strip().lower()
+    senha = req.senha.strip()
+    if usuario in USUARIOS and USUARIOS[usuario] == senha:
+        return JSONResponse({"sucesso": True, "usuario": usuario, "mensagem": "Login realizado com sucesso"})
+    return JSONResponse({"sucesso": False, "mensagem": "Usuário ou senha inválidos"}, status_code=401)
 
 
 @app.get("/api/analise")
@@ -226,161 +259,6 @@ async def get_analise(
 
     analise = app_state["analises"].get(ativo, {}).get(timeframe)
     if not analise:
+        # Tentar atualizar sob demanda
         try:
-            dados = await app_state["provider"].obter_dados(ativo, timeframe)
-            if dados is not None and len(dados) >= 30:
-                analise = analisar_completo(dados, timeframe, ativo)
-                analise = converter_numpy(analise)
-        except Exception as e:
-            return JSONResponse({"erro": str(e)}, status_code=500)
-
-    return JSONResponse({
-        "ultima_atualizacao": app_state["ultima_atualizacao"],
-        "analise": analise,
-        "usando_cache": app_state["usando_cache"],
-        "cache_data_pregao": app_state["cache_data_pregao"],
-        "mercado_aberto": mercado_aberto(),
-    })
-
-
-@app.get("/api/painel")
-async def get_painel(
-    ativo: str = Query("WIN", description="Ativo: WIN ou WDO")
-):
-    """Retorna painel multi-timeframe completo para um ativo"""
-    ativo = ativo.upper()
-    if ativo not in ATIVOS:
-        return JSONResponse({"erro": f"Ativo inválido"}, status_code=400)
-
-    painel = app_state["analises"].get(ativo, {})
-
-    resumo = {
-        "ativo": ativo,
-        "tendencia_geral": _calcular_tendencia_geral(painel),
-        "sinal_principal": _sinal_principal(painel),
-        "timeframes": {}
-    }
-
-    for tf in TIMEFRAMES:
-        analise = painel.get(tf, {})
-        if "erro" not in analise and analise:
-            resumo["timeframes"][tf] = {
-                "tendencia": analise.get("tendencia", "N/A"),
-                "rsi": analise.get("rsi", 0),
-                "rsi_status": analise.get("rsi_status", "N/A"),
-                "macd_status": analise.get("macd_status", "N/A"),
-                "volume_pressao": analise.get("volume", {}).get("pressao", "N/A"),
-                "violinada_score": analise.get("violinada_score", 0),
-                "sinais": analise.get("sinais", []),
-                "preco_atual": analise.get("preco_atual", 0),
-            }
-
-    return JSONResponse({
-        "ultima_atualizacao": app_state["ultima_atualizacao"],
-        "painel": resumo,
-        "usando_cache": app_state["usando_cache"],
-        "cache_data_pregao": app_state["cache_data_pregao"],
-        "mercado_aberto": mercado_aberto(),
-    })
-
-
-@app.get("/api/sinais")
-async def get_sinais(
-    ativo: str = Query("WIN", description="Ativo: WIN ou WDO")
-):
-    """Retorna sinais ativos de entrada - foco no timeframe de 5 minutos"""
-    ativo = ativo.upper()
-    analise_5m = app_state["analises"].get(ativo, {}).get("5m", {})
-
-    sinais = analise_5m.get("sinais", [])
-
-    confirmacoes = {}
-    for tf in ["15m", "1h", "4h", "1d"]:
-        analise_tf = app_state["analises"].get(ativo, {}).get(tf, {})
-        if analise_tf and "erro" not in analise_tf:
-            confirmacoes[tf] = {
-                "tendencia": analise_tf.get("tendencia", "N/A"),
-                "rsi_status": analise_tf.get("rsi_status", "N/A"),
-                "macd_status": analise_tf.get("macd_status", "N/A"),
-            }
-
-    return JSONResponse({
-        "ultima_atualizacao": app_state["ultima_atualizacao"],
-        "ativo": ativo,
-        "timeframe_operacao": "5m",
-        "sinais": sinais,
-        "confirmacoes_timeframes": confirmacoes,
-        "preco_atual": analise_5m.get("preco_atual", 0),
-    })
-
-
-@app.get("/api/status")
-async def get_status():
-    """Status do sistema"""
-    return JSONResponse({
-        "status": "online",
-        "ultima_atualizacao": app_state["ultima_atualizacao"],
-        "data_source": os.getenv("DATA_SOURCE", "yfinance"),
-        "ativos_monitorados": ATIVOS,
-        "timeframes": TIMEFRAMES,
-        "intervalo_refresh": "5 minutos",
-        "versao": "1.2.0",
-        "mercado_aberto": mercado_aberto(),
-        "usando_cache": app_state["usando_cache"],
-        "cache_data_pregao": app_state["cache_data_pregao"],
-    })
-
-
-@app.post("/api/forcar-atualizacao")
-async def forcar_atualizacao():
-    """Força uma atualização imediata de todas as análises"""
-    await atualizar_analises()
-    return JSONResponse({
-        "mensagem": "Análises atualizadas com sucesso",
-        "ultima_atualizacao": app_state["ultima_atualizacao"]
-    })
-
-
-def _calcular_tendencia_geral(painel: dict) -> str:
-    """Calcula tendência geral baseada em múltiplos timeframes"""
-    pesos = {"5m": 1, "15m": 2, "1h": 3, "4h": 4, "1d": 5}
-    score = 0
-    total_peso = 0
-
-    for tf, peso in pesos.items():
-        analise = painel.get(tf, {})
-        if analise and "erro" not in analise:
-            tendencia = analise.get("tendencia", "LATERAL")
-            if tendencia == "ALTA":
-                score += peso
-            elif tendencia == "BAIXA":
-                score -= peso
-            total_peso += peso
-
-    if total_peso == 0:
-        return "INDEFINIDO"
-
-    ratio = score / total_peso
-    if ratio > 0.3:
-        return "ALTA"
-    elif ratio < -0.3:
-        return "BAIXA"
-    return "LATERAL"
-
-
-def _sinal_principal(painel: dict) -> dict:
-    """Extrai o sinal principal do timeframe de 5 minutos"""
-    analise_5m = painel.get("5m", {})
-    sinais = analise_5m.get("sinais", [])
-
-    if sinais:
-        melhor = max(sinais, key=lambda s: s.get("confianca", 0))
-        return melhor
-
-    return {"tipo": "NEUTRO", "confianca": 0, "motivos": ["Sem sinais claros no momento"]}
-
-
-if __name__ == "__main__":
-    import uvicorn
-    port = int(os.getenv("PORT", 8080))
-    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=True)
+            dados = await app_state["provider"].obter_dados(ati
