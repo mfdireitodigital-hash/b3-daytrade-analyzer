@@ -19,7 +19,7 @@
     "fibonacci": 1.0,
     "candlestick": 1.0
   },
-  "score_minimo": 7,
+  "score_minimo": 9,
   "padroes_vitoria": {},
   "padroes_derrota": {},
   "horarios_win_rate": {},

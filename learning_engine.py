@@ -38,7 +38,7 @@ DEFAULT_LEARNING = {
         "candlestick": 1.0,
     },
     # Score mínimo adaptativo - começa em 7, AI pode subir se estiver perdendo muito
-    "score_minimo": 7,
+    "score_minimo": 9,
     # Padrões aprendidos
     "padroes_vitoria": {},
     "padroes_derrota": {},

@@ -2322,6 +2322,16 @@ async def simulador_real(ativo: str = Query("WIN")):
         
         from analysis_engine import calcular_rsi, calcular_macd, calcular_atr_series
         
+        # ---- PRO TRADER CONTROLS ----
+        # Regras de um operador profissional que PROTEGE capital:
+        MAX_OPS_DIA = 4          # Maximo 4 operacoes por dia (Bellafiore: poucos trades, bem executados)
+        MAX_LOSSES_CONSECUTIVOS = 2  # Apos 2 losses seguidos, PARA (Tendler: evitar tilt/revenge)
+        LOSS_LIMIT_PTS = -400    # Limite de perda diaria em pontos (gestao de risco)
+        
+        losses_consecutivos = 0
+        total_pts_dia = 0
+        dia_bloqueado = False    # True quando atingir limite
+        
         # ---- ANALYZE EVERY CANDLE ----
         velas_analisadas = []
         operacoes_recomendadas = []
@@ -2614,8 +2624,19 @@ async def simulador_real(ativo: str = Query("WIN")):
                 if current_day_idx >= posicao_aberta.get("close_idx", 0):
                     posicao_aberta = None
             
-            # SIMULATE operations: uma por vez, cooldown entre ops, evitar fim do dia
-            if operar and tipo_sinal and posicao_aberta is None and hora_int < 17 and not (hora_int == 16 and minuto > 30):
+            # SIMULATE operations: PRO TRADER - poucos trades, alta confianca
+            # Verifica controles de risco ANTES de entrar
+            pode_operar = (
+                operar and tipo_sinal 
+                and posicao_aberta is None 
+                and hora_int < 17 
+                and not (hora_int == 16 and minuto > 30)
+                and len(operacoes_recomendadas) < MAX_OPS_DIA  # Limite diario
+                and losses_consecutivos < MAX_LOSSES_CONSECUTIVOS  # Parar apos losses
+                and not dia_bloqueado  # Limite de perda
+            )
+            
+            if pode_operar:
                 # Day trade: stop = 1x ATR (max 300pts WIN), alvo = 1.5x stop
                 stop_pts = round(atr_v * 1.0)
                 stop_pts = max(round(stop_pts / 5) * 5, 50)  # round to tick, min 50
@@ -2868,8 +2889,22 @@ async def simulador_real(ativo: str = Query("WIN")):
                     "tendencia": tend,
                 })
                 
-                # Block next entries: cooldown de 3 velas (15min) apos esta op fechar
-                posicao_aberta = {"close_idx": future_start + velas_na_op + 2}  # +2 velas cooldown (10min)
+                # PRO TRADER: atualizar controles de risco
+                total_pts_dia += pts
+                if resultado == "LOSS":
+                    losses_consecutivos += 1
+                    # Apos loss, aumentar cooldown (Elder: pausa apos perda)
+                    cooldown_velas = 4 if losses_consecutivos >= 2 else 3
+                else:
+                    losses_consecutivos = 0  # Reset em WIN
+                    cooldown_velas = 2  # Cooldown normal
+                
+                # Verificar limite de perda diaria
+                if total_pts_dia <= LOSS_LIMIT_PTS:
+                    dia_bloqueado = True
+                
+                # Block next entries: cooldown adaptativo
+                posicao_aberta = {"close_idx": future_start + velas_na_op + cooldown_velas}
         
         # ---- RESUMO DO DIA ----
         first_v = velas_analisadas[0] if velas_analisadas else {}
@@ -2881,8 +2916,8 @@ async def simulador_real(ativo: str = Query("WIN")):
         low_dia = min(v["low"] for v in velas_analisadas) if velas_analisadas else 0
         amplitude = round(high_dia - low_dia, 0)
         
-        # TODAS as oportunidades (score >= 5) - mostra tudo que tinha algum potencial
-        oportunidades = [v for v in velas_analisadas if v["score"] >= 5 and v["tipo_sinal"] is not None]
+        # TODAS as oportunidades (score >= 7) - mostra setups com potencial
+        oportunidades = [v for v in velas_analisadas if v["score"] >= 7 and v["tipo_sinal"] is not None]
         
         total_ops = len(operacoes_recomendadas)
         wins = sum(1 for op in operacoes_recomendadas if op["resultado"] == "WIN")
@@ -2933,6 +2968,10 @@ async def simulador_real(ativo: str = Query("WIN")):
                 "win_rate": win_rate,
                 "total_pts": round(total_pts, 1),
                 "total_rs": round(total_rs, 2),
+                "max_ops_dia": MAX_OPS_DIA,
+                "losses_limit": MAX_LOSSES_CONSECUTIVOS,
+                "dia_bloqueado": dia_bloqueado,
+                "motivo_parada": "Limite de perda atingido" if dia_bloqueado else ("Parou apos " + str(MAX_LOSSES_CONSECUTIVOS) + " losses consecutivos" if losses_consecutivos >= MAX_LOSSES_CONSECUTIVOS else ""),
             },
             "operacoes": operacoes_recomendadas,
             "oportunidades": oportunidades,
