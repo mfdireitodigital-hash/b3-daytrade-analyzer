@@ -108,6 +108,54 @@ INVESTING_HEADERS = {
 }
 
 
+# Cálculo do basis (prêmio do futuro) para quando scraping falha
+def calcular_preco_futuro(preco_spot: float, ativo: str) -> float:
+    """
+    Estima o preço do contrato futuro a partir do spot.
+    WIN: Spot * (1 + (SELIC - DivYield) * dias_uteis/252)
+    WDO: Spot * 1000 * (1 + cupom_cambial)
+    """
+    from datetime import date
+    hoje = date.today()
+    
+    if ativo == "WIN":
+        # Vencimento WINM26 = ~3a quarta de junho = 17/jun/2026
+        # Pegar o mês de vencimento do contrato vigente
+        vencimentos_win = {2: 18, 4: 15, 6: 17, 8: 19, 10: 14, 12: 16}  # datas aprox 2026
+        mes_atual = hoje.month
+        ano = hoje.year
+        
+        # Achar próximo vencimento
+        for m in [2, 4, 6, 8, 10, 12]:
+            if m >= mes_atual:
+                venc_mes = m
+                break
+        else:
+            venc_mes = 2
+            ano += 1
+        
+        dia_venc = vencimentos_win.get(venc_mes, 17)
+        try:
+            vencimento = date(ano, venc_mes, dia_venc)
+        except:
+            vencimento = date(ano, venc_mes, 15)
+        
+        dias_corridos = max(1, (vencimento - hoje).days)
+        dias_uteis = max(1, int(dias_corridos * 5 / 7))
+        
+        # SELIC 14.25% - Dividend yield ~3.5% = ~10.75% net
+        taxa_net = 0.1075
+        taxa_periodo = taxa_net * dias_uteis / 252
+        return round(preco_spot * (1 + taxa_periodo), 2)
+    
+    elif ativo == "WDO":
+        # Mini-dólar: USD/BRL spot * 1000 com cupom cambial (~1% ao ano)
+        # O prêmio é pequeno, tipicamente 0.3-1.0% acima do spot
+        return round(preco_spot * 1000 * 1.005, 1)
+    
+    return preco_spot
+
+
 class DataProvider:
     """Provedor de dados multi-source para B3"""
 
@@ -235,7 +283,45 @@ class DataProvider:
             except Exception as e:
                 logger.warning(f"Erro geral Google Finance: {e}")
 
-        # === SOURCE 3: HG Brasil (último fallback) ===
+        # === SOURCE 2.5: Cálculo do Basis (se scraping falhou, estimar futuro a partir do spot) ===
+        ativos_faltando = [a for a in ["WIN", "WDO"] if a not in precos]
+        if ativos_faltando:
+            # Tentar obter spot do HG Brasil e calcular o futuro
+            try:
+                async with httpx.AsyncClient(timeout=8) as client:
+                    resp = await client.get(
+                        "https://api.hgbrasil.com/finance",
+                        params={"format": "json", "key": self.hg_api_key}
+                    )
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        results = data.get("results", {})
+                        if "WIN" in ativos_faltando:
+                            ibov = results.get("stocks", {}).get("IBOVESPA", {})
+                            if ibov and ibov.get("points"):
+                                spot = float(ibov["points"])
+                                futuro_est = calcular_preco_futuro(spot, "WIN")
+                                precos["WIN"] = {
+                                    "preco": futuro_est,
+                                    "variacao": float(ibov.get("variation", 0)),
+                                    "fonte": "HG Brasil + Basis estimado (futuro)",
+                                }
+                                logger.info(f"Basis WIN: spot={spot} -> futuro={futuro_est}")
+                        if "WDO" in ativos_faltando:
+                            usd = results.get("currencies", {}).get("USD", {})
+                            if usd and usd.get("buy"):
+                                spot = float(usd["buy"])
+                                futuro_est = calcular_preco_futuro(spot, "WDO")
+                                precos["WDO"] = {
+                                    "preco": futuro_est,
+                                    "variacao": float(usd.get("variation", 0)),
+                                    "fonte": "HG Brasil + Basis estimado (futuro)",
+                                }
+                                logger.info(f"Basis WDO: spot={spot} -> futuro={futuro_est}")
+            except Exception as e:
+                logger.error(f"Erro cálculo basis: {e}")
+
+                # === SOURCE 3: HG Brasil (último fallback) ===
         ativos_faltando = [a for a in ["WIN", "WDO"] if a not in precos]
         if ativos_faltando:
             try:
