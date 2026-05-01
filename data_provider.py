@@ -230,51 +230,64 @@ class DataProvider:
         return self._gerar_dados_simulados(ativo, timeframe)
 
     def _obter_yfinance(self, ativo: str, timeframe: str) -> pd.DataFrame:
-        """Obtém dados via yfinance"""
-        config = ATIVOS_B3.get(ativo, {})
-        symbol = config.get("yfinance", ativo)
+        """Obtém dados via Yahoo Finance - yf.download() para maior confiabilidade"""
+        # Usar contrato dinâmico para obter símbolo correto
+        contrato = self.contratos.get(ativo, {})
+        symbol = contrato.get("yfinance", ATIVOS_B3.get(ativo, {}).get("yfinance", ativo))
         tf_config = TIMEFRAME_MAP.get(timeframe, TIMEFRAME_MAP["5m"])
+        is_wdo = (ativo == "WDO")
 
         try:
-            ticker = yf.Ticker(symbol)
-            dados = ticker.history(
+            logger.info(f"yfinance: buscando {symbol} period={tf_config['period']} interval={tf_config['interval']}")
+            
+            # yf.download() é mais robusto que Ticker().history()
+            dados = yf.download(
+                symbol,
+                period=tf_config["period"],
                 interval=tf_config["interval"],
-                period=tf_config["period"]
+                progress=False,
+                timeout=20,
             )
 
-            if dados.empty:
+            if dados is None or dados.empty:
+                logger.warning(f"yfinance: sem dados para {symbol}")
                 return None
 
-            # Normalizar colunas
+            # Normalizar colunas - yf.download retorna com primeira letra maiúscula
+            # E pode retornar MultiIndex se houver múltiplos tickers
+            if hasattr(dados.columns, 'nlevels') and dados.columns.nlevels > 1:
+                dados.columns = dados.columns.get_level_values(0)
             dados.columns = [c.lower() for c in dados.columns]
-            if 'adj close' in dados.columns:
-                dados = dados.drop(columns=['adj close'])
-            if 'dividends' in dados.columns:
-                dados = dados.drop(columns=['dividends'])
-            if 'stock splits' in dados.columns:
-                dados = dados.drop(columns=['stock splits'])
-            if 'capital gains' in dados.columns:
-                dados = dados.drop(columns=['capital gains'])
+            
+            # Remover colunas desnecessárias
+            for col_drop in ['adj close', 'dividends', 'stock splits', 'capital gains']:
+                if col_drop in dados.columns:
+                    dados = dados.drop(columns=[col_drop])
+
+            # Garantir colunas OHLCV existem
+            required = ['open', 'high', 'low', 'close']
+            if not all(c in dados.columns for c in required):
+                logger.error(f"yfinance: colunas faltando em {symbol}: {dados.columns.tolist()}")
+                return None
 
             # Agregar para 4h se necessário
             if timeframe == "4h":
                 dados = self._agregar_timeframe(dados, "4h")
 
-            # Ajustar valores para parecer com mini-índice/mini-dólar
-            if ativo == "WIN":
-                # Ibovespa já tem valores similares ao WIN
-                pass
-            elif ativo == "WDO":
-                # USD/BRL - multiplicar por 1000 para simular pontos WDO
-                dados['open'] = dados['open'] * 1000
-                dados['high'] = dados['high'] * 1000
-                dados['low'] = dados['low'] * 1000
-                dados['close'] = dados['close'] * 1000
+            # WDO: USD/BRL * 1000 para preço de contrato
+            if is_wdo:
+                for col in ['open', 'high', 'low', 'close']:
+                    dados[col] = dados[col] * 1000
+            
+            # Volume: garantir coluna existe
+            if 'volume' not in dados.columns:
+                dados['volume'] = 0
 
+            logger.info(f"yfinance: {symbol} retornou {len(dados)} candles, ultimo={dados.index[-1]}")
             return dados
 
         except Exception as e:
-            logger.error(f"Erro yfinance: {e}")
+            logger.error(f"Erro yfinance {symbol}: {e}")
             return None
 
     async def _obter_bridge(self, ativo: str, timeframe: str) -> pd.DataFrame:
@@ -357,13 +370,14 @@ class DataProvider:
         agora_brt = datetime.now(BRT)
         np.random.seed(int(agora_brt.strftime('%Y%m%d')))
 
-        # Parâmetros por ativo
+        # Parâmetros por ativo - preços baseados no mercado real
+        # IMPORTANTE: estes são fallbacks, dados reais vêm do yfinance
         if ativo == "WIN":
-            base_price = 128500
-            volatilidade = 80  # Volatilidade realista para 5min
+            base_price = 187000  # Ibovespa ~187K em abril/2026
+            volatilidade = 120  # Volatilidade realista para 5min
         else:  # WDO
-            base_price = 5650
-            volatilidade = 4
+            base_price = 4950  # USD/BRL ~4.95 * 1000 em abril/2026
+            volatilidade = 5
 
         # Parâmetros por timeframe
         tf_minutes = {"5m": 5, "15m": 15, "1h": 60, "4h": 240, "1d": 1440}
