@@ -393,17 +393,35 @@ async def get_demo():
         if hora_base > 17:
             hora_base = 17
 
+        # Calcular stop e alvo para exibicao
+        atr_ref = 100 if "WIN" in ativo else 8
+        stop_dist = round(random.uniform(0.3, 0.8) * atr_ref, 1)
+        alvo_dist = round(random.uniform(1.0, 2.5) * stop_dist, 1)
+        if tipo == "COMPRA":
+            stop = round(entrada - stop_dist, 1)
+            alvo = round(entrada + alvo_dist, 1)
+        else:
+            stop = round(entrada + stop_dist, 1)
+            alvo = round(entrada - alvo_dist, 1)
+        rr_val = round(alvo_dist / stop_dist, 1) if stop_dist > 0 else 1.0
+        horario = f"{hora_base:02d}:{random.randint(0,59):02d}"
+
         operacoes.append({
             "id": i + 1,
             "ativo": ativo,
             "tipo": tipo,
             "entrada": entrada,
+            "stop": stop,
+            "alvo": alvo,
             "saida": saida,
             "pts": pts,
+            "rr": f"{rr_val}:1",
             "contratos": contratos,
             "resultado": resultado,
             "win": win,
-            "hora": f"{hora_base:02d}:{random.randint(0,59):02d}",
+            "status": "WIN" if win else "LOSS",
+            "hora": horario,
+            "horario": horario,
             "motivo": random.choice([
                 "Pullback na EMA 9 com volume",
                 "Rompimento de resistencia com VWAP",
@@ -416,14 +434,18 @@ async def get_demo():
 
     wins = sum(1 for op in operacoes if op["win"])
     losses = len(operacoes) - wins
+    total_pts = sum(op["pts"] for op in operacoes)
 
     return JSONResponse({
         "operacoes": operacoes,
         "resumo": {
+            "total": len(operacoes),
             "total_operacoes": len(operacoes),
             "wins": wins,
             "losses": losses,
             "taxa_acerto": round(wins / len(operacoes) * 100, 1) if operacoes else 0,
+            "saldo_pontos": round(total_pts, 1),
+            "saldo_financeiro": round(total_resultado, 2),
             "resultado_total": round(total_resultado, 2),
             "melhor_op": round(max((op["resultado"] for op in operacoes), default=0), 2),
             "pior_op": round(min((op["resultado"] for op in operacoes), default=0), 2),
@@ -440,37 +462,4 @@ def _calcular_tendencia_geral(painel: dict) -> str:
     for tf, peso in pesos.items():
         analise = painel.get(tf, {})
         if analise and "erro" not in analise:
-            tendencia = analise.get("tendencia", "LATERAL")
-            if tendencia == "ALTA":
-                score += peso
-            elif tendencia == "BAIXA":
-                score -= peso
-            total_peso += peso
-
-    if total_peso == 0:
-        return "INDEFINIDO"
-
-    ratio = score / total_peso
-    if ratio > 0.3:
-        return "ALTA"
-    elif ratio < -0.3:
-        return "BAIXA"
-    return "LATERAL"
-
-
-def _sinal_principal(painel: dict) -> dict:
-    """Extrai o sinal principal do timeframe de 5 minutos"""
-    analise_5m = painel.get("5m", {})
-    sinais = analise_5m.get("sinais", [])
-
-    if sinais:
-        melhor = max(sinais, key=lambda s: s.get("confianca", 0))
-        return melhor
-
-    return {"tipo": "NEUTRO", "confianca": 0, "motivos": ["Sem sinais claros no momento"]}
-
-
-if __name__ == "__main__":
-    import uvicorn
-    port = int(os.getenv("PORT", 8080))
-    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=True)
+            tendencia = analise.g
