@@ -210,7 +210,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="B3 Day Trade Analyzer",
     description="Análise técnica em tempo real para Mini-Índice e Mini-Dólar da B3",
-    version="1.2.0",
+    version="2.0.0",
     lifespan=lifespan
 )
 
@@ -382,4 +382,95 @@ async def get_demo():
             entrada = round(random.uniform(5600, 5900), 1)
             variacao = random.uniform(-15, 20)
 
-        said
+        saida = round(entrada + variacao, 1)
+        pts = round(variacao, 1)
+        valor_pt = 0.20 if "WIN" in ativo else 10.0
+        contratos = random.randint(1, 5)
+        resultado = round(pts * valor_pt * contratos, 2)
+        total_resultado += resultado
+        win = resultado > 0
+        hora_base = 9 + i
+        if hora_base > 17:
+            hora_base = 17
+
+        operacoes.append({
+            "id": i + 1,
+            "ativo": ativo,
+            "tipo": tipo,
+            "entrada": entrada,
+            "saida": saida,
+            "pts": pts,
+            "contratos": contratos,
+            "resultado": resultado,
+            "win": win,
+            "hora": f"{hora_base:02d}:{random.randint(0,59):02d}",
+            "motivo": random.choice([
+                "Pullback na EMA 9 com volume",
+                "Rompimento de resistencia com VWAP",
+                "Divergencia RSI + suporte",
+                "Sinal MACD com confirmacao",
+                "Teste de VWAP com rejeicao",
+                "Fibonacci 61.8% com volume",
+            ]),
+        })
+
+    wins = sum(1 for op in operacoes if op["win"])
+    losses = len(operacoes) - wins
+
+    return JSONResponse({
+        "operacoes": operacoes,
+        "resumo": {
+            "total_operacoes": len(operacoes),
+            "wins": wins,
+            "losses": losses,
+            "taxa_acerto": round(wins / len(operacoes) * 100, 1) if operacoes else 0,
+            "resultado_total": round(total_resultado, 2),
+            "melhor_op": round(max((op["resultado"] for op in operacoes), default=0), 2),
+            "pior_op": round(min((op["resultado"] for op in operacoes), default=0), 2),
+        }
+    })
+
+
+def _calcular_tendencia_geral(painel: dict) -> str:
+    """Calcula tendencia geral baseada em multiplos timeframes"""
+    pesos = {"5m": 1, "15m": 2, "1h": 3, "4h": 4, "1d": 5}
+    score = 0
+    total_peso = 0
+
+    for tf, peso in pesos.items():
+        analise = painel.get(tf, {})
+        if analise and "erro" not in analise:
+            tendencia = analise.get("tendencia", "LATERAL")
+            if tendencia == "ALTA":
+                score += peso
+            elif tendencia == "BAIXA":
+                score -= peso
+            total_peso += peso
+
+    if total_peso == 0:
+        return "INDEFINIDO"
+
+    ratio = score / total_peso
+    if ratio > 0.3:
+        return "ALTA"
+    elif ratio < -0.3:
+        return "BAIXA"
+    return "LATERAL"
+
+
+def _sinal_principal(painel: dict) -> dict:
+    """Extrai o sinal principal do timeframe de 5 minutos"""
+    analise_5m = painel.get("5m", {})
+    sinais = analise_5m.get("sinais", [])
+
+    if sinais:
+        melhor = max(sinais, key=lambda s: s.get("confianca", 0))
+        return melhor
+
+    return {"tipo": "NEUTRO", "confianca": 0, "motivos": ["Sem sinais claros no momento"]}
+
+
+if __name__ == "__main__":
+    import uvicorn
+    port = int(os.getenv("PORT", 8080))
+    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=True)
