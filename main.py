@@ -2544,12 +2544,13 @@ async def simulador_real(ativo: str = Query("WIN")):
                             motivos_operar.append("Candlestick: Engolfo de Baixa")
                 except: pass
             
-            # DECISAO FINAL
-            # Regra: 4+ score, tem sinal, nao contra tendencia, nao horario ruim
-            operar = score >= 5 and tipo_sinal is not None and not horario_ruim and not contra_tendencia
+            # DECISAO FINAL - PRO TRADER: ULTRA SELETIVO
+            # Score minimo 7 = BOM setup. Nao entra em OK, Duvidoso, Sem Setup.
+            # Elder: "The goal is to trade only A+ setups and sit on your hands the rest"
+            operar = score >= 7 and tipo_sinal is not None and not horario_ruim and not contra_tendencia
             decisao = "OPERAR" if operar else "NAO OPERAR"
             
-            # Confianca (Bellafiore) - updated for new scoring
+            # Confianca (Bellafiore) - PRO scoring
             if score >= 9: confianca = 5; conf_label = "A+ SETUP"
             elif score >= 7: confianca = 4; conf_label = "BOM"
             elif score >= 5: confianca = 3; conf_label = "OK"
@@ -2584,19 +2585,23 @@ async def simulador_real(ativo: str = Query("WIN")):
             
             # SIMULATE operations: uma por vez, cooldown entre ops, evitar fim do dia
             if operar and tipo_sinal and posicao_aberta is None and hora_int < 17 and not (hora_int == 16 and minuto > 30):
-                stop_pts = round(atr_v * 1.5)
+                # Day trade: stop = 1x ATR (max 300pts WIN), alvo = 1.5x stop
+                stop_pts = round(atr_v * 1.0)
                 stop_pts = max(round(stop_pts / 5) * 5, 50)  # round to tick, min 50
-                alvo_pts = round(stop_pts * 2)
+                if ativo == "WIN":
+                    stop_pts = min(stop_pts, 300)  # cap stop WIN
+                alvo_pts = round(stop_pts * 1.5)
                 
                 is_compra = tipo_sinal == "COMPRA"
                 stop_price = round(c - stop_pts, 2) if is_compra else round(c + stop_pts, 2)
                 alvo_price = round(c + alvo_pts, 2) if is_compra else round(c - alvo_pts, 2)
                 
-                # Walk forward
+                # Walk forward (max 30 velas = 2.5h timeout)
                 resultado = None
                 preco_saida = 0
                 hora_saida = ""
                 velas_na_op = 0
+                max_velas_op = 30  # timeout
                 
                 future_start = day_indices.index(pos_idx) + 1
                 for fi in range(future_start, len(day_indices)):
@@ -2605,6 +2610,14 @@ async def simulador_real(ativo: str = Query("WIN")):
                     fc = float(fv['close'])
                     f_hora = dados.index[day_indices[fi]].strftime("%H:%M")
                     velas_na_op += 1
+                    
+                    # Timeout: fecha no preco atual apos 30 velas
+                    if velas_na_op >= max_velas_op:
+                        preco_saida = fc
+                        hora_saida = f_hora
+                        pts_t = (preco_saida - c) if is_compra else (c - preco_saida)
+                        resultado = "WIN" if pts_t > 0 else "LOSS"
+                        break
                     
                     if is_compra:
                         if fl <= stop_price:
@@ -2627,29 +2640,155 @@ async def simulador_real(ativo: str = Query("WIN")):
                 pts = round((preco_saida - c) if is_compra else (c - preco_saida), 1)
                 rs = round(pts * valor_ponto, 2)
                 
-                # Detalhes da perda quando LOSS
+                # Detalhes da perda quando LOSS - ANALISE COMPLETA DO PQ PERDEU
                 detalhes_perda = ""
                 if resultado == "LOSS":
-                    if is_compra:
-                        detalhes_perda = f"Stop atingido em {hora_saida}. Preco caiu de {round(c,2)} ate {round(stop_price,2)} ({stop_pts}pts contra). "
+                    if velas_na_op >= max_velas_op:
+                        detalhes_perda = f"TIMEOUT: Operacao aberta por {velas_na_op} velas ({velas_na_op*5}min) sem atingir alvo nem stop. "
+                        detalhes_perda += f"Fechou no preco {round(preco_saida,2)} com prejuizo de {round(abs(pts),1)}pts. "
+                        detalhes_perda += "Licao: Mercado ficou lateral/indeciso. Timeout protege de operar em congestao prolongada. "
+                    elif is_compra:
+                        detalhes_perda = f"STOP atingido em {hora_saida} ({velas_na_op} velas = {velas_na_op*5}min). "
+                        detalhes_perda += f"Preco caiu de {round(c,2)} ate stop {round(stop_price,2)} (-{stop_pts}pts = -R${round(stop_pts * valor_ponto, 2)}). "
+                        # Analise do que deu errado
+                        problemas = []
                         if macd_h < 0:
-                            detalhes_perda += "MACD ja estava negativo na entrada - momentum contra. "
+                            problemas.append(f"MACD negativo ({macd_h}) ja indicava momentum vendedor na entrada")
                         if rsi_v > 70:
-                            detalhes_perda += "RSI sobrecomprado - possivel exaustao da alta. "
+                            problemas.append(f"RSI sobrecomprado ({rsi_v}) - mercado ja esticado, reversao provavel")
+                        if rsi_v < 40 and tend != "ALTA":
+                            problemas.append(f"RSI fraco ({rsi_v}) sem tendencia de alta para suportar")
                         if atr_v > 300:
-                            detalhes_perda += f"ATR alto ({atr_v}) - volatilidade excessiva aumentou risco. "
-                        detalhes_perda += f"Confluencia tinha {score}/7 pontos. "
-                        if score <= 4:
-                            detalhes_perda += "Score minimo (4) - setup nao era A+, considere esperar 5+. "
-                        detalhes_perda += "Licao: " + ("Em alta volatilidade, considere stop mais largo ou espere pullback." if atr_v > 250 else "Verifique se a tendencia de TF maior confirmava a direcao.")
+                            problemas.append(f"ATR muito alto ({atr_v}) - volatilidade excessiva aumenta risco de stop")
+                        if vwap and c < vwap:
+                            problemas.append(f"Preco ABAIXO do VWAP ({round(vwap,0)}) - comprando contra fluxo institucional")
+                        if suporte and abs(c - suporte) > atr_v:
+                            problemas.append(f"Longe do suporte ({round(suporte,0)}) - sem protecao natural de preco")
+                        if not problemas:
+                            problemas.append("Setup estava correto - loss faz parte (nem todo setup ganha)")
+                        detalhes_perda += "PROBLEMAS: " + "; ".join(problemas) + ". "
+                        detalhes_perda += f"Score era {score}/11 ({conf_label}). "
+                        detalhes_perda += "Licao: " + ("Volatilidade alta exige stop mais conservador ou esperar pullback." if atr_v > 250 else "Verifique alinhamento do TF maior antes de entrar. Loss com setup correto e normal - disciplina e seguir o plano.")
                     else:
-                        detalhes_perda = f"Stop atingido em {hora_saida}. Preco subiu de {round(c,2)} ate {round(stop_price,2)} ({stop_pts}pts contra). "
+                        detalhes_perda = f"STOP atingido em {hora_saida} ({velas_na_op} velas = {velas_na_op*5}min). "
+                        detalhes_perda += f"Preco subiu de {round(c,2)} ate stop {round(stop_price,2)} (-{stop_pts}pts = -R${round(stop_pts * valor_ponto, 2)}). "
+                        problemas = []
                         if macd_h > 0:
-                            detalhes_perda += "MACD positivo na entrada - momentum contra venda. "
+                            problemas.append(f"MACD positivo ({macd_h}) ja indicava momentum comprador")
                         if tend == "ALTA":
-                            detalhes_perda += "VENDA contra tendencia ALTA - Elder proibe. "
-                        detalhes_perda += f"Confluencia tinha {score}/7 pontos. "
-                        detalhes_perda += "Licao: Nunca venda em tendencia de alta clara. Espere confirmacao de reversao."
+                            problemas.append("VENDA contra tendencia ALTA - Elder proibe operar contra Tela 1")
+                        if rsi_v < 30:
+                            problemas.append(f"RSI sobrevendido ({rsi_v}) - bounce esperado")
+                        if vwap and c > vwap:
+                            problemas.append(f"Preco ACIMA do VWAP ({round(vwap,0)}) - vendendo contra fluxo")
+                        if resistencia and abs(resistencia - c) > atr_v:
+                            problemas.append(f"Longe da resistencia ({round(resistencia,0)}) - sem teto natural")
+                        if not problemas:
+                            problemas.append("Setup estava correto - loss faz parte do jogo")
+                        detalhes_perda += "PROBLEMAS: " + "; ".join(problemas) + ". "
+                        detalhes_perda += f"Score era {score}/11 ({conf_label}). "
+                        detalhes_perda += "Licao: Nunca venda em tendencia de alta clara. Disciplina > opiniao."
+                
+                # ---- ANALISE COMPLETA (PRO TRADER) ----
+                # Narrativa detalhada de TUDO que foi analisado, como um operador profissional
+                analise_completa = f"== ANALISE COMPLETA da entrada {tipo_sinal} as {hora} ==\n"
+                analise_completa += f"PRECO: O={round(o,2)} H={round(h,2)} L={round(l,2)} C={round(c,2)}\n"
+                analise_completa += f"\n1. TENDENCIA (Elder Triple Screen - Tela 1): {tend}\n"
+                analise_completa += f"   EMA9={ema9} vs EMA21={ema21}"
+                if ema50 > 0:
+                    analise_completa += f" vs EMA50={ema50}"
+                analise_completa += f"\n   Preco {'acima' if c > ema9 else 'abaixo'} da EMA9. "
+                if tend == "ALTA":
+                    analise_completa += "Estrutura compradora confirmada.\n"
+                elif tend == "BAIXA":
+                    analise_completa += "Estrutura vendedora confirmada.\n"
+                else:
+                    analise_completa += "Sem direcao clara.\n"
+                
+                analise_completa += f"\n2. RSI (Wilder): {rsi_v}\n"
+                if rsi_v > 70:
+                    analise_completa += f"   Sobrecomprado. Em ALTA=forca, em BAIXA=possivel reversao.\n"
+                elif rsi_v < 30:
+                    analise_completa += f"   Sobrevendido. Em BAIXA=fraqueza, em ALTA=oportunidade compra.\n"
+                else:
+                    analise_completa += f"   Zona {'compradora' if rsi_v > 50 else 'vendedora' if rsi_v < 50 else 'neutra'}.\n"
+                
+                analise_completa += f"\n3. MACD Histograma: {macd_h}\n"
+                analise_completa += f"   Momentum {'comprador' if macd_h > 0 else 'vendedor' if macd_h < 0 else 'neutro'}. "
+                if (macd_h > 0 and tipo_sinal == "COMPRA") or (macd_h < 0 and tipo_sinal == "VENDA"):
+                    analise_completa += "CONFIRMADO com a direcao da operacao.\n"
+                else:
+                    analise_completa += "DIVERGENTE com a direcao da operacao.\n"
+                
+                analise_completa += f"\n4. ATR (Volatilidade): {atr_v} pts\n"
+                analise_completa += f"   {'Volatilidade suficiente para day trade.' if atr_v > 80 else 'Volatilidade baixa - risco de spread.'}\n"
+                analise_completa += f"   Stop calculado: {stop_pts}pts (1x ATR, max 300 WIN). Alvo: {alvo_pts}pts (1.5x stop).\n"
+                
+                if suporte and resistencia:
+                    analise_completa += f"\n5. SUPORTE/RESISTENCIA (Murphy):\n"
+                    analise_completa += f"   Suporte: {round(suporte,0)} | Resistencia: {round(resistencia,0)}\n"
+                    dist_s = abs(c - suporte)
+                    dist_r = abs(resistencia - c)
+                    analise_completa += f"   Distancia do suporte: {round(dist_s,0)}pts | Distancia da resistencia: {round(dist_r,0)}pts\n"
+                    if tipo_sinal == "COMPRA":
+                        analise_completa += f"   COMPRA proximo suporte = {'BOM (risco/retorno favoravel)' if dist_s < atr_v else 'Preco longe do suporte'}.\n"
+                    else:
+                        analise_completa += f"   VENDA proximo resistencia = {'BOM (risco/retorno favoravel)' if dist_r < atr_v else 'Preco longe da resistencia'}.\n"
+                
+                if vwap:
+                    analise_completa += f"\n6. VWAP (Preco Medio Ponderado): {round(vwap,0)}\n"
+                    analise_completa += f"   Preco {'ACIMA' if c > vwap else 'ABAIXO'} do VWAP ({round(c - vwap, 0)}pts). "
+                    if (c > vwap and tipo_sinal == "COMPRA") or (c < vwap and tipo_sinal == "VENDA"):
+                        analise_completa += "CONFIRMADO: preco na direcao correta do VWAP.\n"
+                    else:
+                        analise_completa += "ATENCAO: preco contra o VWAP.\n"
+                
+                if fib_level:
+                    analise_completa += f"\n7. FIBONACCI: Proximo do nivel {fib_level}\n"
+                    analise_completa += f"   Retracao do swing recente. Zona de alta probabilidade de reacao.\n"
+                else:
+                    analise_completa += f"\n7. FIBONACCI: Preco longe de niveis significativos (38.2%, 50%, 61.8%)\n"
+                
+                analise_completa += f"\n8. CANDLESTICK PATTERNS: "
+                found_pattern = False
+                for m in motivos_operar:
+                    if "Candlestick" in m:
+                        analise_completa += m + "\n"
+                        found_pattern = True
+                if not found_pattern:
+                    analise_completa += "Nenhum padrao relevante nesta vela.\n"
+                
+                analise_completa += f"\n9. HORARIO: {hora} - {'Horario FORTE (abertura/volatilidade alta)' if bom_horario else 'Horario fraco/almoco'}\n"
+                
+                analise_completa += f"\n10. SCORE CONFLUENCIA: {score}/11\n"
+                analise_completa += f"    Confianca: {conf_label} ({confianca}/5)\n"
+                analise_completa += f"    Fatores A FAVOR: {', '.join(motivos_operar) if motivos_operar else 'nenhum'}\n"
+                analise_completa += f"    Fatores CONTRA: {', '.join(motivos_nao_operar) if motivos_nao_operar else 'nenhum'}\n"
+                
+                analise_completa += f"\nDECISAO: {tipo_sinal} em {round(c,2)}. Stop={stop_price} Alvo={alvo_price} RR=1:{round(alvo_pts/stop_pts,1)}\n"
+                
+                # ---- DETALHES VITORIA (para WINs) ----
+                detalhes_vitoria = ""
+                if resultado == "WIN":
+                    detalhes_vitoria = f"Alvo atingido em {hora_saida} (+{round(abs(pts),1)}pts = R${round(abs(rs),2)}). "
+                    if tipo_sinal == "COMPRA":
+                        detalhes_vitoria += f"Preco subiu de {round(c,2)} ate {round(alvo_price,2)}. "
+                        if tend == "ALTA":
+                            detalhes_vitoria += "Tendencia ALTA confirmou a direcao - Triple Screen alinhado. "
+                        if macd_h > 0:
+                            detalhes_vitoria += f"MACD positivo ({macd_h}) deu momentum. "
+                        if rsi_v < 60:
+                            detalhes_vitoria += f"RSI {rsi_v} tinha espaco pra subir. "
+                    else:
+                        detalhes_vitoria += f"Preco caiu de {round(c,2)} ate {round(alvo_price,2)}. "
+                        if tend == "BAIXA":
+                            detalhes_vitoria += "Tendencia BAIXA confirmou a direcao - Triple Screen alinhado. "
+                        if macd_h < 0:
+                            detalhes_vitoria += f"MACD negativo ({macd_h}) deu momentum vendedor. "
+                    detalhes_vitoria += f"Score {score}/11 ({conf_label}) - setup de alta confluencia. "
+                    if velas_na_op <= 6:
+                        detalhes_vitoria += f"Operacao rapida ({velas_na_op} velas = {velas_na_op*5}min) - mercado ja estava no ponto. "
+                    detalhes_vitoria += "Licao: Setups com alta confluencia e a favor da tendencia tem maior taxa de acerto."
                 
                 operacoes_recomendadas.append({
                     "tipo": tipo_sinal,
@@ -2671,10 +2810,22 @@ async def simulador_real(ativo: str = Query("WIN")):
                     "conf_label": conf_label,
                     "motivos": motivos_operar,
                     "detalhes_perda": detalhes_perda,
+                    "detalhes_vitoria": detalhes_vitoria,
+                    "analise_completa": analise_completa,
+                    "suporte": round(suporte, 0) if suporte else None,
+                    "resistencia": round(resistencia, 0) if resistencia else None,
+                    "vwap": round(vwap, 0) if vwap else None,
+                    "fib_level": fib_level,
+                    "rsi": rsi_v,
+                    "macd_hist": macd_h,
+                    "ema9": ema9,
+                    "ema21": ema21,
+                    "atr": atr_v,
+                    "tendencia": tend,
                 })
                 
                 # Block next entries: cooldown de 3 velas (15min) apos esta op fechar
-                posicao_aberta = {"close_idx": future_start + velas_na_op + 3}  # +3 velas cooldown
+                posicao_aberta = {"close_idx": future_start + velas_na_op + 2}  # +2 velas cooldown (10min)
         
         # ---- RESUMO DO DIA ----
         first_v = velas_analisadas[0] if velas_analisadas else {}
@@ -2686,8 +2837,8 @@ async def simulador_real(ativo: str = Query("WIN")):
         low_dia = min(v["low"] for v in velas_analisadas) if velas_analisadas else 0
         amplitude = round(high_dia - low_dia, 0)
         
-        # TODAS as oportunidades (score >= 4) - nao so as simuladas
-        oportunidades = [v for v in velas_analisadas if v["score"] >= 4 and v["decisao"] == "OPERAR"]
+        # TODAS as oportunidades (score >= 5) - mostra tudo que tinha algum potencial
+        oportunidades = [v for v in velas_analisadas if v["score"] >= 5 and v["tipo_sinal"] is not None]
         
         total_ops = len(operacoes_recomendadas)
         wins = sum(1 for op in operacoes_recomendadas if op["resultado"] == "WIN")
