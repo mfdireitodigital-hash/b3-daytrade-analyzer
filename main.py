@@ -2393,7 +2393,9 @@ async def simulador_real(ativo: str = Query("WIN")):
                 score += 1
                 motivos_operar.append(f"Horario forte ({hora})")
             elif horario_ruim:
-                motivos_nao_operar.append(f"Horario fraco ({hora}) - evitar")
+                score -= 1  # Penaliza mas nao bloqueia
+                motivos_nao_operar.append(f"Horario fraco ({hora}) - penalizado")
+            # Horas 11, 08 etc: neutro (nao soma nem subtrai)
             
             # 2. RSI - mas RESPEITA TENDENCIA (Elder)
             # Em ALTA: RSI sobrevendido = COMPRA (pullback). RSI sobrecomprado = NAO vender, trend forte
@@ -2443,10 +2445,9 @@ async def simulador_real(ativo: str = Query("WIN")):
             elif tend == "LATERAL":
                 motivos_nao_operar.append("Mercado LATERAL - sem tendencia definida")
             elif tipo_sinal and ((tend == "ALTA" and tipo_sinal == "VENDA") or (tend == "BAIXA" and tipo_sinal == "COMPRA")):
-                # CONTRA TENDENCIA = penaliza pesado (Elder: NUNCA contra Tela 1)
-                score -= 2
-                contra_tendencia = True
-                motivos_nao_operar.append(f"CONTRA TENDENCIA! {tipo_sinal} em mercado {tend} (Elder: proibido)")
+                # CONTRA TENDENCIA = penaliza pesado (Elder: cuidado contra Tela 1)
+                score -= 3  # Penaliza pesado mas nao bloqueia se outros indicadores confirmam
+                motivos_nao_operar.append(f"CONTRA TENDENCIA: {tipo_sinal} em mercado {tend} (-3 pts)")
             
             # 5. MACD histogram (sinal + confirmacao)
             if macd_h > 0 and tipo_sinal == "COMPRA":
@@ -2589,7 +2590,8 @@ async def simulador_real(ativo: str = Query("WIN")):
             # "Entre so no que for seguro" - Fabio
             # Livermore: "O dinheiro grande esta no ESPERAR, nao no trading"
             _score_min = max(5, obter_score_minimo())  # OK+ setup (cada indicador protege individualmente, nao precisa todos juntos)
-            operar = score >= _score_min and tipo_sinal is not None and not horario_ruim and not contra_tendencia
+            operar = score >= _score_min and tipo_sinal is not None and not contra_tendencia
+            # horario_ruim ja penaliza score (nao ganha +1), nao precisa bloquear
             decisao = "OPERAR" if operar else "NAO OPERAR"
             
             # Confianca (Bellafiore) - PRO scoring
