@@ -36,6 +36,7 @@ from trading_books_knowledge import (
     aplicar_scoring_avancado, obter_livros_lista, obter_todos_conceitos
 )
 from smc_engine import aplicar_smc_scoring
+from pro_trader_analysis import calcular_tendencia_macro, detectar_setup_profissional, gerar_analise_completa
 
 load_dotenv()
 
@@ -2284,7 +2285,7 @@ async def get_noticias_impacto():
 
 @app.get("/api/simulador-real")
 async def simulador_real(ativo: str = Query("WIN")):
-    """Analise completa do pregao anterior: vela por vela com decisoes de operar/nao operar"""
+    """Analise PRO do pregao: Triple Screen + Confluence Checklist + PlayBook"""
     try:
         from datetime import timezone, timedelta
         BRT_tz = timezone(timedelta(hours=-3))
@@ -2295,6 +2296,11 @@ async def simulador_real(ativo: str = Query("WIN")):
         from data_provider import obter_contrato_vigente as _ocv
         contrato_info = _ocv(ativo)
         contrato_nome = contrato_info.get('ticker_b3', ativo)
+        
+        from pro_trader_analysis import (
+            calcular_tendencia_macro, detectar_setup_profissional,
+            gerar_analise_completa
+        )
         
         # Get 5 days of data
         dados = yf.download(ticker, period="5d", interval="5m", progress=False)
@@ -2322,20 +2328,23 @@ async def simulador_real(ativo: str = Query("WIN")):
         
         from analysis_engine import calcular_rsi, calcular_macd, calcular_atr_series
         
-        # ---- PRO TRADER CONTROLS ----
-        # Regras de um operador profissional que PROTEGE capital:
-        MAX_OPS_DIA = 8          # Maximo 8 operacoes por dia (operar o que vier, aprender com cada uma)
-        MAX_LOSSES_CONSECUTIVOS = 3  # Apos 3 losses seguidos, PARA (Tendler: evitar tilt/revenge)
-        LOSS_LIMIT_PTS = -400    # Limite de perda diaria em pontos (gestao de risco)
-        
+        # ---- PRO TRADER CONTROLS (Tendler + Elder) ----
+        MAX_OPS_DIA = 8
+        MAX_LOSSES_CONSECUTIVOS = 3
+        LOSS_LIMIT_PTS = -400
         losses_consecutivos = 0
         total_pts_dia = 0
-        dia_bloqueado = False    # True quando atingir limite
+        dia_bloqueado = False
+        
+        # ---- TENDÊNCIA MACRO (Elder Tela 1) ----
+        # Usar TODAS as velas até o dia anterior para calcular tendência macro
+        macro_window = dados.iloc[:day_indices[-1]+1]
+        tend_macro = calcular_tendencia_macro(macro_window, ativo)
         
         # ---- ANALYZE EVERY CANDLE ----
         velas_analisadas = []
         operacoes_recomendadas = []
-        posicao_aberta = None  # track open position to avoid overlapping
+        posicao_aberta = None
         
         for pos_idx in day_indices:
             w = dados.iloc[max(0, pos_idx - 100):pos_idx + 1]
@@ -2371,330 +2380,79 @@ async def simulador_real(ativo: str = Query("WIN")):
                     elif ema9 < ema21: tend = "BAIXA"
                 except: pass
             
-            # ---- SCORING SYSTEM (Triple Screen + Confluencia 7pts) ----
-            # Elder Triple Screen: SO opere na direcao da Tela 1 (tendencia maior)
-            score = 0
-            motivos_operar = []
-            motivos_nao_operar = []
-            tipo_sinal = None
-            contra_tendencia = False
+            # ---- ANÁLISE PRO (Confluence Checklist) ----
+            setup = detectar_setup_profissional(
+                w=w, vela=vela, pos_idx=pos_idx, dados=dados,
+                day_indices=day_indices, ativo=ativo,
+                tend_macro=tend_macro, rsi_v=rsi_v, macd_h=macd_h,
+                ema9=ema9, ema21=ema21, atr_v=atr_v,
+                operacoes_anteriores=operacoes_recomendadas,
+            )
             
-            # TENDENCIA PRINCIPAL do dia (Tela 1 - Elder)
-            # Calculada globalmente abaixo apos processar todas velas
-            # Aqui usamos tend local como proxy inicial
+            tipo_sinal = setup["direcao"]
+            operar = setup["operar"]
+            score = setup["total_confluencia"]
+            confianca = setup["confianca"]
+            conf_label = setup["qualidade"]
+            motivos_operar = setup["motivos_operar"]
+            motivos_nao_operar = setup["motivos_nao_operar"]
+            suporte = setup["suporte"]
+            resistencia = setup["resistencia"]
+            vwap = setup["vwap"]
+            fib_level = setup["fib_level"]
+            price_action = setup["price_action"]
             
-            # 1. Horario (Bellafiore: "In Play" = volume + volatilidade)
+            # Horário check (informativo)
             bom_horario = hora_int in [9, 10, 14, 15, 16]
             horario_ruim = hora_int in [12, 13, 17]
             if hora_int == 9 and minuto < 15:
                 horario_ruim = True
-                motivos_nao_operar.append("Primeiros 15min - volatilidade caotica")
-            if bom_horario and not horario_ruim:
-                score += 1
-                motivos_operar.append(f"Horario forte ({hora})")
-            elif horario_ruim:
-                score -= 1  # Penaliza mas nao bloqueia
-                motivos_nao_operar.append(f"Horario fraco ({hora}) - penalizado")
-            # Horas 11, 08 etc: neutro (nao soma nem subtrai)
+                if "Primeiros 15min" not in str(motivos_nao_operar):
+                    motivos_nao_operar.append("Primeiros 15min - volatilidade caótica")
             
-            # 2. RSI - mas RESPEITA TENDENCIA (Elder)
-            # Em ALTA: RSI sobrevendido = COMPRA (pullback). RSI sobrecomprado = NAO vender, trend forte
-            # Em BAIXA: RSI sobrecomprado = VENDA (pullback). RSI sobrevendido = NAO comprar
-            if rsi_v < 30:
-                if tend == "BAIXA":
-                    # RSI sobrevendido em BAIXA = pode ser continuacao ou bounce
-                    # Se RSI < 20 = muito esticado, pode ter bounce. Se 20-30 = forca vendedora
-                    if rsi_v < 20:
-                        motivos_nao_operar.append(f"RSI muito sobrevendido ({rsi_v}) em BAIXA - bounce provavel")
-                    else:
-                        score += 1; tipo_sinal = "VENDA"
-                        motivos_operar.append(f"RSI vendedor ({rsi_v}) em tendencia BAIXA - momentum confirmado")
-                else:
-                    score += 2; tipo_sinal = "COMPRA"
-                    motivos_operar.append(f"RSI sobrevendido ({rsi_v}) - pullback p/ compra")
-            elif rsi_v > 70:
-                if tend != "ALTA":  # Nao vender contra tendencia alta
-                    score += 2; tipo_sinal = "VENDA"
-                    motivos_operar.append(f"RSI sobrecomprado ({rsi_v}) - pullback p/ venda")
-                else:
-                    # Em tendencia alta, RSI alto = forca, nao reversal
-                    motivos_operar.append(f"RSI alto ({rsi_v}) - tendencia forte")
-                    tipo_sinal = "COMPRA"
-                    score += 1
-            elif 40 <= rsi_v <= 60:
-                motivos_nao_operar.append(f"RSI neutro ({rsi_v}) - sem forca direcional")
-            else:
-                # RSI 30-40 ou 60-70: zona intermediaria
-                if tend == "ALTA" and rsi_v > 50:
-                    tipo_sinal = "COMPRA"
-                elif tend == "BAIXA" and rsi_v < 50:
-                    tipo_sinal = "VENDA"
+            # Penalizar horário ruim (não bloqueia)
+            if horario_ruim and operar:
+                # Só bloqueia se for C+ (fraco)
+                if conf_label == "C+":
+                    operar = False
+                    motivos_nao_operar.append(f"Horário fraco ({hora}) + setup C+ = não vale o risco")
             
-            # 3. EMA alignment (Murphy: cruzamento medias)
-            if ema9 > 0 and ema21 > 0:
-                if ema9 > ema21 and c > ema9:
-                    score += 1
-                    if not tipo_sinal: tipo_sinal = "COMPRA"
-                    motivos_operar.append("EMA9 > EMA21 + preco acima (estrutura compradora)")
-                elif ema9 < ema21 and c < ema9:
-                    score += 1
-                    if not tipo_sinal: tipo_sinal = "VENDA"
-                    motivos_operar.append("EMA9 < EMA21 + preco abaixo (estrutura vendedora)")
-                else:
-                    motivos_nao_operar.append("EMAs sem alinhamento claro")
+            decisao = "OPERAR" if operar else "NAO OPERAR"
             
-            # 4. Tendencia confirmada (Triple Screen Tela 1 + Tela 2)
-            if tend == "ALTA" and tipo_sinal == "COMPRA":
-                score += 1; motivos_operar.append("Tendencia ALTA confirmada (Triple Screen alinhado)")
-            elif tend == "BAIXA" and tipo_sinal == "VENDA":
-                score += 1; motivos_operar.append("Tendencia BAIXA confirmada (Triple Screen alinhado)")
-            elif tend == "LATERAL":
-                motivos_nao_operar.append("Mercado LATERAL - sem tendencia definida")
-            elif tipo_sinal and ((tend == "ALTA" and tipo_sinal == "VENDA") or (tend == "BAIXA" and tipo_sinal == "COMPRA")):
-                # CONTRA TENDENCIA = penaliza pesado (Elder: cuidado contra Tela 1)
-                score -= 3  # Penaliza pesado mas nao bloqueia se outros indicadores confirmam
-                motivos_nao_operar.append(f"CONTRA TENDENCIA: {tipo_sinal} em mercado {tend} (-3 pts)")
-            
-            # 5. MACD histogram (sinal + confirmacao)
-            if macd_h > 0 and tipo_sinal == "COMPRA":
-                score += 1; motivos_operar.append(f"MACD positivo ({macd_h}) - momentum comprador")
-            elif macd_h < 0 and tipo_sinal == "VENDA":
-                score += 1; motivos_operar.append(f"MACD negativo ({macd_h}) - momentum vendedor")
-            elif macd_h > 0 and tipo_sinal == "VENDA":
-                motivos_nao_operar.append(f"MACD positivo ({macd_h}) CONTRA sinal de venda")
-            elif macd_h < 0 and tipo_sinal == "COMPRA":
-                motivos_nao_operar.append(f"MACD negativo ({macd_h}) CONTRA sinal de compra")
-            
-            # 6. ATR (volatilidade minima p/ day trade)
-            _atr_min = 80 if ativo == "WIN" else 0.005  # WIN=pontos, WDO=reais (centavos)
-            if atr_v > _atr_min:
-                score += 1; motivos_operar.append(f"ATR {atr_v:.4f} - volatilidade suficiente")
-            elif atr_v > 0:
-                # Tem volatilidade mas baixa - nao penaliza, so nao soma
-                motivos_nao_operar.append(f"ATR {atr_v:.4f} - volatilidade moderada")
-            else:
-                motivos_nao_operar.append(f"ATR {atr_v:.4f} - sem volatilidade")
-            
-            # 7. Volume (se disponivel)
-            if vol > 0:
-                score += 0  # placeholder - yfinance nem sempre traz vol de futuros
-            
-            # 7. Suporte e Resistencia (Murphy)
-            suporte = None
-            resistencia = None
-            if len(w) >= 20:
-                recent_highs = [float(w.iloc[j]['high']) for j in range(-20, 0)]
-                recent_lows = [float(w.iloc[j]['low']) for j in range(-20, 0)]
-                resistencia = max(recent_highs)
-                suporte = min(recent_lows)
-                dist_suporte = abs(c - suporte)
-                dist_resistencia = abs(resistencia - c)
-                
-                # Near support + COMPRA = good
-                if tipo_sinal == "COMPRA" and dist_suporte < atr_v * 0.5:
-                    score += 1
-                    motivos_operar.append(f"Proximo ao suporte {round(suporte,0)} (S/R Murphy)")
-                # Near resistance + VENDA = good  
-                elif tipo_sinal == "VENDA" and dist_resistencia < atr_v * 0.5:
-                    score += 1
-                    motivos_operar.append(f"Proximo a resistencia {round(resistencia,0)} (S/R Murphy)")
-                else:
-                    motivos_nao_operar.append("Preco longe de S/R relevante")
-            
-            # 8. VWAP - Preco medio ponderado volume
-            vwap = None
-            if len(w) >= 10:
-                try:
-                    typical = (w['high'] + w['low'] + w['close']) / 3
-                    vol_s = w['volume'].replace(0, 1)
-                    vwap = float((typical * vol_s).cumsum().iloc[-1] / vol_s.cumsum().iloc[-1])
-                    dist_vwap = c - vwap
-                    if tipo_sinal == "COMPRA" and c > vwap:
-                        score += 1
-                        motivos_operar.append(f"Acima VWAP {round(vwap,0)} (comprador)")
-                    elif tipo_sinal == "VENDA" and c < vwap:
-                        score += 1
-                        motivos_operar.append(f"Abaixo VWAP {round(vwap,0)} (vendedor)")
-                    elif tipo_sinal == "COMPRA" and c < vwap:
-                        motivos_nao_operar.append(f"Abaixo VWAP - compra arriscada")
-                    elif tipo_sinal == "VENDA" and c > vwap:
-                        motivos_nao_operar.append(f"Acima VWAP - venda arriscada")
-                except: pass
-            
-            # 9. Fibonacci (retracao do swing recente)
-            fib_level = None
-            if len(w) >= 30:
-                try:
-                    swing_high = max(float(w.iloc[j]['high']) for j in range(-30, 0))
-                    swing_low = min(float(w.iloc[j]['low']) for j in range(-30, 0))
-                    fib_range = swing_high - swing_low
-                    if fib_range > 0:
-                        fib_382 = swing_high - fib_range * 0.382
-                        fib_500 = swing_high - fib_range * 0.500
-                        fib_618 = swing_high - fib_range * 0.618
-                        # Check if price is near a Fibonacci level
-                        for fib_lv, fib_name in [(fib_382, "38.2%"), (fib_500, "50%"), (fib_618, "61.8%")]:
-                            if abs(c - fib_lv) < atr_v * 0.3:
-                                score += 1
-                                fib_level = fib_name
-                                motivos_operar.append(f"Proximo Fibonacci {fib_name} ({round(fib_lv,0)})")
-                                break
-                except: pass
-            
-            # 10. Candlestick Patterns
-            if len(w) >= 3:
-                try:
-                    prev = w.iloc[-2]
-                    prev2 = w.iloc[-3]
-                    body = abs(c - o)
-                    upper_shadow = h - max(c, o)
-                    lower_shadow = min(c, o) - l
-                    prev_body = abs(float(prev['close']) - float(prev['open']))
-                    
-                    # Martelo (hammer) - bullish reversal
-                    if lower_shadow > body * 2 and upper_shadow < body * 0.5 and c > o:
-                        if tipo_sinal == "COMPRA":
-                            score += 1
-                            motivos_operar.append("Candlestick: Martelo (reversao altista)")
-                    # Estrela Cadente (shooting star) - bearish reversal
-                    elif upper_shadow > body * 2 and lower_shadow < body * 0.5 and o > c:
-                        if tipo_sinal == "VENDA":
-                            score += 1
-                            motivos_operar.append("Candlestick: Estrela Cadente (reversao baixista)")
-                    # Engolfo de Alta
-                    elif c > o and float(prev['close']) < float(prev['open']) and body > prev_body * 1.2:
-                        if tipo_sinal == "COMPRA":
-                            score += 1
-                            motivos_operar.append("Candlestick: Engolfo de Alta")
-                    # Engolfo de Baixa
-                    elif o > c and float(prev['close']) > float(prev['open']) and body > prev_body * 1.2:
-                        if tipo_sinal == "VENDA":
-                            score += 1
-                            motivos_operar.append("Candlestick: Engolfo de Baixa")
-                except: pass
-            
-            # 11. SCORING AVANÇADO (Al Brooks, Nison, Grimes, Williams, Taleb)
-            try:
-                _extra_score, _extra_motivos = aplicar_scoring_avancado(
-                    vela_info, tipo_sinal, tend, rsi_v, atr_v, macd_h,
-                    c, o, h, l, suporte, resistencia, ema9, ema21, w
-                )
-                score += _extra_score
-                motivos_operar.extend(_extra_motivos)
-            except Exception as _e:
-                pass  # Non-critical
-            
-            # 12. PRICE ACTION COMPLETO
-            # LTA/LTD detection, rompimento, quebra de estrutura
-            price_action = {}
-            if len(w) >= 10:
-                try:
-                    # Swing highs e lows recentes (10 velas)
-                    _pa_highs = [float(w.iloc[j]['high']) for j in range(-10, 0)]
-                    _pa_lows = [float(w.iloc[j]['low']) for j in range(-10, 0)]
-                    _pa_closes = [float(w.iloc[j]['close']) for j in range(-10, 0)]
-                    
-                    # Topos e fundos locais (pivots)
-                    _topos = []
-                    _fundos = []
-                    for j in range(1, len(_pa_highs) - 1):
-                        if _pa_highs[j] > _pa_highs[j-1] and _pa_highs[j] > _pa_highs[j+1]:
-                            _topos.append((_pa_highs[j], j))
-                        if _pa_lows[j] < _pa_lows[j-1] and _pa_lows[j] < _pa_lows[j+1]:
-                            _fundos.append((_pa_lows[j], j))
-                    
-                    # LTA: fundos ascendentes
-                    if len(_fundos) >= 2:
-                        if _fundos[-1][0] > _fundos[-2][0]:
-                            price_action["lta"] = True
-                            price_action["lta_pontos"] = [_fundos[-2][0], _fundos[-1][0]]
-                            motivos_operar.append("LTA: Fundos ascendentes (linha de tendencia de alta)")
-                    
-                    # LTD: topos descendentes
-                    if len(_topos) >= 2:
-                        if _topos[-1][0] < _topos[-2][0]:
-                            price_action["ltd"] = True
-                            price_action["ltd_pontos"] = [_topos[-2][0], _topos[-1][0]]
-                            motivos_operar.append("LTD: Topos descendentes (linha de tendencia de baixa)")
-                    
-                    # Rompimento de topo
-                    if _topos and c > _topos[-1][0]:
-                        price_action["rompimento_topo"] = True
-                        price_action["topo_rompido"] = _topos[-1][0]
-                        score += 1
-                        motivos_operar.append(f"ROMPIMENTO DE TOPO em {round(_topos[-1][0], 2)} - breakout")
-                    
-                    # Rompimento de fundo
-                    if _fundos and c < _fundos[-1][0]:
-                        price_action["rompimento_fundo"] = True
-                        price_action["fundo_rompido"] = _fundos[-1][0]
-                        score += 1
-                        motivos_operar.append(f"ROMPIMENTO DE FUNDO em {round(_fundos[-1][0], 2)} - breakdown")
-                    
-                    # Quebra de estrutura (BOS simples)
-                    # Alta: topo mais alto que anterior
-                    # Baixa: fundo mais baixo que anterior
-                    if len(_topos) >= 2 and len(_fundos) >= 2:
-                        _topos_asc = _topos[-1][0] > _topos[-2][0]
-                        _fundos_asc = _fundos[-1][0] > _fundos[-2][0]
-                        if _topos_asc and _fundos_asc:
-                            price_action["estrutura"] = "ALTA"
-                            price_action["estrutura_label"] = "Topos e fundos ascendentes"
-                        elif not _topos_asc and not _fundos_asc:
-                            price_action["estrutura"] = "BAIXA"
-                            price_action["estrutura_label"] = "Topos e fundos descendentes"
-                        elif _topos_asc and not _fundos_asc:
-                            price_action["estrutura"] = "QUEBRA_ALTA"
-                            price_action["estrutura_label"] = "Quebra de estrutura: fundo rompeu em alta"
-                            motivos_operar.append("QUEBRA DE ESTRUTURA: mudanca de direcao possivel")
-                        elif not _topos_asc and _fundos_asc:
-                            price_action["estrutura"] = "QUEBRA_BAIXA"
-                            price_action["estrutura_label"] = "Quebra de estrutura: topo rompeu em baixa"
-                            motivos_operar.append("QUEBRA DE ESTRUTURA: mudanca de direcao possivel")
-                    
-                    # Volume check
-                    if vol > 0:
-                        _avg_vol = sum(float(w.iloc[j]['volume']) for j in range(-10, 0)) / 10
-                        if _avg_vol > 0:
-                            _vol_ratio = vol / _avg_vol
-                            if _vol_ratio > 1.5:
-                                price_action["volume_alto"] = True
-                                price_action["vol_ratio"] = round(_vol_ratio, 1)
-                                score += 1
-                                motivos_operar.append(f"VOLUME {round(_vol_ratio,1)}x acima da media - confirmacao")
-                            elif _vol_ratio < 0.5:
-                                price_action["volume_baixo"] = True
-                                motivos_nao_operar.append(f"Volume baixo ({round(_vol_ratio,1)}x) - sem participacao")
-                except: pass
-            
-            # price_action sera adicionado apos vela_info ser criado
-            
-            # 13. SMC - Smart Money Concepts (FVG, Liquidity Sweep, Order Block, BOS/CHoCH)
+            # SMC analysis (complementar)
             smc_data = {}
             try:
                 _smc_score, _smc_motivos, smc_data = aplicar_smc_scoring(
                     dados, pos_idx, tipo_sinal, tend
                 )
-                score += _smc_score
-                motivos_operar.extend(_smc_motivos)
-            except Exception as _e:
-                pass  # Non-critical
+                if _smc_motivos:
+                    motivos_operar.extend(_smc_motivos)
+                # SMC pode promover C+ para B+ se tiver Order Block + FVG
+                if _smc_score >= 2 and conf_label == "C+" and not setup["contra_tendencia"]:
+                    # SMC forte pode salvar um C+
+                    conf_label = "B+ (SMC)"
+                    confianca = 4
+                    if not operar and not setup["entrada_repetida"]:
+                        operar = True
+                        decisao = "OPERAR"
+                        motivos_operar.append("SMC forte (Order Block/FVG) promoveu C+ para B+")
+            except: pass
             
-            # DECISAO FINAL - PRO TRADER: SO ENTRA NO SEGURO
-            # Score minimo 9 = A+ SETUP ONLY. Nao entra em BOM, OK, Duvidoso.
-            # "Entre so no que for seguro" - Fabio
-            # Livermore: "O dinheiro grande esta no ESPERAR, nao no trading"
-            _score_min = max(5, obter_score_minimo())  # OK+ setup (cada indicador protege individualmente, nao precisa todos juntos)
-            operar = score >= _score_min and tipo_sinal is not None and not contra_tendencia
-            # horario_ruim ja penaliza score (nao ganha +1), nao precisa bloquear
-            decisao = "OPERAR" if operar else "NAO OPERAR"
-            
-            # Confianca (Bellafiore) - PRO scoring
-            if score >= 9: confianca = 5; conf_label = "A+ SETUP"
-            elif score >= 7: confianca = 4; conf_label = "BOM"
-            elif score >= 5: confianca = 3; conf_label = "OK"
-            elif score >= 3: confianca = 2; conf_label = "ARRISCADO"
-            else: confianca = 1; conf_label = "SEM SETUP"
+            # Books scoring (complementar)
+            try:
+                vela_info_temp = {
+                    "open": o, "high": h, "low": l, "close": c,
+                    "rsi": rsi_v, "macd_hist": macd_h, "tendencia": tend,
+                    "ema9": ema9, "ema21": ema21, "atr": atr_v,
+                    "suporte": suporte, "resistencia": resistencia,
+                }
+                _extra_score, _extra_motivos = aplicar_scoring_avancado(
+                    vela_info_temp, tipo_sinal, tend, rsi_v, atr_v, macd_h,
+                    c, o, h, l, suporte, resistencia, ema9, ema21, w
+                )
+                if _extra_motivos:
+                    motivos_operar.extend(_extra_motivos)
+            except: pass
             
             vela_info = {
                 "idx": len(velas_analisadas),
@@ -2714,92 +2472,64 @@ async def simulador_real(ativo: str = Query("WIN")):
                 "vwap": round(vwap, 0) if vwap else None,
                 "fib_level": fib_level,
                 "smc": smc_data,
+                "price_action": price_action,
+                "confluencia": setup["confluencia"],
+                "qualidade_setup": conf_label,
             }
-            vela_info["price_action"] = price_action
             velas_analisadas.append(vela_info)
             
-            # Check if position closed (+ cooldown)
+            # Check if position closed (cooldown)
             if posicao_aberta:
                 current_day_idx = day_indices.index(pos_idx) if pos_idx in day_indices else 0
                 if current_day_idx >= posicao_aberta.get("close_idx", 0):
                     posicao_aberta = None
             
-            # SIMULATE operations: PRO TRADER - poucos trades, alta confianca
-            # Verifica controles de risco ANTES de entrar
+            # ===== EXECUTAR OPERAÇÃO =====
             pode_operar = (
-                operar and tipo_sinal 
-                and posicao_aberta is None 
-                and hora_int < 17 
+                operar and tipo_sinal
+                and posicao_aberta is None
+                and hora_int < 17
                 and not (hora_int == 16 and minuto > 30)
-                and len(operacoes_recomendadas) < MAX_OPS_DIA  # Limite diario
-                and losses_consecutivos < MAX_LOSSES_CONSECUTIVOS  # Parar apos losses
-                and not dia_bloqueado  # Limite de perda
+                and len(operacoes_recomendadas) < MAX_OPS_DIA
+                and losses_consecutivos < MAX_LOSSES_CONSECUTIVOS
+                and not dia_bloqueado
             )
             
-            # ===== ANALISE DE CONTEXTO (informativo, nao bloqueia) =====
-            _exaustao = False
-            if len(w) >= 5:
-                try:
-                    _recent_5h = [float(w.iloc[j]['high']) for j in range(-5, 0)]
-                    _recent_5l = [float(w.iloc[j]['low']) for j in range(-5, 0)]
-                    if tipo_sinal == "COMPRA" and c >= max(_recent_5h):
-                        motivos_nao_operar.append("ATENCAO: preco no topo local (5 velas) - possivel exaustao")
-                    elif tipo_sinal == "VENDA" and c <= min(_recent_5l):
-                        motivos_nao_operar.append("ATENCAO: preco no fundo local (5 velas) - possivel exaustao")
-                except: pass
-            
-            # Re-entrada permitida - cada trade e independente (Douglas: cada momento e unico)
-            _mesmo_nivel = False
-            
-            # RSI extremo: informativo, nao bloqueia (cada indicador e individual)
-            _rsi_pullback_ok = True  # Nunca bloqueia - RSI e um indicador entre varios
             if pode_operar:
-                if tipo_sinal == "COMPRA" and rsi_v > 80:
-                    motivos_nao_operar.append(f"ATENCAO RSI: {rsi_v} muito sobrecomprado - risco de pullback")
-                elif tipo_sinal == "VENDA" and rsi_v < 15:
-                    motivos_nao_operar.append(f"ATENCAO RSI: {rsi_v} extremamente sobrevendido - risco de bounce")
-            
-            # Aplicar filtros: so entra se passar TODOS
-            # Filtros sao informativos - cada indicador protege individualmente
-            pode_operar = pode_operar and _rsi_pullback_ok  # So bloqueia RSI extremo (>75/<25)
-            
-            if pode_operar:
-                # ===== STOP E ALVO PRO (Williams + Bellafiore) =====
-                # Stop = 1.5x ATR (mais largo para respirar) com cap inteligente
+                # ===== STOP E ALVO PRO =====
                 stop_pts = round(atr_v * 1.5)
                 if ativo == "WIN":
-                    stop_pts = max(round(stop_pts / 5) * 5, 80)  # round to tick, min 80pts WIN
+                    stop_pts = max(round(stop_pts / 5) * 5, 80)
+                    stop_pts = min(stop_pts, 350)
                 else:
-                    stop_pts = max(round(stop_pts * 200) / 200, 0.005)  # WDO: min 0.5 centavo (0.005)
-                if ativo == "WIN":
-                    stop_pts = min(stop_pts, 350)  # cap stop WIN
-                else:
-                    # WDO: precos em reais (ex: 5.67), ATR em centavos (ex: 0.02)
-                    stop_pts = min(stop_pts, 0.10)  # max 10 centavos
+                    stop_pts = max(round(stop_pts * 200) / 200, 0.005)
+                    stop_pts = min(stop_pts, 0.10)
                 
-                # Alvo = 2x stop (R:R minimo 1:2 - Van Tharp: risco/retorno positivo)
-                alvo_pts = round(stop_pts * 2.0, 4)  # 4 decimais para WDO
-                
+                alvo_pts = round(stop_pts * 2.0, 4)
                 is_compra = tipo_sinal == "COMPRA"
                 
-                # Stop abaixo do suporte se COMPRA (protecao estrutural)
+                # Stop estrutural (Murphy: stop abaixo do suporte/acima da resistência)
                 if is_compra and suporte and abs(c - suporte) < stop_pts:
                     _structural_stop = round(c - suporte + atr_v * 0.3)
                     if _structural_stop > stop_pts * 0.5 and _structural_stop < stop_pts * 2:
-                        stop_pts = max(round(_structural_stop / 5) * 5, 80)
-                        alvo_pts = round(stop_pts * 2.0, 4)  # 4 decimais para WDO
+                        if ativo == "WIN":
+                            stop_pts = max(round(_structural_stop / 5) * 5, 80)
+                        else:
+                            stop_pts = max(_structural_stop, 0.005)
+                        alvo_pts = round(stop_pts * 2.0, 4)
                 elif not is_compra and resistencia and abs(resistencia - c) < stop_pts:
                     _structural_stop = round(resistencia - c + atr_v * 0.3)
                     if _structural_stop > stop_pts * 0.5 and _structural_stop < stop_pts * 2:
-                        stop_pts = max(round(_structural_stop / 5) * 5, 80)
-                        alvo_pts = round(stop_pts * 2.0, 4)  # 4 decimais para WDO
+                        if ativo == "WIN":
+                            stop_pts = max(round(_structural_stop / 5) * 5, 80)
+                        else:
+                            stop_pts = max(_structural_stop, 0.005)
+                        alvo_pts = round(stop_pts * 2.0, 4)
                 
-                # ===== ENTRADA REALISTA: proxima vela open + slippage =====
-                # Na vida real: sinal aparece no FECHAMENTO da vela, trader entra na ABERTURA da proxima
+                # ===== ENTRADA REALISTA: próxima vela open + slippage =====
                 _signal_idx = day_indices.index(pos_idx)
                 _next_idx = _signal_idx + 1
                 if _next_idx >= len(day_indices):
-                    # Sem proxima vela, nao entra (fim do dia)
                     posicao_aberta = {"close_idx": _signal_idx + 3}
                     continue
                 
@@ -2807,44 +2537,39 @@ async def simulador_real(ativo: str = Query("WIN")):
                 _entry_open = float(_next_vela['open'])
                 _hora_entrada_real = dados.index[day_indices[_next_idx]].strftime("%H:%M")
                 
-                # Slippage realista: 5-20pts WIN, 0.5-2pts WDO (sempre CONTRA o trader)
                 import random as _rnd
                 if ativo == "WIN":
-                    _slippage = _rnd.randint(5, 20)
+                    _slippage = _rnd.randint(5, 15)  # 5-15pts WIN (realista)
                 else:
-                    _slippage = round(_rnd.uniform(0.0005, 0.002), 4)  # WDO: 0.5-2 pts em BRL
+                    _slippage = round(_rnd.uniform(0.0005, 0.0015), 4)
                 
-                # Slippage vai contra: compra mais caro, vende mais barato
                 if is_compra:
                     preco_entrada_real = round(_entry_open + _slippage, 2)
                 else:
                     preco_entrada_real = round(_entry_open - _slippage, 2)
                 
-                # Custo operacional (emolumentos + corretagem estimada)
                 if ativo == "WIN":
-                    _custo_pts = 5  # ~R$1.00 por contrato (emolumentos B3)
+                    _custo_pts = 5
                 else:
-                    _custo_pts = 1  # 1 ponto WDO = R$10 custo
+                    _custo_pts = 1
                 
-                # Stop e alvo baseados no preco REAL de entrada (com slippage)
-                stop_price = round(preco_entrada_real - stop_pts, 2) if is_compra else round(preco_entrada_real + stop_pts, 2)
-                alvo_price = round(preco_entrada_real + alvo_pts, 2) if is_compra else round(preco_entrada_real - alvo_pts, 2)
-                
-                # Guardar preco original do sinal para referencia
                 _preco_sinal = c
-                c = preco_entrada_real  # usar preco real para calculos
-                hora = _hora_entrada_real  # hora real de entrada
+                preco_op = preco_entrada_real
+                hora_op = _hora_entrada_real
+                
+                stop_price = round(preco_op - stop_pts, 2) if is_compra else round(preco_op + stop_pts, 2)
+                alvo_price = round(preco_op + alvo_pts, 2) if is_compra else round(preco_op - alvo_pts, 2)
                 
                 # ===== WALK FORWARD COM TRAILING STOP =====
                 resultado = None
                 preco_saida = 0
                 hora_saida = ""
                 velas_na_op = 0
-                max_velas_op = 24  # timeout 2h
-                _best_price = preco_entrada_real
+                max_velas_op = 24
+                _best_price = preco_op
                 _trailing_active = False
                 
-                future_start = _next_idx + 1  # começa DEPOIS da vela de entrada
+                future_start = _next_idx + 1
                 for fi in range(future_start, len(day_indices)):
                     fv = dados.iloc[day_indices[fi]]
                     fh = float(fv['high']); fl = float(fv['low'])
@@ -2852,251 +2577,110 @@ async def simulador_real(ativo: str = Query("WIN")):
                     f_hora = dados.index[day_indices[fi]].strftime("%H:%M")
                     velas_na_op += 1
                     
-                    # Timeout: fecha no preco atual
                     if velas_na_op >= max_velas_op:
-                        preco_saida = fc
-                        hora_saida = f_hora
-                        pts_t = (preco_saida - c) if is_compra else (c - preco_saida)
+                        preco_saida = fc; hora_saida = f_hora
+                        pts_t = (preco_saida - preco_op) if is_compra else (preco_op - preco_saida)
                         resultado = "WIN" if pts_t > 0 else "LOSS"
                         break
                     
                     if is_compra:
-                        # Atualiza melhor preco
-                        if fh > _best_price:
-                            _best_price = fh
-                        
-                        # Trailing stop: quando lucro >= 1x stop, move stop pro breakeven+20%
-                        _lucro_corrente = _best_price - c
-                        if _lucro_corrente >= stop_pts and not _trailing_active:
+                        if fh > _best_price: _best_price = fh
+                        _lucro = _best_price - preco_op
+                        if _lucro >= stop_pts and not _trailing_active:
                             _trailing_active = True
-                            # Move stop para breakeven + 20% do lucro
-                            _novo_stop = c + _lucro_corrente * 0.2
-                            if _novo_stop > stop_price:
-                                stop_price = round(_novo_stop, 2)
-                        elif _trailing_active and _lucro_corrente >= stop_pts * 1.5:
-                            # Trail agressivo: move stop para 50% do lucro maximo
-                            _novo_stop = c + _lucro_corrente * 0.5
-                            if _novo_stop > stop_price:
-                                stop_price = round(_novo_stop, 2)
-                        
-                        # Check alvo PRIMEIRO (favorece o trader)
+                            _novo_stop = preco_op + _lucro * 0.2
+                            if _novo_stop > stop_price: stop_price = round(_novo_stop, 2)
+                        elif _trailing_active and _lucro >= stop_pts * 1.5:
+                            _novo_stop = preco_op + _lucro * 0.5
+                            if _novo_stop > stop_price: stop_price = round(_novo_stop, 2)
                         if fh >= alvo_price:
                             resultado = "WIN"; preco_saida = alvo_price; hora_saida = f_hora; break
-                        # Depois check stop
                         if fl <= stop_price:
                             preco_saida = stop_price; hora_saida = f_hora
-                            pts_t = preco_saida - c
-                            resultado = "WIN" if pts_t > 0 else "LOSS"
-                            break
+                            pts_t = preco_saida - preco_op
+                            resultado = "WIN" if pts_t > 0 else "LOSS"; break
                     else:
-                        # VENDA - espelho
-                        if fl < _best_price:
-                            _best_price = fl
-                        
-                        _lucro_corrente = c - _best_price
-                        if _lucro_corrente >= stop_pts and not _trailing_active:
+                        if fl < _best_price: _best_price = fl
+                        _lucro = preco_op - _best_price
+                        if _lucro >= stop_pts and not _trailing_active:
                             _trailing_active = True
-                            _novo_stop = c - _lucro_corrente * 0.2
-                            if _novo_stop < stop_price:
-                                stop_price = round(_novo_stop, 2)
-                        elif _trailing_active and _lucro_corrente >= stop_pts * 1.5:
-                            _novo_stop = c - _lucro_corrente * 0.5
-                            if _novo_stop < stop_price:
-                                stop_price = round(_novo_stop, 2)
-                        
-                        # Check alvo PRIMEIRO
+                            _novo_stop = preco_op - _lucro * 0.2
+                            if _novo_stop < stop_price: stop_price = round(_novo_stop, 2)
+                        elif _trailing_active and _lucro >= stop_pts * 1.5:
+                            _novo_stop = preco_op - _lucro * 0.5
+                            if _novo_stop < stop_price: stop_price = round(_novo_stop, 2)
                         if fl <= alvo_price:
                             resultado = "WIN"; preco_saida = alvo_price; hora_saida = f_hora; break
                         if fh >= stop_price:
                             preco_saida = stop_price; hora_saida = f_hora
-                            pts_t = c - preco_saida
-                            resultado = "WIN" if pts_t > 0 else "LOSS"
-                            break
+                            pts_t = preco_op - preco_saida
+                            resultado = "WIN" if pts_t > 0 else "LOSS"; break
                 
                 if resultado is None:
                     last_v = dados.iloc[day_indices[-1]]
                     preco_saida = float(last_v['close'])
                     hora_saida = dados.index[day_indices[-1]].strftime("%H:%M")
-                    pts_f = (preco_saida - c) if is_compra else (c - preco_saida)
+                    pts_f = (preco_saida - preco_op) if is_compra else (preco_op - preco_saida)
                     resultado = "WIN" if pts_f > 0 else "LOSS"
                 
-                _raw_diff = (preco_saida - c) if is_compra else (c - preco_saida)
+                _raw_diff = (preco_saida - preco_op) if is_compra else (preco_op - preco_saida)
                 if ativo == "WDO":
-                    # Converter diferenca em reais para pontos WDO (1pt = 0.001 BRL)
-                    pts_bruto = round(_raw_diff * 1000, 1)  # ex: 0.01 BRL = 10 pts WDO
+                    pts_bruto = round(_raw_diff * 1000, 1)
                 else:
                     pts_bruto = round(_raw_diff, 1)
-                pts = round(pts_bruto - _custo_pts, 4)  # Desconta custo operacional
+                pts = round(pts_bruto - _custo_pts, 4)
                 rs = round(pts * valor_ponto, 2)
                 
-                # Detalhes da perda quando LOSS - ANALISE COMPLETA DO PQ PERDEU
+                # ---- ANÁLISE DETALHADA DO RESULTADO ----
+                analise_completa = gerar_analise_completa(setup, vela_info, ativo)
+                analise_completa += f"\nRESULTADO: {resultado} | {round(abs(pts),1)}pts | R${round(abs(rs),2)}\n"
+                analise_completa += f"Entrada: {preco_op} ({hora_op}) | Saída: {round(preco_saida,2)} ({hora_saida})\n"
+                analise_completa += f"Duração: {velas_na_op} velas ({velas_na_op*5}min)\n"
+                
                 detalhes_perda = ""
-                if resultado == "LOSS":
-                    if velas_na_op >= max_velas_op:
-                        detalhes_perda = f"TIMEOUT: Operacao aberta por {velas_na_op} velas ({velas_na_op*5}min) sem atingir alvo nem stop. "
-                        detalhes_perda += f"Fechou no preco {round(preco_saida,2)} com prejuizo de {round(abs(pts),1)}pts. "
-                        detalhes_perda += "Licao: Mercado ficou lateral/indeciso. Timeout protege de operar em congestao prolongada. "
-                    elif is_compra:
-                        detalhes_perda = f"STOP atingido em {hora_saida} ({velas_na_op} velas = {velas_na_op*5}min). "
-                        detalhes_perda += f"Preco caiu de {round(c,2)} ate stop {round(stop_price,2)} (-{stop_pts}pts = -R${round(stop_pts * valor_ponto, 2)}). "
-                        # Analise do que deu errado
-                        problemas = []
-                        if macd_h < 0:
-                            problemas.append(f"MACD negativo ({macd_h}) ja indicava momentum vendedor na entrada")
-                        if rsi_v > 70:
-                            problemas.append(f"RSI sobrecomprado ({rsi_v}) - mercado ja esticado, reversao provavel")
-                        if rsi_v < 40 and tend != "ALTA":
-                            problemas.append(f"RSI fraco ({rsi_v}) sem tendencia de alta para suportar")
-                        if atr_v > 300:
-                            problemas.append(f"ATR muito alto ({atr_v}) - volatilidade excessiva aumenta risco de stop")
-                        if vwap and c < vwap:
-                            problemas.append(f"Preco ABAIXO do VWAP ({round(vwap,0)}) - comprando contra fluxo institucional")
-                        if suporte and abs(c - suporte) > atr_v:
-                            problemas.append(f"Longe do suporte ({round(suporte,0)}) - sem protecao natural de preco")
-                        if not problemas:
-                            problemas.append("Setup estava correto - loss faz parte (nem todo setup ganha)")
-                        detalhes_perda += "PROBLEMAS: " + "; ".join(problemas) + ". "
-                        detalhes_perda += f"Score era {score}/15 ({conf_label}). "
-                        detalhes_perda += "Licao: " + ("Volatilidade alta exige stop mais conservador ou esperar pullback." if atr_v > 250 else "Verifique alinhamento do TF maior antes de entrar. Loss com setup correto e normal - disciplina e seguir o plano.")
-                    else:
-                        detalhes_perda = f"STOP atingido em {hora_saida} ({velas_na_op} velas = {velas_na_op*5}min). "
-                        detalhes_perda += f"Preco subiu de {round(c,2)} ate stop {round(stop_price,2)} (-{stop_pts}pts = -R${round(stop_pts * valor_ponto, 2)}). "
-                        problemas = []
-                        if macd_h > 0:
-                            problemas.append(f"MACD positivo ({macd_h}) ja indicava momentum comprador")
-                        if tend == "ALTA":
-                            problemas.append("VENDA contra tendencia ALTA - Elder proibe operar contra Tela 1")
-                        if rsi_v < 30:
-                            problemas.append(f"RSI sobrevendido ({rsi_v}) - bounce esperado")
-                        if vwap and c > vwap:
-                            problemas.append(f"Preco ACIMA do VWAP ({round(vwap,0)}) - vendendo contra fluxo")
-                        if resistencia and abs(resistencia - c) > atr_v:
-                            problemas.append(f"Longe da resistencia ({round(resistencia,0)}) - sem teto natural")
-                        if not problemas:
-                            problemas.append("Setup estava correto - loss faz parte do jogo")
-                        detalhes_perda += "PROBLEMAS: " + "; ".join(problemas) + ". "
-                        detalhes_perda += f"Score era {score}/15 ({conf_label}). "
-                        detalhes_perda += "Licao: Nunca venda em tendencia de alta clara. Disciplina > opiniao."
-                
-                # ---- ANALISE COMPLETA (PRO TRADER) ----
-                # Narrativa detalhada de TUDO que foi analisado, como um operador profissional
-                analise_completa = f"== ANALISE COMPLETA da entrada {tipo_sinal} as {hora} ==\n"
-                analise_completa += f"PRECO: O={round(o,2)} H={round(h,2)} L={round(l,2)} C={round(c,2)}\n"
-                analise_completa += f"\n1. TENDENCIA (Elder Triple Screen - Tela 1): {tend}\n"
-                analise_completa += f"   EMA9={ema9} vs EMA21={ema21}"
-                if ema50 > 0:
-                    analise_completa += f" vs EMA50={ema50}"
-                analise_completa += f"\n   Preco {'acima' if c > ema9 else 'abaixo'} da EMA9. "
-                if tend == "ALTA":
-                    analise_completa += "Estrutura compradora confirmada.\n"
-                elif tend == "BAIXA":
-                    analise_completa += "Estrutura vendedora confirmada.\n"
-                else:
-                    analise_completa += "Sem direcao clara.\n"
-                
-                analise_completa += f"\n2. RSI (Wilder): {rsi_v}\n"
-                if rsi_v > 70:
-                    analise_completa += f"   Sobrecomprado. Em ALTA=forca, em BAIXA=possivel reversao.\n"
-                elif rsi_v < 30:
-                    analise_completa += f"   Sobrevendido. Em BAIXA=fraqueza, em ALTA=oportunidade compra.\n"
-                else:
-                    analise_completa += f"   Zona {'compradora' if rsi_v > 50 else 'vendedora' if rsi_v < 50 else 'neutra'}.\n"
-                
-                analise_completa += f"\n3. MACD Histograma: {macd_h}\n"
-                analise_completa += f"   Momentum {'comprador' if macd_h > 0 else 'vendedor' if macd_h < 0 else 'neutro'}. "
-                if (macd_h > 0 and tipo_sinal == "COMPRA") or (macd_h < 0 and tipo_sinal == "VENDA"):
-                    analise_completa += "CONFIRMADO com a direcao da operacao.\n"
-                else:
-                    analise_completa += "DIVERGENTE com a direcao da operacao.\n"
-                
-                analise_completa += f"\n4. ATR (Volatilidade): {atr_v} pts\n"
-                analise_completa += f"   {'Volatilidade suficiente para day trade.' if atr_v > 80 else 'Volatilidade baixa - risco de spread.'}\n"
-                analise_completa += f"   Stop calculado: {stop_pts}pts (1.5x ATR, estrutural). Alvo: {alvo_pts}pts (2x stop, R:R 1:2).\n"
-                
-                if suporte and resistencia:
-                    analise_completa += f"\n5. SUPORTE/RESISTENCIA (Murphy):\n"
-                    analise_completa += f"   Suporte: {round(suporte,0)} | Resistencia: {round(resistencia,0)}\n"
-                    dist_s = abs(c - suporte)
-                    dist_r = abs(resistencia - c)
-                    analise_completa += f"   Distancia do suporte: {round(dist_s,0)}pts | Distancia da resistencia: {round(dist_r,0)}pts\n"
-                    if tipo_sinal == "COMPRA":
-                        analise_completa += f"   COMPRA proximo suporte = {'BOM (risco/retorno favoravel)' if dist_s < atr_v else 'Preco longe do suporte'}.\n"
-                    else:
-                        analise_completa += f"   VENDA proximo resistencia = {'BOM (risco/retorno favoravel)' if dist_r < atr_v else 'Preco longe da resistencia'}.\n"
-                
-                if vwap:
-                    analise_completa += f"\n6. VWAP (Preco Medio Ponderado): {round(vwap,0)}\n"
-                    analise_completa += f"   Preco {'ACIMA' if c > vwap else 'ABAIXO'} do VWAP ({round(c - vwap, 0)}pts). "
-                    if (c > vwap and tipo_sinal == "COMPRA") or (c < vwap and tipo_sinal == "VENDA"):
-                        analise_completa += "CONFIRMADO: preco na direcao correta do VWAP.\n"
-                    else:
-                        analise_completa += "ATENCAO: preco contra o VWAP.\n"
-                
-                if fib_level:
-                    analise_completa += f"\n7. FIBONACCI: Proximo do nivel {fib_level}\n"
-                    analise_completa += f"   Retracao do swing recente. Zona de alta probabilidade de reacao.\n"
-                else:
-                    analise_completa += f"\n7. FIBONACCI: Preco longe de niveis significativos (38.2%, 50%, 61.8%)\n"
-                
-                analise_completa += f"\n8. CANDLESTICK PATTERNS: "
-                found_pattern = False
-                for m in motivos_operar:
-                    if "Candlestick" in m:
-                        analise_completa += m + "\n"
-                        found_pattern = True
-                if not found_pattern:
-                    analise_completa += "Nenhum padrao relevante nesta vela.\n"
-                
-                # SMC (Smart Money Concepts)
-                analise_completa += f"\n9. SMART MONEY CONCEPTS (SMC):\n"
-                if smc_data.get("fvg"):
-                    analise_completa += f"   FVG: {smc_data['fvg']['detalhe']}\n"
-                if smc_data.get("liquidity_sweep"):
-                    analise_completa += f"   LIQUIDITY SWEEP: {smc_data['liquidity_sweep']['detalhe']}\n"
-                if smc_data.get("order_block"):
-                    analise_completa += f"   ORDER BLOCK: {smc_data['order_block']['detalhe']}\n"
-                if smc_data.get("estrutura"):
-                    analise_completa += f"   ESTRUTURA: {smc_data['estrutura']['detalhe']}\n"
-                if not smc_data:
-                    analise_completa += "   Nenhum padrao SMC detectado nesta vela.\n"
-                
-                analise_completa += f"\n10. HORARIO: {hora} - {'Horario FORTE (abertura/volatilidade alta)' if bom_horario else 'Horario fraco/almoco'}\n"
-                
-                analise_completa += f"\n11. SCORE CONFLUENCIA: {score}/15\n"
-                analise_completa += f"    Confianca: {conf_label} ({confianca}/5)\n"
-                analise_completa += f"    Fatores A FAVOR: {', '.join(motivos_operar) if motivos_operar else 'nenhum'}\n"
-                analise_completa += f"    Fatores CONTRA: {', '.join(motivos_nao_operar) if motivos_nao_operar else 'nenhum'}\n"
-                
-                analise_completa += f"\nDECISAO: {tipo_sinal} - Sinal em {round(_preco_sinal,2)}, Entrada REAL em {round(c,2)} (open proxima vela + slippage {_slippage}pts)\n"
-                analise_completa += f"Stop={stop_price} Alvo={alvo_price} RR=1:{round(alvo_pts/stop_pts,1)} | Custo operacional: {_custo_pts}pts\n"
-                
-                # ---- DETALHES VITORIA (para WINs) ----
                 detalhes_vitoria = ""
-                if resultado == "WIN":
+                
+                if resultado == "LOSS":
+                    detalhes_perda = f"STOP atingido em {hora_saida} ({velas_na_op} velas). "
+                    detalhes_perda += f"Prejuízo: -{round(abs(pts),1)}pts (-R${round(abs(rs),2)}). "
+                    # Análise do que deu errado
+                    problemas = []
+                    if setup["contra_tendencia"]:
+                        problemas.append("CONTRA TENDÊNCIA - Elder proíbe")
+                    if not setup["confluencia"].get("sr_relevante"):
+                        problemas.append("Preço longe de S/R - sem proteção natural")
+                    if not setup["confluencia"].get("indicadores_confirmam"):
+                        problemas.append("Indicadores não estavam todos alinhados")
+                    if not setup["confluencia"].get("price_action_confirma"):
+                        problemas.append("Sem confirmação de Price Action")
+                    if vwap and ((is_compra and c < vwap) or (not is_compra and c > vwap)):
+                        problemas.append(f"Contra VWAP ({round(vwap, 0)})")
+                    if not problemas:
+                        problemas.append(f"Setup {conf_label} correto - loss faz parte (Douglas: distribuição aleatória)")
+                    detalhes_perda += "ANÁLISE: " + "; ".join(problemas) + ". "
+                    detalhes_perda += f"Confluência era {score}/7 ({conf_label}). "
+                    detalhes_perda += "Lição: " + (
+                        "Aumentar filtro de confluência - só A+ e B+." if score < 4
+                        else "Loss com setup correto é normal. Disciplina > resultado individual."
+                    )
+                    analise_completa += f"\nANÁLISE DO LOSS:\n{detalhes_perda}\n"
+                else:
                     detalhes_vitoria = f"Alvo atingido em {hora_saida} (+{round(abs(pts),1)}pts = R${round(abs(rs),2)}). "
-                    if tipo_sinal == "COMPRA":
-                        detalhes_vitoria += f"Preco subiu de {round(c,2)} ate {round(alvo_price,2)}. "
-                        if tend == "ALTA":
-                            detalhes_vitoria += "Tendencia ALTA confirmou a direcao - Triple Screen alinhado. "
-                        if macd_h > 0:
-                            detalhes_vitoria += f"MACD positivo ({macd_h}) deu momentum. "
-                        if rsi_v < 60:
-                            detalhes_vitoria += f"RSI {rsi_v} tinha espaco pra subir. "
-                    else:
-                        detalhes_vitoria += f"Preco caiu de {round(c,2)} ate {round(alvo_price,2)}. "
-                        if tend == "BAIXA":
-                            detalhes_vitoria += "Tendencia BAIXA confirmou a direcao - Triple Screen alinhado. "
-                        if macd_h < 0:
-                            detalhes_vitoria += f"MACD negativo ({macd_h}) deu momentum vendedor. "
-                    detalhes_vitoria += f"Score {score}/15 ({conf_label}) - setup de alta confluencia. "
-                    if velas_na_op <= 6:
-                        detalhes_vitoria += f"Operacao rapida ({velas_na_op} velas = {velas_na_op*5}min) - mercado ja estava no ponto. "
-                    detalhes_vitoria += "Licao: Setups com alta confluencia e a favor da tendencia tem maior taxa de acerto."
+                    detalhes_vitoria += f"Confluência {score}/7 ({conf_label}). "
+                    if setup["confluencia"].get("tendencia_tf_maior"):
+                        detalhes_vitoria += "Triple Screen alinhado. "
+                    if setup["confluencia"].get("price_action_confirma"):
+                        detalhes_vitoria += "Price Action confirmou. "
+                    if setup["confluencia"].get("sr_relevante"):
+                        detalhes_vitoria += "S/R deu proteção. "
+                    detalhes_vitoria += f"Duração: {velas_na_op*5}min. "
+                    detalhes_vitoria += "Lição: Setups com alta confluência e a favor da tendência = maior probabilidade."
+                    analise_completa += f"\nANÁLISE DO WIN:\n{detalhes_vitoria}\n"
                 
                 operacoes_recomendadas.append({
                     "tipo": tipo_sinal,
-                    "hora_entrada": hora,
-                    "preco_entrada": round(c, 2),
+                    "hora_entrada": hora_op,
+                    "preco_entrada": round(preco_op, 2),
                     "preco_sinal": round(_preco_sinal, 2),
                     "slippage": _slippage,
                     "custo_pts": _custo_pts,
@@ -3128,23 +2712,22 @@ async def simulador_real(ativo: str = Query("WIN")):
                     "ema21": ema21,
                     "atr": atr_v,
                     "tendencia": tend,
+                    "confluencia_detalhes": setup["confluencia"],
+                    "qualidade_setup": conf_label,
                 })
                 
-                # PRO TRADER: atualizar controles de risco
+                # PRO TRADER: atualizar controles
                 total_pts_dia += pts
                 if resultado == "LOSS":
                     losses_consecutivos += 1
-                    # Apos loss, aumentar cooldown (Elder: pausa apos perda)
                     cooldown_velas = 4 if losses_consecutivos >= 2 else 3
                 else:
-                    losses_consecutivos = 0  # Reset em WIN
-                    cooldown_velas = 2  # Cooldown normal
+                    losses_consecutivos = 0
+                    cooldown_velas = 2
                 
-                # Verificar limite de perda diaria
                 if total_pts_dia <= LOSS_LIMIT_PTS:
                     dia_bloqueado = True
                 
-                # Block next entries: cooldown adaptativo
                 posicao_aberta = {"close_idx": future_start + velas_na_op + cooldown_velas}
         
         # ---- RESUMO DO DIA ----
@@ -3157,8 +2740,7 @@ async def simulador_real(ativo: str = Query("WIN")):
         low_dia = min(v["low"] for v in velas_analisadas) if velas_analisadas else 0
         amplitude = round(high_dia - low_dia, 0)
         
-        # TODAS as oportunidades (score >= 7) - mostra setups com potencial
-        oportunidades = [v for v in velas_analisadas if v["score"] >= 7 and v["tipo_sinal"] is not None]
+        oportunidades = [v for v in velas_analisadas if v["score"] >= 4 and v["tipo_sinal"] is not None]
         
         total_ops = len(operacoes_recomendadas)
         wins = sum(1 for op in operacoes_recomendadas if op["resultado"] == "WIN")
@@ -3170,7 +2752,7 @@ async def simulador_real(ativo: str = Query("WIN")):
         velas_operar = sum(1 for v in velas_analisadas if v["decisao"] == "OPERAR")
         velas_nao = sum(1 for v in velas_analisadas if v["decisao"] == "NAO OPERAR")
         
-        # ---- APRENDIZADO: registrar sessao e evoluir ----
+        # Learning
         if operacoes_recomendadas:
             try:
                 learning_data = registrar_sessao(
@@ -3181,13 +2763,11 @@ async def simulador_real(ativo: str = Query("WIN")):
             except Exception as e:
                 logger.error(f"Erro registrando aprendizado: {e}")
         
-        # Dados de aprendizado para exibição
         aprendizado = obter_resumo_aprendizado()
         
-        # Detectar se mercado esta aberto ou fechado
         _agora = datetime.now(BRT_tz)
         _hora_atual = _agora.hour
-        _dia_semana = _agora.weekday()  # 0=seg, 6=dom
+        _dia_semana = _agora.weekday()
         _mercado_aberto = (_dia_semana < 5 and 9 <= _hora_atual < 18)
         _modo = "REAL" if _mercado_aberto else "REPLAY"
         
@@ -3199,6 +2779,12 @@ async def simulador_real(ativo: str = Query("WIN")):
             "modo": _modo,
             "mercado_aberto": _mercado_aberto,
             "aprendizado": aprendizado,
+            "tend_macro": {
+                "tendencia": tend_macro["tendencia"],
+                "forca": tend_macro["forca"],
+                "descricao": tend_macro["descricao"],
+                "estrutura": tend_macro["estrutura"],
+            },
             "resumo": {
                 "abertura": abertura,
                 "fechamento": fechamento,
@@ -3221,7 +2807,7 @@ async def simulador_real(ativo: str = Query("WIN")):
                 "max_ops_dia": MAX_OPS_DIA,
                 "losses_limit": MAX_LOSSES_CONSECUTIVOS,
                 "dia_bloqueado": dia_bloqueado,
-                "motivo_parada": "Limite de perda atingido" if dia_bloqueado else ("Parou apos " + str(MAX_LOSSES_CONSECUTIVOS) + " losses consecutivos" if losses_consecutivos >= MAX_LOSSES_CONSECUTIVOS else ""),
+                "motivo_parada": "Limite de perda atingido" if dia_bloqueado else ("Parou após " + str(MAX_LOSSES_CONSECUTIVOS) + " losses consecutivos" if losses_consecutivos >= MAX_LOSSES_CONSECUTIVOS else ""),
             },
             "operacoes": operacoes_recomendadas,
             "oportunidades": oportunidades,
@@ -3239,6 +2825,7 @@ async def simulador_real(ativo: str = Query("WIN")):
                 "conf_label": v.get("conf_label", ""),
                 "motivos_operar": v.get("motivos_operar", [])[:3],
                 "price_action": v.get("price_action", {}),
+                "confluencia": v.get("confluencia", {}),
             } for v in velas_analisadas],
             "timestamp": datetime.now(BRT_tz).strftime("%H:%M:%S"),
         })
@@ -3246,6 +2833,7 @@ async def simulador_real(ativo: str = Query("WIN")):
         logger.error(f"Erro simulador-real: {e}")
         import traceback; traceback.print_exc()
         return JSONResponse({"erro": str(e)}, status_code=500)
+
 
 @app.get("/api/livros")
 async def get_livros():

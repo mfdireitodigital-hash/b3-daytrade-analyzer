@@ -1,7 +1,11 @@
 """
-LEARNING ENGINE - Sistema de Aprendizado Automático
-A AI aprende com seus wins e losses, ajusta pesos, evolui sozinha.
-Salva histórico de operações e analisa padrões de sucesso/fracasso.
+LEARNING ENGINE v2 - Sistema de Aprendizado com Memória Persistente
+A AI aprende com seus wins e losses, LEMBRA dos erros, e NUNCA repete.
+
+Baseado em:
+- Bellafiore (PlayBook): Revisar todo trade, melhorar continuamente
+- Douglas (Trading in the Zone): Pensar em probabilidades
+- Tendler (Mental Game): Identificar padrões de tilt e corrigi-los
 """
 
 import json
@@ -16,7 +20,7 @@ BRT = timezone(timedelta(hours=-3))
 LEARNING_FILE = Path(os.path.dirname(os.path.abspath(__file__))) / "learning_data.json"
 
 DEFAULT_LEARNING = {
-    "versao": 1,
+    "versao": 2,
     "total_sessoes": 0,
     "total_operacoes": 0,
     "total_wins": 0,
@@ -24,289 +28,392 @@ DEFAULT_LEARNING = {
     "win_rate_global": 0,
     "total_pts": 0,
     "total_rs": 0,
-    # Pesos adaptativos - começam em 1.0, AI ajusta baseado em resultados
     "pesos": {
-        "horario": 1.0,
-        "rsi": 1.0,
-        "ema": 1.0,
-        "tendencia": 1.0,
-        "macd": 1.0,
-        "atr": 1.0,
-        "suporte_resistencia": 1.0,
-        "vwap": 1.0,
-        "fibonacci": 1.0,
-        "candlestick": 1.0,
+        "horario": 1.0, "rsi": 1.0, "macd": 1.0, "ema": 1.0,
+        "atr": 1.0, "vwap": 1.0, "fibonacci": 1.0, "candlestick": 1.0,
+        "suporte_resistencia": 1.0, "tendencia": 1.0,
+        "price_action": 1.0, "smc": 1.0, "volume": 1.0,
     },
-    # Score mínimo adaptativo - começa em 7, AI pode subir se estiver perdendo muito
-    "score_minimo": 9,
-    # Padrões aprendidos
-    "padroes_vitoria": {},
-    "padroes_derrota": {},
-    # Melhores e piores horários
-    "horarios_win_rate": {},
-    # Histórico de sessões
     "sessoes": [],
-    # Insights gerados pela AI
-    "insights": [],
-    # Livros/skills estudados
-    "livros_estudados": [],
+    "livros_aplicados": [],
+    # V2: Memória de erros
+    "memoria_erros": [],       # Cada erro com fingerprint + contexto + lição
+    "regras_aprendidas": [],   # Regras auto-geradas (CUIDADO / FAVORÁVEL)
+    "situacoes_perigosas": {}, # Padrão -> {losses, total, taxa_loss}
+    "situacoes_seguras": {},   # Padrão -> {wins, total, taxa_win}
+    "evolucao": [],            # Registro de evolução ao longo do tempo
 }
 
 
-def carregar_learning():
-    """Carrega dados de aprendizado do disco"""
+def carregar_learning() -> dict:
     try:
         if LEARNING_FILE.exists():
             with open(LEARNING_FILE, 'r', encoding='utf-8') as f:
                 data = json.load(f)
-            # Merge with defaults for new fields
-            for k, v in DEFAULT_LEARNING.items():
-                if k not in data:
-                    data[k] = v
-            if "pesos" in data:
-                for k, v in DEFAULT_LEARNING["pesos"].items():
-                    if k not in data["pesos"]:
-                        data["pesos"][k] = v
+            # Migrar v1 para v2
+            if data.get("versao", 1) < 2:
+                for key in ["memoria_erros", "regras_aprendidas", "evolucao"]:
+                    if key not in data:
+                        data[key] = DEFAULT_LEARNING[key]
+                for key in ["situacoes_perigosas", "situacoes_seguras"]:
+                    if key not in data:
+                        data[key] = DEFAULT_LEARNING[key]
+                data["versao"] = 2
+                _salvar(data)
             return data
     except Exception as e:
         logger.error(f"Erro carregando learning: {e}")
     return DEFAULT_LEARNING.copy()
 
 
-def salvar_learning(data):
-    """Salva dados de aprendizado no disco"""
+def _salvar(data: dict):
     try:
         with open(LEARNING_FILE, 'w', encoding='utf-8') as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
+            json.dump(data, f, indent=2, ensure_ascii=False, default=str)
     except Exception as e:
         logger.error(f"Erro salvando learning: {e}")
 
 
-def registrar_sessao(ativo, dia, operacoes, resumo):
+def _extrair_fingerprint(op: dict) -> dict:
+    """Extrai 'impressão digital' de uma operação para comparação futura."""
+    hora = op.get("hora_entrada", "00:00")
+    hora_h = int(hora.split(":")[0]) if ":" in str(hora) else 0
+    
+    # Faixa horária
+    if hora_h < 10: faixa = "abertura"
+    elif hora_h < 12: faixa = "manha"
+    elif hora_h < 14: faixa = "almoco"
+    elif hora_h < 16: faixa = "tarde"
+    else: faixa = "fechamento"
+    
+    # RSI zona
+    rsi = op.get("rsi", 50)
+    if rsi < 30: rsi_zona = "sobrevendido"
+    elif rsi > 70: rsi_zona = "sobrecomprado"
+    elif rsi < 45: rsi_zona = "vendedor"
+    elif rsi > 55: rsi_zona = "comprador"
+    else: rsi_zona = "neutro"
+    
+    # MACD direção
+    macd = op.get("macd_hist", 0)
+    macd_dir = "positivo" if macd > 0 else "negativo" if macd < 0 else "zero"
+    
+    return {
+        "tipo": op.get("tipo", ""),
+        "hora_faixa": faixa,
+        "tendencia": op.get("tendencia", "LATERAL"),
+        "rsi_zona": rsi_zona,
+        "macd_direcao": macd_dir,
+        "score": op.get("score", 0),
+        "conf_label": op.get("conf_label", ""),
+        "motivos": op.get("motivos", [])[:5],
+    }
+
+
+def _comparar_situacoes(fp1: dict, fp2: dict) -> float:
+    """Compara duas 'impressões digitais' e retorna similaridade 0-100%."""
+    score = 0
+    total = 0
+    
+    # Tipo (COMPRA/VENDA) - peso 2
+    total += 2
+    if fp1.get("tipo") == fp2.get("tipo"):
+        score += 2
+    
+    # Faixa horária - peso 1
+    total += 1
+    if fp1.get("hora_faixa") == fp2.get("hora_faixa"):
+        score += 1
+    
+    # Tendência - peso 2
+    total += 2
+    if fp1.get("tendencia") == fp2.get("tendencia"):
+        score += 2
+    
+    # RSI zona - peso 1.5
+    total += 1.5
+    if fp1.get("rsi_zona") == fp2.get("rsi_zona"):
+        score += 1.5
+    
+    # MACD direção - peso 1
+    total += 1
+    if fp1.get("macd_direcao") == fp2.get("macd_direcao"):
+        score += 1
+    
+    # Score similar - peso 1
+    total += 1
+    s1 = fp1.get("score", 0)
+    s2 = fp2.get("score", 0)
+    if abs(s1 - s2) <= 1:
+        score += 1
+    elif abs(s1 - s2) <= 2:
+        score += 0.5
+    
+    return round(score / total * 100, 1) if total > 0 else 0
+
+
+def consultar_memoria(op_atual: dict) -> dict:
     """
-    Registra uma sessão completa de trading (simulador real).
-    Analisa cada operação, extrai padrões, ajusta pesos.
+    Consulta memória de erros para verificar se situação atual é similar a um erro passado.
+    Retorna alerta se similaridade >= 70%.
     """
     data = carregar_learning()
+    fp_atual = _extrair_fingerprint(op_atual)
     
-    wins = [op for op in operacoes if op.get("resultado") == "WIN"]
-    losses = [op for op in operacoes if op.get("resultado") == "LOSS"]
+    alertas = []
+    for erro in data.get("memoria_erros", [])[-50:]:  # Últimos 50 erros
+        fp_erro = erro.get("fingerprint", {})
+        similaridade = _comparar_situacoes(fp_atual, fp_erro)
+        
+        if similaridade >= 70:
+            alertas.append({
+                "similaridade": similaridade,
+                "erro_data": erro.get("data", ""),
+                "licao": erro.get("licao", ""),
+                "contexto": erro.get("contexto", ""),
+                "fingerprint_erro": fp_erro,
+            })
     
-    sessao = {
-        "data": dia,
-        "ativo": ativo,
-        "timestamp": datetime.now(BRT).isoformat(),
-        "total_ops": len(operacoes),
-        "wins": len(wins),
-        "losses": len(losses),
-        "win_rate": round(len(wins) / len(operacoes) * 100) if operacoes else 0,
-        "total_pts": sum(op.get("pts", 0) for op in operacoes),
-        "total_rs": sum(op.get("resultado_rs", 0) for op in operacoes),
+    # Verificar regras aprendidas
+    regras_ativas = []
+    for regra in data.get("regras_aprendidas", []):
+        if regra.get("tipo") == "CUIDADO":
+            # Verificar se a regra se aplica
+            padrao = regra.get("padrao", "")
+            chave_atual = f"{fp_atual.get('tipo')}_{fp_atual.get('hora_faixa')}_{fp_atual.get('tendencia')}"
+            if padrao and padrao in chave_atual:
+                regras_ativas.append(regra)
+    
+    return {
+        "tem_alerta": len(alertas) > 0,
+        "alertas": sorted(alertas, key=lambda x: -x["similaridade"])[:3],
+        "regras_ativas": regras_ativas,
+        "total_erros_memoria": len(data.get("memoria_erros", [])),
     }
+
+
+def _gerar_licao(op: dict) -> str:
+    """Gera lição específica a partir de uma operação perdedora."""
+    tipo = op.get("tipo", "")
+    tend = op.get("tendencia", "")
+    rsi = op.get("rsi", 50)
+    hora = op.get("hora_entrada", "")
+    score = op.get("score", 0)
+    conf = op.get("conf_label", "")
+    detalhes = op.get("detalhes_perda", "")
     
-    # Atualizar totais globais
+    licoes = []
+    
+    # Contra tendência
+    if (tipo == "COMPRA" and tend == "BAIXA") or (tipo == "VENDA" and tend == "ALTA"):
+        licoes.append(f"{tipo} contra tendência {tend} - Elder proíbe (Triple Screen)")
+    
+    # RSI extremo
+    if (tipo == "COMPRA" and rsi > 75) or (tipo == "VENDA" and rsi < 25):
+        licoes.append(f"RSI extremo ({rsi}) na hora da entrada - mercado esticado")
+    
+    # Horário ruim
+    hora_h = int(hora.split(":")[0]) if ":" in str(hora) else 0
+    if hora_h in [12, 13]:
+        licoes.append("Horário do almoço - baixa liquidez, evitar")
+    elif hora_h >= 17:
+        licoes.append("Fim do pregão - evitar novas entradas")
+    
+    # Setup fraco
+    if score < 4:
+        licoes.append(f"Confluência baixa ({score}/7 = {conf}) - Bellafiore: só A+/B+")
+    
+    if not licoes:
+        licoes.append(f"Loss com setup {conf} - faz parte (Douglas: distribuição aleatória)")
+    
+    return "; ".join(licoes)
+
+
+def _gerar_padrao_key(op: dict) -> str:
+    """Gera chave de padrão para tracking estatístico."""
+    fp = _extrair_fingerprint(op)
+    return f"{fp['tipo']}_{fp['hora_faixa']}_{fp['tendencia']}_{fp['rsi_zona']}"
+
+
+def registrar_sessao(ativo: str, data_sessao: str, operacoes: list, metricas: dict) -> dict:
+    """Registra sessão completa com memória v2."""
+    data = carregar_learning()
+    
     data["total_sessoes"] += 1
-    data["total_operacoes"] += len(operacoes)
-    data["total_wins"] += len(wins)
-    data["total_losses"] += len(losses)
-    data["total_pts"] += sessao["total_pts"]
-    data["total_rs"] += sessao["total_rs"]
-    if data["total_operacoes"] > 0:
-        data["win_rate_global"] = round(data["total_wins"] / data["total_operacoes"] * 100, 1)
     
-    # ---- ANÁLISE DE PADRÕES ----
-    
-    # 1. Quais indicadores estavam presentes nos WINs vs LOSSes?
     for op in operacoes:
-        motivos = op.get("motivos", [])
+        data["total_operacoes"] += 1
         resultado = op.get("resultado", "")
-        hora = op.get("hora_entrada", "00:00")
-        hora_key = hora[:2]  # "09", "10", etc
+        pts = op.get("pts", 0)
+        rs = op.get("resultado_rs", 0)
         
-        # Horário win rate
-        if hora_key not in data["horarios_win_rate"]:
-            data["horarios_win_rate"][hora_key] = {"wins": 0, "losses": 0, "total": 0}
-        data["horarios_win_rate"][hora_key]["total"] += 1
         if resultado == "WIN":
-            data["horarios_win_rate"][hora_key]["wins"] += 1
+            data["total_wins"] += 1
         else:
-            data["horarios_win_rate"][hora_key]["losses"] += 1
+            data["total_losses"] += 1
         
-        # Padrões por motivo
-        for motivo in motivos:
-            # Simplificar o motivo para key
-            key = motivo.split("(")[0].strip().lower()[:50]
+        data["total_pts"] += pts
+        data["total_rs"] += rs
+        
+        # Fingerprint
+        fp = _extrair_fingerprint(op)
+        padrao_key = _gerar_padrao_key(op)
+        
+        if resultado == "LOSS":
+            # Registrar na memória de erros
+            erro = {
+                "data": data_sessao,
+                "ativo": ativo,
+                "fingerprint": fp,
+                "contexto": f"{op.get('tipo', '')} em {op.get('hora_entrada', '')} - {op.get('tendencia', '')} - Score {op.get('score', 0)} ({op.get('conf_label', '')})",
+                "licao": _gerar_licao(op),
+                "pts_perdidos": pts,
+                "detalhes": op.get("detalhes_perda", "")[:200],
+            }
+            data["memoria_erros"].append(erro)
             
-            target = data["padroes_vitoria"] if resultado == "WIN" else data["padroes_derrota"]
-            if key not in target:
-                target[key] = 0
-            target[key] += 1
+            # Atualizar situações perigosas
+            if padrao_key not in data["situacoes_perigosas"]:
+                data["situacoes_perigosas"][padrao_key] = {"losses": 0, "total": 0, "taxa_loss": 0}
+            data["situacoes_perigosas"][padrao_key]["losses"] += 1
+            data["situacoes_perigosas"][padrao_key]["total"] += 1
+        else:
+            # Atualizar situações seguras
+            if padrao_key not in data["situacoes_seguras"]:
+                data["situacoes_seguras"][padrao_key] = {"wins": 0, "total": 0, "taxa_win": 0}
+            data["situacoes_seguras"][padrao_key]["wins"] += 1
+            data["situacoes_seguras"][padrao_key]["total"] += 1
+        
+        # Atualizar contagem total em ambos dicts
+        for d in [data["situacoes_perigosas"], data["situacoes_seguras"]]:
+            if padrao_key in d:
+                total = d[padrao_key]["total"]
+                if "losses" in d[padrao_key]:
+                    d[padrao_key]["taxa_loss"] = round(d[padrao_key]["losses"] / total * 100, 1) if total > 0 else 0
+                if "wins" in d[padrao_key]:
+                    d[padrao_key]["taxa_win"] = round(d[padrao_key]["wins"] / total * 100, 1) if total > 0 else 0
     
-    # 2. AJUSTAR PESOS baseado em resultados
-    _ajustar_pesos(data, operacoes)
+    # Gerar regras aprendidas
+    data["regras_aprendidas"] = _gerar_regras(data)
     
-    # 3. AJUSTAR SCORE MÍNIMO
-    _ajustar_score_minimo(data, sessao)
+    # Win rate global
+    total = data["total_wins"] + data["total_losses"]
+    data["win_rate_global"] = round(data["total_wins"] / total * 100, 1) if total > 0 else 0
     
-    # 4. GERAR INSIGHTS
-    _gerar_insights(data, sessao, operacoes)
-    
-    # Guardar sessão (últimas 50)
+    # Registrar sessão
+    sessao = {
+        "data": data_sessao,
+        "ativo": ativo,
+        "ops": len(operacoes),
+        "wins": sum(1 for op in operacoes if op.get("resultado") == "WIN"),
+        "losses": sum(1 for op in operacoes if op.get("resultado") != "WIN"),
+        "pts": round(sum(op.get("pts", 0) for op in operacoes), 1),
+        "win_rate": metricas.get("win_rate", 0),
+        "timestamp": datetime.now(BRT).isoformat(),
+    }
     data["sessoes"].append(sessao)
-    if len(data["sessoes"]) > 50:
-        data["sessoes"] = data["sessoes"][-50:]
     
-    salvar_learning(data)
+    # Evolução
+    data["evolucao"].append({
+        "data": data_sessao,
+        "win_rate_sessao": metricas.get("win_rate", 0),
+        "win_rate_global": data["win_rate_global"],
+        "total_erros_memoria": len(data["memoria_erros"]),
+        "regras_ativas": len(data["regras_aprendidas"]),
+    })
+    
+    # Limpar memória antiga (manter últimas 100 sessões e 200 erros)
+    if len(data["sessoes"]) > 100:
+        data["sessoes"] = data["sessoes"][-100:]
+    if len(data["memoria_erros"]) > 200:
+        data["memoria_erros"] = data["memoria_erros"][-200:]
+    if len(data["evolucao"]) > 100:
+        data["evolucao"] = data["evolucao"][-100:]
+    
+    # Atualizar pesos baseado em resultados
+    _atualizar_pesos(data, operacoes)
+    
+    _salvar(data)
     return data
 
 
-def _ajustar_pesos(data, operacoes):
-    """Ajusta pesos dos indicadores baseado em quais indicadores estavam presentes em WINs vs LOSSes"""
-    ajuste = 0.05  # Ajuste por sessão (conservador)
+def _gerar_regras(data: dict) -> list:
+    """Gera regras automáticas baseadas em padrões perigosos/seguros."""
+    regras = []
     
-    indicador_map = {
-        "horario": ["horario forte", "horario"],
-        "rsi": ["rsi", "sobrevendido", "sobrecomprado"],
-        "ema": ["ema9", "ema", "estrutura compradora", "estrutura vendedora"],
-        "tendencia": ["tendencia", "triple screen"],
-        "macd": ["macd", "momentum"],
-        "atr": ["atr", "volatilidade"],
-        "suporte_resistencia": ["suporte", "resistencia", "s/r murphy"],
-        "vwap": ["vwap"],
-        "fibonacci": ["fibonacci", "fib"],
-        "candlestick": ["candlestick", "martelo", "engolfo", "estrela"],
-    }
+    # CUIDADO: padrões com 80%+ loss rate e 3+ amostras
+    for padrao, stats in data.get("situacoes_perigosas", {}).items():
+        if stats.get("total", 0) >= 3 and stats.get("taxa_loss", 0) >= 80:
+            regras.append({
+                "tipo": "CUIDADO",
+                "padrao": padrao,
+                "descricao": f"Padrão {padrao} tem {stats['taxa_loss']}% de loss ({stats['losses']}/{stats['total']})",
+                "recomendacao": "EVITAR este tipo de entrada",
+            })
     
+    # FAVORÁVEL: padrões com 70%+ win rate e 3+ amostras
+    for padrao, stats in data.get("situacoes_seguras", {}).items():
+        if stats.get("total", 0) >= 3 and stats.get("taxa_win", 0) >= 70:
+            regras.append({
+                "tipo": "FAVORAVEL",
+                "padrao": padrao,
+                "descricao": f"Padrão {padrao} tem {stats['taxa_win']}% de win ({stats['wins']}/{stats['total']})",
+                "recomendacao": "PRIORIZAR este tipo de entrada",
+            })
+    
+    return regras
+
+
+def _atualizar_pesos(data: dict, operacoes: list):
+    """Ajusta pesos adaptativos baseado nos resultados."""
     for op in operacoes:
-        motivos = " ".join(op.get("motivos", [])).lower()
+        motivos = op.get("motivos", [])
         resultado = op.get("resultado", "")
+        ajuste = 0.02 if resultado == "WIN" else -0.01
         
-        for indicador, keywords in indicador_map.items():
-            presente = any(kw in motivos for kw in keywords)
-            if presente:
-                if resultado == "WIN":
-                    # Indicador presente no WIN = aumenta peso
-                    data["pesos"][indicador] = min(2.0, data["pesos"][indicador] + ajuste)
-                elif resultado == "LOSS":
-                    # Indicador presente no LOSS = diminui peso (mas não abaixo de 0.3)
-                    data["pesos"][indicador] = max(0.3, data["pesos"][indicador] - ajuste * 0.5)
+        for motivo in motivos:
+            motivo_lower = motivo.lower()
+            for indicador in data["pesos"]:
+                if indicador.lower() in motivo_lower:
+                    data["pesos"][indicador] = max(0.5, min(2.0, data["pesos"][indicador] + ajuste))
 
 
-def _ajustar_score_minimo(data, sessao):
-    """Se win rate está baixo, sobe o score mínimo. Se alto, pode baixar."""
-    if data["total_operacoes"] < 10:
-        return  # Precisa de dados suficientes
-    
-    wr = data["win_rate_global"]
-    
-    if wr < 50:
-        # Perdendo muito - ser mais seletivo
-        data["score_minimo"] = min(9, data["score_minimo"] + 1)
-        data["insights"].append({
-            "data": datetime.now(BRT).isoformat(),
-            "tipo": "AJUSTE",
-            "mensagem": f"Win rate {wr}% abaixo de 50%. Score minimo subiu para {data['score_minimo']}. Preciso ser MAIS SELETIVO."
-        })
-    elif wr > 75 and data["score_minimo"] > 6:
-        # Ganhando muito - pode relaxar um pouco
-        data["score_minimo"] = max(6, data["score_minimo"] - 1)
-        data["insights"].append({
-            "data": datetime.now(BRT).isoformat(),
-            "tipo": "AJUSTE",
-            "mensagem": f"Win rate {wr}% acima de 75%! Score minimo pode baixar para {data['score_minimo']}."
-        })
+def obter_pesos_atuais() -> dict:
+    return carregar_learning().get("pesos", DEFAULT_LEARNING["pesos"])
 
 
-def _gerar_insights(data, sessao, operacoes):
-    """Gera insights automáticos sobre padrões detectados"""
-    
-    # Melhor horário
-    if data["horarios_win_rate"]:
-        melhor_hora = None
-        melhor_wr = 0
-        pior_hora = None
-        pior_wr = 100
-        for hora, stats in data["horarios_win_rate"].items():
-            if stats["total"] >= 3:  # Mínimo 3 amostras
-                wr = round(stats["wins"] / stats["total"] * 100)
-                if wr > melhor_wr:
-                    melhor_wr = wr
-                    melhor_hora = hora
-                if wr < pior_wr:
-                    pior_wr = wr
-                    pior_hora = hora
-        
-        if melhor_hora:
-            data["insights"].append({
-                "data": datetime.now(BRT).isoformat(),
-                "tipo": "PADRAO",
-                "mensagem": f"Melhor horario: {melhor_hora}h ({melhor_wr}% WR). Pior: {pior_hora}h ({pior_wr}% WR). Priorizar entradas no horario forte."
-            })
-    
-    # Padrão de operações longas (muitas velas = baixo WR?)
-    ops_longas = [op for op in operacoes if op.get("velas_na_op", 0) > 15]
-    ops_curtas = [op for op in operacoes if op.get("velas_na_op", 0) <= 6]
-    
-    if len(ops_longas) >= 2:
-        wr_longas = sum(1 for op in ops_longas if op["resultado"] == "WIN") / len(ops_longas) * 100
-        if wr_longas < 40:
-            data["insights"].append({
-                "data": datetime.now(BRT).isoformat(),
-                "tipo": "ALERTA",
-                "mensagem": f"Operacoes longas (>15 velas) tem WR de {round(wr_longas)}%. Considere reduzir timeout ou ser mais agressivo no stop."
-            })
-    
-    if len(ops_curtas) >= 2:
-        wr_curtas = sum(1 for op in ops_curtas if op["resultado"] == "WIN") / len(ops_curtas) * 100
-        if wr_curtas > 70:
-            data["insights"].append({
-                "data": datetime.now(BRT).isoformat(),
-                "tipo": "POSITIVO",
-                "mensagem": f"Operacoes rapidas (<=6 velas) tem WR de {round(wr_curtas)}%! Mercado ja estava no ponto - bons setups."
-            })
-    
-    # Limitar insights (últimos 30)
-    if len(data["insights"]) > 30:
-        data["insights"] = data["insights"][-30:]
-
-
-def obter_pesos_atuais():
-    """Retorna os pesos adaptativos atuais para uso no scoring"""
+def obter_score_minimo() -> int:
+    """Score mínimo adaptativo baseado no aprendizado. Agora em escala de confluência (7)."""
     data = carregar_learning()
-    return data.get("pesos", DEFAULT_LEARNING["pesos"])
+    wr = data.get("win_rate_global", 0)
+    # Com o novo sistema de confluência (0-7), mínimo é 4
+    if wr >= 65:
+        return 3  # Se WR alto, pode flexibilizar
+    elif wr >= 50:
+        return 4  # Padrão
+    else:
+        return 4  # Manter 4 até melhorar
 
 
-def obter_score_minimo():
-    """Retorna o score mínimo adaptativo"""
-    data = carregar_learning()
-    return data.get("score_minimo", 7)
-
-
-def obter_resumo_aprendizado():
-    """Retorna resumo do aprendizado para exibição"""
+def obter_resumo_aprendizado() -> dict:
     data = carregar_learning()
     return {
-        "total_sessoes": data["total_sessoes"],
-        "total_operacoes": data["total_operacoes"],
-        "win_rate_global": data["win_rate_global"],
-        "total_pts": round(data["total_pts"], 1),
-        "total_rs": round(data["total_rs"], 2),
-        "score_minimo": data["score_minimo"],
-        "pesos": data["pesos"],
-        "horarios_win_rate": data["horarios_win_rate"],
-        "insights": data.get("insights", [])[-10:],  # Últimos 10
-        "livros_estudados": data.get("livros_estudados", []),
-        "sessoes_recentes": data.get("sessoes", [])[-5:],  # Últimas 5
+        "versao": data.get("versao", 1),
+        "total_sessoes": data.get("total_sessoes", 0),
+        "total_operacoes": data.get("total_operacoes", 0),
+        "win_rate_global": data.get("win_rate_global", 0),
+        "total_pts": round(data.get("total_pts", 0), 1),
+        "total_rs": round(data.get("total_rs", 0), 2),
+        "pesos": data.get("pesos", {}),
+        "ultimas_sessoes": data.get("sessoes", [])[-5:],
+        "memoria_erros_total": len(data.get("memoria_erros", [])),
+        "regras_aprendidas": data.get("regras_aprendidas", []),
+        "evolucao": data.get("evolucao", [])[-10:],
     }
 
 
-def registrar_livro(titulo, autor, conceitos_chave):
-    """Registra um livro estudado e seus conceitos incorporados"""
+def registrar_livro(nome: str, conceitos: list):
     data = carregar_learning()
-    data["livros_estudados"].append({
-        "titulo": titulo,
-        "autor": autor,
-        "conceitos": conceitos_chave,
-        "data_estudo": datetime.now(BRT).isoformat(),
-    })
-    salvar_learning(data)
+    if nome not in data.get("livros_aplicados", []):
+        data.setdefault("livros_aplicados", []).append(nome)
+        _salvar(data)
