@@ -3333,7 +3333,7 @@ async function simRealAnalisar() {
         
         // OPERACOES primeiro
         if (ops.length > 0) {
-            oH += '<div style="font-size:12px;font-weight:800;color:var(--accent-blue);margin-bottom:8px;padding:6px 0;border-bottom:1px solid var(--border);">OPERACOES EXECUTADAS (' + ops.length + ')</div>';
+            oH += '<div style="font-size:12px;font-weight:800;color:var(--accent-blue);margin-bottom:8px;padding:6px 0;border-bottom:1px solid var(--border);">OPERACOES EXECUTADAS (' + ops.length + ') <span style="font-size:9px;font-weight:400;color:#ca8a04;background:rgba(202,138,4,0.1);padding:2px 8px;border-radius:10px;margin-left:6px;">SIMULACAO REALISTA: slippage + custo + entrada na proxima vela</span></div>';
             ops.forEach(op => {
                 const isW = op.resultado==='WIN';
                 const cOp = op.tipo==='COMPRA'?'#22c55e':'#ef4444';
@@ -3356,6 +3356,9 @@ async function simRealAnalisar() {
                 oH += '<span style="background:rgba(255,255,255,0.05);padding:2px 6px;border-radius:3px;">R:R ' + op.rr + '</span>';
                 oH += '<span style="background:rgba(255,255,255,0.05);padding:2px 6px;border-radius:3px;">Confianca: ' + op.confianca + '/5 ' + op.conf_label + '</span>';
                 oH += '<span style="background:rgba(255,255,255,0.05);padding:2px 6px;border-radius:3px;">' + op.velas_na_op + ' velas</span>';
+                if (op.slippage) { oH += '<span style="background:rgba(239,68,68,0.1);color:#fca5a5;padding:2px 6px;border-radius:3px;">Slippage: ' + op.slippage + 'pts</span>'; }
+                if (op.custo_pts) { oH += '<span style="background:rgba(239,68,68,0.1);color:#fca5a5;padding:2px 6px;border-radius:3px;">Custo: ' + op.custo_pts + 'pts</span>'; }
+                if (op.preco_sinal) { oH += '<span style="background:rgba(96,165,250,0.1);color:#93c5fd;padding:2px 6px;border-radius:3px;">Sinal: ' + op.preco_sinal.toLocaleString('pt-BR') + '</span>'; }
                 oH += '</div>';
                 oH += '<div style="font-size:10px;color:var(--text-muted);margin-top:4px;">Motivos: ' + op.motivos.join(' | ') + '</div>';
                 if (op.detalhes_perda && op.resultado === 'LOSS') {

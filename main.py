@@ -2707,19 +2707,57 @@ async def simulador_real(ativo: str = Query("WIN")):
                         stop_pts = max(round(_structural_stop / 5) * 5, 80)
                         alvo_pts = round(stop_pts * 2.0)
                 
-                stop_price = round(c - stop_pts, 2) if is_compra else round(c + stop_pts, 2)
-                alvo_price = round(c + alvo_pts, 2) if is_compra else round(c - alvo_pts, 2)
+                # ===== ENTRADA REALISTA: proxima vela open + slippage =====
+                # Na vida real: sinal aparece no FECHAMENTO da vela, trader entra na ABERTURA da proxima
+                _signal_idx = day_indices.index(pos_idx)
+                _next_idx = _signal_idx + 1
+                if _next_idx >= len(day_indices):
+                    # Sem proxima vela, nao entra (fim do dia)
+                    posicao_aberta = {"close_idx": _signal_idx + 3}
+                    continue
+                
+                _next_vela = dados.iloc[day_indices[_next_idx]]
+                _entry_open = float(_next_vela['open'])
+                _hora_entrada_real = dados.index[day_indices[_next_idx]].strftime("%H:%M")
+                
+                # Slippage realista: 5-20pts WIN, 0.5-2pts WDO (sempre CONTRA o trader)
+                import random as _rnd
+                if ativo == "WIN":
+                    _slippage = _rnd.randint(5, 20)
+                else:
+                    _slippage = round(_rnd.uniform(0.5, 2.0), 1)
+                
+                # Slippage vai contra: compra mais caro, vende mais barato
+                if is_compra:
+                    preco_entrada_real = round(_entry_open + _slippage, 2)
+                else:
+                    preco_entrada_real = round(_entry_open - _slippage, 2)
+                
+                # Custo operacional (emolumentos + corretagem estimada)
+                if ativo == "WIN":
+                    _custo_pts = 5  # ~R$1.00 por contrato (emolumentos B3)
+                else:
+                    _custo_pts = 1  # ~R$10.00 por contrato WDO
+                
+                # Stop e alvo baseados no preco REAL de entrada (com slippage)
+                stop_price = round(preco_entrada_real - stop_pts, 2) if is_compra else round(preco_entrada_real + stop_pts, 2)
+                alvo_price = round(preco_entrada_real + alvo_pts, 2) if is_compra else round(preco_entrada_real - alvo_pts, 2)
+                
+                # Guardar preco original do sinal para referencia
+                _preco_sinal = c
+                c = preco_entrada_real  # usar preco real para calculos
+                hora = _hora_entrada_real  # hora real de entrada
                 
                 # ===== WALK FORWARD COM TRAILING STOP =====
                 resultado = None
                 preco_saida = 0
                 hora_saida = ""
                 velas_na_op = 0
-                max_velas_op = 24  # timeout 2h (menos que antes)
-                _best_price = c  # tracking melhor preco para trailing
+                max_velas_op = 24  # timeout 2h
+                _best_price = preco_entrada_real
                 _trailing_active = False
                 
-                future_start = day_indices.index(pos_idx) + 1
+                future_start = _next_idx + 1  # começa DEPOIS da vela de entrada
                 for fi in range(future_start, len(day_indices)):
                     fv = dados.iloc[day_indices[fi]]
                     fh = float(fv['high']); fl = float(fv['low'])
@@ -2795,7 +2833,8 @@ async def simulador_real(ativo: str = Query("WIN")):
                     pts_f = (preco_saida - c) if is_compra else (c - preco_saida)
                     resultado = "WIN" if pts_f > 0 else "LOSS"
                 
-                pts = round((preco_saida - c) if is_compra else (c - preco_saida), 1)
+                pts_bruto = round((preco_saida - c) if is_compra else (c - preco_saida), 1)
+                pts = round(pts_bruto - _custo_pts, 1)  # Desconta custo operacional
                 rs = round(pts * valor_ponto, 2)
                 
                 # Detalhes da perda quando LOSS - ANALISE COMPLETA DO PQ PERDEU
@@ -2936,7 +2975,8 @@ async def simulador_real(ativo: str = Query("WIN")):
                 analise_completa += f"    Fatores A FAVOR: {', '.join(motivos_operar) if motivos_operar else 'nenhum'}\n"
                 analise_completa += f"    Fatores CONTRA: {', '.join(motivos_nao_operar) if motivos_nao_operar else 'nenhum'}\n"
                 
-                analise_completa += f"\nDECISAO: {tipo_sinal} em {round(c,2)}. Stop={stop_price} Alvo={alvo_price} RR=1:{round(alvo_pts/stop_pts,1)}\n"
+                analise_completa += f"\nDECISAO: {tipo_sinal} - Sinal em {round(_preco_sinal,2)}, Entrada REAL em {round(c,2)} (open proxima vela + slippage {_slippage}pts)\n"
+                analise_completa += f"Stop={stop_price} Alvo={alvo_price} RR=1:{round(alvo_pts/stop_pts,1)} | Custo operacional: {_custo_pts}pts\n"
                 
                 # ---- DETALHES VITORIA (para WINs) ----
                 detalhes_vitoria = ""
@@ -2965,6 +3005,9 @@ async def simulador_real(ativo: str = Query("WIN")):
                     "tipo": tipo_sinal,
                     "hora_entrada": hora,
                     "preco_entrada": round(c, 2),
+                    "preco_sinal": round(_preco_sinal, 2),
+                    "slippage": _slippage,
+                    "custo_pts": _custo_pts,
                     "stop_loss": stop_price,
                     "take_profit": alvo_price,
                     "stop_pts": stop_pts,
