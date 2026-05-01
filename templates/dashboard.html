@@ -1,0 +1,1396 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>B3 Day Trade Analyzer - Mini-Indice & Mini-Dolar</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-annotation/3.0.1/chartjs-plugin-annotation.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        :root {
+            --bg-primary: #0a0e17;
+            --bg-secondary: #131722;
+            --bg-card: #1a1f2e;
+            --bg-hover: #242938;
+            --text-primary: #e0e3eb;
+            --text-secondary: #848e9c;
+            --text-muted: #5e6673;
+            --accent-green: #00c853;
+            --accent-red: #ff1744;
+            --accent-blue: #2196f3;
+            --accent-orange: #ff9800;
+            --accent-yellow: #ffd600;
+            --accent-purple: #ab47bc;
+            --border: #2a2e3e;
+            --fib-0: #f44336;
+            --fib-236: #ff9800;
+            --fib-382: #ffc107;
+            --fib-500: #4caf50;
+            --fib-618: #2196f3;
+            --fib-786: #9c27b0;
+            --fib-100: #607d8b;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+        }
+
+        /* === HEADER === */
+        .header {
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border);
+            padding: 12px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .header-left {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .logo {
+            font-size: 20px;
+            font-weight: 700;
+            background: linear-gradient(135deg, var(--accent-green), var(--accent-blue));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .header-status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--accent-green);
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .header-controls {
+            display: flex;
+            gap: 8px;
+        }
+
+        /* === TABS DE ATIVO === */
+        .ativo-tabs {
+            display: flex;
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border);
+            padding: 0 20px;
+        }
+
+        .ativo-tab {
+            padding: 10px 24px;
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            color: var(--text-secondary);
+            font-weight: 500;
+            font-size: 14px;
+            transition: all 0.2s;
+        }
+
+        .ativo-tab:hover { color: var(--text-primary); }
+        .ativo-tab.active {
+            color: var(--accent-blue);
+            border-bottom-color: var(--accent-blue);
+        }
+
+        /* === TIMEFRAME SELECTOR === */
+        .tf-bar {
+            display: flex;
+            padding: 8px 20px;
+            gap: 4px;
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border);
+        }
+
+        .tf-btn {
+            padding: 6px 16px;
+            border: 1px solid var(--border);
+            background: transparent;
+            color: var(--text-secondary);
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+
+        .tf-btn:hover { border-color: var(--accent-blue); color: var(--text-primary); }
+        .tf-btn.active {
+            background: var(--accent-blue);
+            border-color: var(--accent-blue);
+            color: #fff;
+        }
+
+        .tf-btn.op-principal {
+            position: relative;
+        }
+        .tf-btn.op-principal::after {
+            content: 'OP';
+            position: absolute;
+            top: -6px;
+            right: -6px;
+            background: var(--accent-orange);
+            color: #000;
+            font-size: 8px;
+            font-weight: 700;
+            padding: 1px 4px;
+            border-radius: 3px;
+        }
+
+        /* === BTN GERAL === */
+        .btn {
+            padding: 8px 16px;
+            border: 1px solid var(--border);
+            background: var(--bg-card);
+            color: var(--text-primary);
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+            transition: all 0.2s;
+        }
+        .btn:hover { border-color: var(--accent-blue); }
+        .btn-primary { background: var(--accent-blue); border-color: var(--accent-blue); color: #fff; }
+        .btn-primary:hover { background: #1976d2; }
+
+        /* === SINAL DESTAQUE === */
+        .sinal-banner {
+            padding: 12px 20px;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            font-size: 14px;
+        }
+
+        .sinal-banner.compra { background: rgba(0, 200, 83, 0.1); border-bottom: 2px solid var(--accent-green); }
+        .sinal-banner.venda { background: rgba(255, 23, 68, 0.1); border-bottom: 2px solid var(--accent-red); }
+        .sinal-banner.neutro { background: rgba(132, 142, 156, 0.08); border-bottom: 1px solid var(--border); }
+
+        .sinal-badge {
+            padding: 4px 12px;
+            border-radius: 4px;
+            font-weight: 700;
+            font-size: 13px;
+            text-transform: uppercase;
+        }
+        .sinal-badge.compra { background: var(--accent-green); color: #000; }
+        .sinal-badge.venda { background: var(--accent-red); color: #fff; }
+        .sinal-badge.neutro { background: var(--text-muted); color: #fff; }
+
+        .confianca-bar {
+            width: 100px;
+            height: 6px;
+            background: var(--bg-hover);
+            border-radius: 3px;
+            overflow: hidden;
+        }
+        .confianca-fill {
+            height: 100%;
+            border-radius: 3px;
+            transition: width 0.5s;
+        }
+
+        /* === GRID PRINCIPAL === */
+        .main-grid {
+            display: grid;
+            grid-template-columns: 1fr 340px;
+            gap: 1px;
+            background: var(--border);
+            min-height: calc(100vh - 160px);
+        }
+
+        .chart-area {
+            background: var(--bg-primary);
+            padding: 16px;
+        }
+
+        .sidebar {
+            background: var(--bg-secondary);
+            overflow-y: auto;
+            max-height: calc(100vh - 160px);
+        }
+
+        /* === CARDS === */
+        .card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            margin-bottom: 12px;
+        }
+
+        .card-header {
+            padding: 10px 14px;
+            border-bottom: 1px solid var(--border);
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--text-secondary);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .card-body { padding: 12px 14px; }
+
+        /* === SIDEBAR SECTIONS === */
+        .sidebar-section {
+            padding: 12px 16px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .section-title {
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            color: var(--text-muted);
+            margin-bottom: 10px;
+        }
+
+        /* === INDICADORES === */
+        .indicator-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 6px 0;
+            font-size: 13px;
+        }
+
+        .indicator-label { color: var(--text-secondary); }
+        .indicator-value { font-weight: 600; font-family: 'SF Mono', 'Cascadia Code', monospace; }
+
+        .tag {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 3px;
+            font-size: 11px;
+            font-weight: 600;
+        }
+        .tag-green { background: rgba(0, 200, 83, 0.15); color: var(--accent-green); }
+        .tag-red { background: rgba(255, 23, 68, 0.15); color: var(--accent-red); }
+        .tag-yellow { background: rgba(255, 214, 0, 0.15); color: var(--accent-yellow); }
+        .tag-blue { background: rgba(33, 150, 243, 0.15); color: var(--accent-blue); }
+        .tag-purple { background: rgba(171, 71, 188, 0.15); color: var(--accent-purple); }
+
+        /* === FIBONACCI === */
+        .fib-level {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 4px 0;
+            font-size: 12px;
+            font-family: 'SF Mono', 'Cascadia Code', monospace;
+        }
+
+        .fib-label {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .fib-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+        }
+
+        /* === VOLUME BAR === */
+        .volume-bar-container {
+            display: flex;
+            height: 20px;
+            border-radius: 4px;
+            overflow: hidden;
+            margin: 8px 0;
+        }
+
+        .volume-bar-buy {
+            background: var(--accent-green);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 10px;
+            font-weight: 600;
+            color: #000;
+        }
+
+        .volume-bar-sell {
+            background: var(--accent-red);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 10px;
+            font-weight: 600;
+            color: #fff;
+        }
+
+        /* === VIOLINADA METER === */
+        .violinada-meter {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-top: 8px;
+        }
+
+        .meter-track {
+            flex: 1;
+            height: 8px;
+            background: var(--bg-hover);
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .meter-fill {
+            height: 100%;
+            border-radius: 4px;
+            transition: width 0.5s;
+        }
+
+        /* === MULTI-TF GRID === */
+        .multi-tf-grid {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 1px;
+            background: var(--border);
+            border-radius: 6px;
+            overflow: hidden;
+            margin-top: 8px;
+        }
+
+        .tf-cell {
+            background: var(--bg-card);
+            padding: 8px;
+            text-align: center;
+        }
+
+        .tf-cell-header {
+            font-size: 10px;
+            color: var(--text-muted);
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .tf-cell-value {
+            font-size: 16px;
+            margin-top: 4px;
+        }
+
+        .tf-cell-sub {
+            font-size: 10px;
+            color: var(--text-secondary);
+            margin-top: 2px;
+        }
+
+        /* === CHART CONTAINERS === */
+        .chart-container {
+            position: relative;
+            height: 400px;
+            margin-bottom: 8px;
+        }
+
+        .chart-sub-container {
+            position: relative;
+            height: 150px;
+            margin-bottom: 8px;
+        }
+
+        .chart-label {
+            position: absolute;
+            top: 8px;
+            left: 8px;
+            font-size: 11px;
+            color: var(--text-muted);
+            font-weight: 600;
+            z-index: 10;
+            background: rgba(10, 14, 23, 0.7);
+            padding: 2px 6px;
+            border-radius: 3px;
+        }
+
+        /* === SINAIS LIST === */
+        .sinal-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 12px;
+            margin-bottom: 8px;
+        }
+
+        .sinal-card.compra { border-left: 3px solid var(--accent-green); }
+        .sinal-card.venda { border-left: 3px solid var(--accent-red); }
+
+        .sinal-detail {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 6px;
+            margin-top: 8px;
+            font-size: 12px;
+        }
+
+        .sinal-detail-item {
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .motivo-list {
+            margin-top: 8px;
+            font-size: 11px;
+            color: var(--text-secondary);
+        }
+
+        .motivo-item {
+            padding: 3px 0;
+            padding-left: 12px;
+            position: relative;
+        }
+
+        .motivo-item::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 50%;
+            width: 4px;
+            height: 4px;
+            border-radius: 50%;
+            background: var(--accent-blue);
+            transform: translateY(-50%);
+        }
+
+        /* === COUNTDOWN === */
+        .countdown {
+            font-size: 12px;
+            color: var(--text-muted);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .countdown-time {
+            font-family: 'SF Mono', 'Cascadia Code', monospace;
+            color: var(--accent-blue);
+            font-weight: 600;
+        }
+
+        /* === PRECO DISPLAY === */
+        .preco-display {
+            font-size: 28px;
+            font-weight: 700;
+            font-family: 'SF Mono', 'Cascadia Code', monospace;
+            margin-bottom: 4px;
+        }
+
+        .preco-change {
+            font-size: 14px;
+            font-weight: 600;
+        }
+
+        .preco-change.up { color: var(--accent-green); }
+        .preco-change.down { color: var(--accent-red); }
+
+        /* === LOADING === */
+        .loading {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 200px;
+            color: var(--text-muted);
+        }
+
+        .spinner {
+            width: 24px;
+            height: 24px;
+            border: 2px solid var(--border);
+            border-top-color: var(--accent-blue);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            margin-right: 12px;
+        }
+
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* === RESPONSIVE === */
+        @media (max-width: 900px) {
+            .main-grid {
+                grid-template-columns: 1fr;
+            }
+            .sidebar {
+                max-height: none;
+            }
+            .multi-tf-grid {
+                grid-template-columns: repeat(3, 1fr);
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- HEADER -->
+    <div class="header">
+        <div class="header-left">
+            <div class="logo">B3 DAYTRADE</div>
+            <div class="header-status">
+                <div class="status-dot" id="statusDot"></div>
+                <span id="statusText">Conectando...</span>
+            </div>
+        </div>
+        <div class="header-controls">
+            <div class="countdown">
+                Proxima atualizacao: <span class="countdown-time" id="countdown">05:00</span>
+            </div>
+            <button class="btn btn-primary" onclick="forcarAtualizacao()">Atualizar Agora</button>
+        </div>
+    </div>
+
+    <!-- ATIVO TABS -->
+    <div class="ativo-tabs">
+        <div class="ativo-tab active" data-ativo="WIN" onclick="trocarAtivo('WIN')">
+            Mini-Indice (WIN)
+        </div>
+        <div class="ativo-tab" data-ativo="WDO" onclick="trocarAtivo('WDO')">
+            Mini-Dolar (WDO)
+        </div>
+    </div>
+
+    <!-- TIMEFRAME BAR -->
+    <div class="tf-bar">
+        <button class="tf-btn active op-principal" data-tf="5m" onclick="trocarTimeframe('5m')">5 min</button>
+        <button class="tf-btn" data-tf="15m" onclick="trocarTimeframe('15m')">15 min</button>
+        <button class="tf-btn" data-tf="1h" onclick="trocarTimeframe('1h')">1 hora</button>
+        <button class="tf-btn" data-tf="4h" onclick="trocarTimeframe('4h')">4 horas</button>
+        <button class="tf-btn" data-tf="1d" onclick="trocarTimeframe('1d')">Diario</button>
+    </div>
+
+    <!-- SINAL BANNER -->
+    <div class="sinal-banner neutro" id="sinalBanner">
+        <span class="sinal-badge neutro" id="sinalBadge">AGUARDANDO</span>
+        <span id="sinalTexto">Carregando analise...</span>
+        <div class="confianca-bar">
+            <div class="confianca-fill" id="confiancaFill" style="width: 0%; background: var(--text-muted);" ></div>
+        </div>
+        <span id="confiancaTexto" style="font-size: 12px; color: var(--text-secondary);">--</span>
+    </div>
+
+    <!-- MAIN GRID -->
+    <div class="main-grid">
+        <!-- CHART AREA -->
+        <div class="chart-area">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                <div>
+                    <div class="preco-display" id="precoDisplay">--</div>
+                    <div class="preco-change" id="precoChange">--</div>
+                </div>
+                <div style="text-align: right; font-size: 12px; color: var(--text-secondary);">
+                    <div>EMA 20: <span id="ema20Val" style="color: var(--accent-orange);">--</span></div>
+                    <div>EMA 50: <span id="ema50Val" style="color: var(--accent-purple);">--</span></div>
+                </div>
+            </div>
+
+            <!-- Candlestick Chart -->
+            <div class="chart-container">
+                <div class="chart-label">PRICE + FIBONACCI</div>
+                <canvas id="priceChart"></canvas>
+            </div>
+
+            <!-- RSI Chart -->
+            <div class="chart-sub-container">
+                <div class="chart-label">RSI (14)</div>
+                <canvas id="rsiChart"></canvas>
+            </div>
+
+            <!-- MACD Chart -->
+            <div class="chart-sub-container">
+                <div class="chart-label">MACD (12, 26, 9)</div>
+                <canvas id="macdChart"></canvas>
+            </div>
+
+            <!-- Volume Chart -->
+            <div class="chart-sub-container">
+                <div class="chart-label">VOLUME</div>
+                <canvas id="volumeChart"></canvas>
+            </div>
+        </div>
+
+        <!-- SIDEBAR -->
+        <div class="sidebar">
+            <!-- Multi-Timeframe Overview -->
+            <div class="sidebar-section">
+                <div class="section-title">Visao Multi-Timeframe</div>
+                <div class="multi-tf-grid" id="multiTfGrid">
+                    <div class="tf-cell"><div class="tf-cell-header">5M</div><div class="tf-cell-value">--</div></div>
+                    <div class="tf-cell"><div class="tf-cell-header">15M</div><div class="tf-cell-value">--</div></div>
+                    <div class="tf-cell"><div class="tf-cell-header">1H</div><div class="tf-cell-value">--</div></div>
+                    <div class="tf-cell"><div class="tf-cell-header">4H</div><div class="tf-cell-value">--</div></div>
+                    <div class="tf-cell"><div class="tf-cell-header">1D</div><div class="tf-cell-value">--</div></div>
+                </div>
+            </div>
+
+            <!-- Fibonacci -->
+            <div class="sidebar-section">
+                <div class="section-title">Niveis Fibonacci</div>
+                <div id="fibLevels">
+                    <div class="loading"><div class="spinner"></div> Carregando...</div>
+                </div>
+            </div>
+
+            <!-- Volume Analysis -->
+            <div class="sidebar-section">
+                <div class="section-title">Analise de Volume</div>
+                <div id="volumeAnalysis">
+                    <div class="loading"><div class="spinner"></div> Carregando...</div>
+                </div>
+            </div>
+
+            <!-- Violinada Detector -->
+            <div class="sidebar-section">
+                <div class="section-title">Detector de Violinada</div>
+                <div id="violinadaSection">
+                    <div class="loading"><div class="spinner"></div> Carregando...</div>
+                </div>
+            </div>
+
+            <!-- Sinais de Entrada -->
+            <div class="sidebar-section">
+                <div class="section-title">Sinais de Entrada (5 min)</div>
+                <div id="sinaisSection">
+                    <div class="loading"><div class="spinner"></div> Carregando...</div>
+                </div>
+            </div>
+
+            <!-- Suportes e Resistencias -->
+            <div class="sidebar-section">
+                <div class="section-title">Suportes & Resistencias</div>
+                <div id="srSection">
+                    <div class="loading"><div class="spinner"></div> Carregando...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    // =====================================================
+    // ESTADO DA APLICAÇÃO
+    // =====================================================
+    let state = {
+        ativo: 'WIN',
+        timeframe: '5m',
+        analise: null,
+        painel: null,
+        charts: {},
+        countdownSeconds: 300,
+        countdownInterval: null,
+    };
+
+    // =====================================================
+    // INICIALIZAÇÃO
+    // =====================================================
+    document.addEventListener('DOMContentLoaded', () => {
+        carregarDados();
+        iniciarCountdown();
+    });
+
+    function iniciarCountdown() {
+        if (state.countdownInterval) clearInterval(state.countdownInterval);
+        state.countdownSeconds = 300;
+
+        state.countdownInterval = setInterval(() => {
+            state.countdownSeconds--;
+            if (state.countdownSeconds <= 0) {
+                state.countdownSeconds = 300;
+                carregarDados();
+            }
+            const m = Math.floor(state.countdownSeconds / 60);
+            const s = state.countdownSeconds % 60;
+            document.getElementById('countdown').textContent =
+                `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+        }, 1000);
+    }
+
+    // =====================================================
+    // CONTROLES
+    // =====================================================
+    function trocarAtivo(ativo) {
+        state.ativo = ativo;
+        document.querySelectorAll('.ativo-tab').forEach(t => {
+            t.classList.toggle('active', t.dataset.ativo === ativo);
+        });
+        carregarDados();
+    }
+
+    function trocarTimeframe(tf) {
+        state.timeframe = tf;
+        document.querySelectorAll('.tf-btn').forEach(b => {
+            b.classList.toggle('active', b.dataset.tf === tf);
+        });
+        carregarDados();
+    }
+
+    async function forcarAtualizacao() {
+        try {
+            await fetch('/api/forcar-atualizacao', { method: 'POST' });
+            state.countdownSeconds = 300;
+            carregarDados();
+        } catch (e) {
+            console.error('Erro ao forcar atualizacao:', e);
+        }
+    }
+
+    // =====================================================
+    // CARREGAR DADOS
+    // =====================================================
+    async function carregarDados() {
+        try {
+            const [analiseRes, painelRes] = await Promise.all([
+                fetch(`/api/analise?ativo=${state.ativo}&timeframe=${state.timeframe}`),
+                fetch(`/api/painel?ativo=${state.ativo}`)
+            ]);
+
+            const analiseData = await analiseRes.json();
+            const painelData = await painelRes.json();
+
+            state.analise = analiseData.analise;
+            state.painel = painelData.painel;
+
+            document.getElementById('statusText').textContent =
+                `Online | Atualizado: ${analiseData.ultima_atualizacao || '--'}`;
+            document.getElementById('statusDot').style.background = 'var(--accent-green)';
+
+            atualizarUI();
+        } catch (e) {
+            console.error('Erro ao carregar dados:', e);
+            document.getElementById('statusText').textContent = 'Erro de conexao';
+            document.getElementById('statusDot').style.background = 'var(--accent-red)';
+        }
+    }
+
+    // =====================================================
+    // ATUALIZAR UI
+    // =====================================================
+    function atualizarUI() {
+        const a = state.analise;
+        if (!a || a.erro) {
+            document.getElementById('precoDisplay').textContent = 'Sem dados';
+            return;
+        }
+
+        // Preco
+        document.getElementById('precoDisplay').textContent = a.preco_atual.toLocaleString('pt-BR');
+        document.getElementById('ema20Val').textContent = a.ema_20?.toLocaleString('pt-BR') || '--';
+        document.getElementById('ema50Val').textContent = a.ema_50?.toLocaleString('pt-BR') || '--';
+
+        // Tendencia no preco
+        const changeEl = document.getElementById('precoChange');
+        if (a.tendencia === 'ALTA') {
+            changeEl.textContent = 'TENDENCIA DE ALTA';
+            changeEl.className = 'preco-change up';
+        } else if (a.tendencia === 'BAIXA') {
+            changeEl.textContent = 'TENDENCIA DE BAIXA';
+            changeEl.className = 'preco-change down';
+        } else {
+            changeEl.textContent = 'LATERAL';
+            changeEl.className = 'preco-change';
+            changeEl.style.color = 'var(--text-secondary)';
+        }
+
+        // Sinal Banner
+        atualizarBanner(a);
+
+        // Graficos
+        atualizarGraficos(a);
+
+        // Fibonacci
+        atualizarFibonacci(a);
+
+        // Volume
+        atualizarVolume(a);
+
+        // Violinada
+        atualizarViolinada(a);
+
+        // Sinais
+        atualizarSinais(a);
+
+        // Suportes/Resistencias
+        atualizarSR(a);
+
+        // Multi-TF
+        atualizarMultiTF();
+    }
+
+    // =====================================================
+    // SINAL BANNER
+    // =====================================================
+    function atualizarBanner(a) {
+        const banner = document.getElementById('sinalBanner');
+        const badge = document.getElementById('sinalBadge');
+        const texto = document.getElementById('sinalTexto');
+        const fill = document.getElementById('confiancaFill');
+        const confTexto = document.getElementById('confiancaTexto');
+
+        if (a.sinais && a.sinais.length > 0) {
+            const sinal = a.sinais.reduce((best, s) => s.confianca > best.confianca ? s : best, a.sinais[0]);
+
+            const tipo = sinal.tipo.toLowerCase();
+            banner.className = `sinal-banner ${tipo === 'compra' ? 'compra' : 'venda'}`;
+            badge.className = `sinal-badge ${tipo === 'compra' ? 'compra' : 'venda'}`;
+            badge.textContent = sinal.tipo;
+
+            texto.textContent = sinal.motivos?.[0] || 'Sinal ativo';
+            fill.style.width = `${sinal.confianca}%`;
+            fill.style.background = tipo === 'compra' ? 'var(--accent-green)' : 'var(--accent-red)';
+            confTexto.textContent = `${sinal.confianca}% confianca`;
+        } else {
+            banner.className = 'sinal-banner neutro';
+            badge.className = 'sinal-badge neutro';
+            badge.textContent = 'NEUTRO';
+            texto.textContent = `RSI: ${a.rsi} | MACD: ${a.macd_status} | Vol: ${a.volume?.pressao}`;
+            fill.style.width = '0%';
+            confTexto.textContent = 'Sem sinal claro';
+        }
+    }
+
+    // =====================================================
+    // GRAFICOS
+    // =====================================================
+    function atualizarGraficos(a) {
+        if (!a.candles || a.candles.length === 0) return;
+
+        const labels = a.candles.map(c => c.time);
+        const closes = a.candles.map(c => c.close);
+        const opens = a.candles.map(c => c.open);
+        const highs = a.candles.map(c => c.high);
+        const lows = a.candles.map(c => c.low);
+        const volumes = a.candles.map(c => c.volume);
+        const rsiData = a.candles.map(c => c.rsi);
+        const macdData = a.candles.map(c => c.macd);
+        const macdSignal = a.candles.map(c => c.macd_signal);
+        const macdHist = a.candles.map(c => c.macd_hist);
+
+        // Cores dos candles
+        const candleColors = a.candles.map(c => c.close >= c.open ? 'rgba(0, 200, 83, 0.9)' : 'rgba(255, 23, 68, 0.9)');
+        const volColors = a.candles.map(c => c.close >= c.open ? 'rgba(0, 200, 83, 0.4)' : 'rgba(255, 23, 68, 0.4)');
+
+        // === PRICE CHART ===
+        renderPriceChart(labels, closes, highs, lows, a);
+
+        // === RSI CHART ===
+        renderRSIChart(labels, rsiData);
+
+        // === MACD CHART ===
+        renderMACDChart(labels, macdData, macdSignal, macdHist);
+
+        // === VOLUME CHART ===
+        renderVolumeChart(labels, volumes, volColors);
+    }
+
+    function renderPriceChart(labels, closes, highs, lows, a) {
+        const ctx = document.getElementById('priceChart');
+        if (state.charts.price) state.charts.price.destroy();
+
+        const fib = a.fibonacci;
+        const fibAnnotations = {};
+        if (fib) {
+            const fibLevels = [
+                { key: 'nivel_0', label: '0%', color: '#f44336' },
+                { key: 'nivel_236', label: '23.6%', color: '#ff9800' },
+                { key: 'nivel_382', label: '38.2%', color: '#ffc107' },
+                { key: 'nivel_500', label: '50%', color: '#4caf50' },
+                { key: 'nivel_618', label: '61.8%', color: '#2196f3' },
+                { key: 'nivel_786', label: '78.6%', color: '#9c27b0' },
+                { key: 'nivel_100', label: '100%', color: '#607d8b' },
+            ];
+
+            fibLevels.forEach((fl, i) => {
+                if (fib[fl.key]) {
+                    fibAnnotations[`fib${i}`] = {
+                        type: 'line',
+                        yMin: fib[fl.key],
+                        yMax: fib[fl.key],
+                        borderColor: fl.color + '80',
+                        borderWidth: 1,
+                        borderDash: [5, 3],
+                        label: {
+                            display: true,
+                            content: `${fl.label}: ${fib[fl.key].toLocaleString('pt-BR')}`,
+                            position: 'end',
+                            backgroundColor: fl.color + '40',
+                            color: fl.color,
+                            font: { size: 10 }
+                        }
+                    };
+                }
+            });
+        }
+
+        state.charts.price = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [
+                    {
+                        label: 'Close',
+                        data: closes,
+                        borderColor: '#2196f3',
+                        borderWidth: 1.5,
+                        pointRadius: 0,
+                        fill: false,
+                        tension: 0.1,
+                    },
+                    {
+                        label: 'High',
+                        data: highs,
+                        borderColor: 'rgba(0, 200, 83, 0.3)',
+                        borderWidth: 0.5,
+                        pointRadius: 0,
+                        fill: false,
+                    },
+                    {
+                        label: 'Low',
+                        data: lows,
+                        borderColor: 'rgba(255, 23, 68, 0.3)',
+                        borderWidth: 0.5,
+                        pointRadius: 0,
+                        fill: '-1',
+                        backgroundColor: 'rgba(33, 150, 243, 0.05)',
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false },
+                    annotation: { annotations: fibAnnotations }
+                },
+                scales: {
+                    x: {
+                        ticks: { color: '#5e6673', maxTicksLimit: 10, font: { size: 10 } },
+                        grid: { color: '#1a1f2e' }
+                    },
+                    y: {
+                        position: 'right',
+                        ticks: { color: '#848e9c', font: { size: 10 } },
+                        grid: { color: '#1a1f2e' }
+                    }
+                },
+                interaction: { intersect: false, mode: 'index' }
+            }
+        });
+    }
+
+    function renderRSIChart(labels, rsiData) {
+        const ctx = document.getElementById('rsiChart');
+        if (state.charts.rsi) state.charts.rsi.destroy();
+
+        state.charts.rsi = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'RSI',
+                    data: rsiData,
+                    borderColor: '#ab47bc',
+                    borderWidth: 1.5,
+                    pointRadius: 0,
+                    fill: false,
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false },
+                    annotation: {
+                        annotations: {
+                            overbought: {
+                                type: 'line', yMin: 70, yMax: 70,
+                                borderColor: 'rgba(255, 23, 68, 0.5)', borderWidth: 1, borderDash: [4, 4]
+                            },
+                            oversold: {
+                                type: 'line', yMin: 30, yMax: 30,
+                                borderColor: 'rgba(0, 200, 83, 0.5)', borderWidth: 1, borderDash: [4, 4]
+                            },
+                            middle: {
+                                type: 'line', yMin: 50, yMax: 50,
+                                borderColor: 'rgba(132, 142, 156, 0.3)', borderWidth: 1, borderDash: [2, 4]
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    x: { ticks: { display: false }, grid: { color: '#1a1f2e' } },
+                    y: {
+                        min: 0, max: 100,
+                        position: 'right',
+                        ticks: { color: '#848e9c', stepSize: 20, font: { size: 10 } },
+                        grid: { color: '#1a1f2e' }
+                    }
+                }
+            }
+        });
+    }
+
+    function renderMACDChart(labels, macdData, macdSignal, macdHist) {
+        const ctx = document.getElementById('macdChart');
+        if (state.charts.macd) state.charts.macd.destroy();
+
+        state.charts.macd = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: labels,
+                datasets: [
+                    {
+                        label: 'Histograma',
+                        data: macdHist,
+                        backgroundColor: macdHist.map(v => v >= 0 ? 'rgba(0, 200, 83, 0.5)' : 'rgba(255, 23, 68, 0.5)'),
+                        borderWidth: 0,
+                        order: 2,
+                    },
+                    {
+                        label: 'MACD',
+                        data: macdData,
+                        type: 'line',
+                        borderColor: '#2196f3',
+                        borderWidth: 1.5,
+                        pointRadius: 0,
+                        fill: false,
+                        order: 1,
+                    },
+                    {
+                        label: 'Sinal',
+                        data: macdSignal,
+                        type: 'line',
+                        borderColor: '#ff9800',
+                        borderWidth: 1,
+                        pointRadius: 0,
+                        fill: false,
+                        order: 1,
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { display: false } },
+                scales: {
+                    x: { ticks: { display: false }, grid: { color: '#1a1f2e' } },
+                    y: {
+                        position: 'right',
+                        ticks: { color: '#848e9c', font: { size: 10 } },
+                        grid: { color: '#1a1f2e' }
+                    }
+                }
+            }
+        });
+    }
+
+    function renderVolumeChart(labels, volumes, colors) {
+        const ctx = document.getElementById('volumeChart');
+        if (state.charts.volume) state.charts.volume.destroy();
+
+        state.charts.volume = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Volume',
+                    data: volumes,
+                    backgroundColor: colors,
+                    borderWidth: 0,
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { display: false } },
+                scales: {
+                    x: { ticks: { display: false }, grid: { color: '#1a1f2e' } },
+                    y: {
+                        position: 'right',
+                        ticks: { color: '#848e9c', font: { size: 10 } },
+                        grid: { color: '#1a1f2e' }
+                    }
+                }
+            }
+        });
+    }
+
+    // =====================================================
+    // SIDEBAR SECTIONS
+    // =====================================================
+    function atualizarFibonacci(a) {
+        if (!a.fibonacci) return;
+        const f = a.fibonacci;
+        const container = document.getElementById('fibLevels');
+
+        const levels = [
+            { label: '0%', value: f.nivel_0, color: '#f44336' },
+            { label: '23.6%', value: f.nivel_236, color: '#ff9800' },
+            { label: '38.2%', value: f.nivel_382, color: '#ffc107' },
+            { label: '50.0%', value: f.nivel_500, color: '#4caf50' },
+            { label: '61.8%', value: f.nivel_618, color: '#2196f3' },
+            { label: '78.6%', value: f.nivel_786, color: '#9c27b0' },
+            { label: '100%', value: f.nivel_100, color: '#607d8b' },
+            { label: 'Ext 127.2%', value: f.extensao_1272, color: '#00bcd4' },
+            { label: 'Ext 161.8%', value: f.extensao_1618, color: '#009688' },
+        ];
+
+        let html = `<div style="font-size:11px; margin-bottom:8px; color:var(--text-muted);">
+            Tendencia Fib: <span class="tag ${f.tendencia === 'ALTA' ? 'tag-green' : 'tag-red'}">${f.tendencia}</span>
+        </div>`;
+
+        levels.forEach(l => {
+            const isNear = Math.abs(a.preco_atual - l.value) / a.preco_atual < 0.003;
+            html += `
+                <div class="fib-level" style="${isNear ? 'background:rgba(33,150,243,0.1); border-radius:3px; padding:4px 6px;' : ''}">
+                    <div class="fib-label">
+                        <div class="fib-dot" style="background:${l.color}"></div>
+                        <span style="color:${l.color}">${l.label}</span>
+                        ${isNear ? '<span class="tag tag-blue" style="font-size:9px;">PROXIMO</span>' : ''}
+                    </div>
+                    <span style="color:var(--text-primary)">${l.value.toLocaleString('pt-BR')}</span>
+                </div>
+            `;
+        });
+
+        container.innerHTML = html;
+    }
+
+    function atualizarVolume(a) {
+        if (!a.volume) return;
+        const v = a.volume;
+        const container = document.getElementById('volumeAnalysis');
+
+        const total = v.compra + v.venda;
+        const pctCompra = total > 0 ? ((v.compra / total) * 100).toFixed(1) : 50;
+        const pctVenda = total > 0 ? ((v.venda / total) * 100).toFixed(1) : 50;
+
+        let pressaoClass = 'tag-yellow';
+        if (v.pressao === 'COMPRADORES') pressaoClass = 'tag-green';
+        else if (v.pressao === 'VENDEDORES') pressaoClass = 'tag-red';
+
+        container.innerHTML = `
+            <div class="indicator-row">
+                <span class="indicator-label">Pressao</span>
+                <span class="tag ${pressaoClass}">${v.pressao}</span>
+            </div>
+            <div class="volume-bar-container">
+                <div class="volume-bar-buy" style="width:${pctCompra}%">${pctCompra}%</div>
+                <div class="volume-bar-sell" style="width:${pctVenda}%">${pctVenda}%</div>
+            </div>
+            <div class="indicator-row">
+                <span class="indicator-label">Vol. Compra</span>
+                <span class="indicator-value" style="color:var(--accent-green)">${Number(v.compra).toLocaleString('pt-BR')}</span>
+            </div>
+            <div class="indicator-row">
+                <span class="indicator-label">Vol. Venda</span>
+                <span class="indicator-value" style="color:var(--accent-red)">${Number(v.venda).toLocaleString('pt-BR')}</span>
+            </div>
+            <div class="indicator-row">
+                <span class="indicator-label">Ratio C/V</span>
+                <span class="indicator-value">${v.ratio}</span>
+            </div>
+            <div class="indicator-row">
+                <span class="indicator-label">Delta Acum.</span>
+                <span class="indicator-value" style="color:${v.delta_acumulado >= 0 ? 'var(--accent-green)' : 'var(--accent-red)'}">
+                    ${v.delta_acumulado >= 0 ? '+' : ''}${Number(v.delta_acumulado).toLocaleString('pt-BR')}
+                </span>
+            </div>
+            <div class="indicator-row">
+                <span class="indicator-label">Acima da Media</span>
+                <span class="tag ${v.acima_media ? 'tag-green' : 'tag-yellow'}">${v.acima_media ? 'SIM' : 'NAO'}</span>
+            </div>
+        `;
+    }
+
+    function atualizarViolinada(a) {
+        const container = document.getElementById('violinadaSection');
+        const score = a.violinada_score || 0;
+
+        let color, label;
+        if (score < 30) { color = 'var(--accent-green)'; label = 'BAIXO'; }
+        else if (score < 60) { color = 'var(--accent-orange)'; label = 'MEDIO'; }
+        else { color = 'var(--accent-red)'; label = 'ALTO'; }
+
+        container.innerHTML = `
+            <div class="indicator-row">
+                <span class="indicator-label">Risco de Violinada</span>
+                <span class="tag" style="background:${color}20; color:${color}">${label} (${score}%)</span>
+            </div>
+            <div class="violinada-meter">
+                <div class="meter-track">
+                    <div class="meter-fill" style="width:${score}%; background:${color};" ></div>
+                </div>
+            </div>
+            <div style="margin-top:8px; font-size:11px; color:var(--text-muted);">
+                ${score >= 60 ? 'CUIDADO: Mercado com alta chance de violinada. Evite entradas ou use stop mais curto.' :
+                  score >= 30 ? 'Atencao: Risco moderado. Confirme com volume e outros timeframes.' :
+                  'Mercado com baixo risco de violinada. Condicoes favoraveis para entrada.'}
+            </div>
+        `;
+    }
+
+    function atualizarSinais(a) {
+        const container = document.getElementById('sinaisSection');
+
+        if (!a.sinais || a.sinais.length === 0) {
+            container.innerHTML = `
+                <div style="text-align:center; padding:20px; color:var(--text-muted); font-size:13px;">
+                    Sem sinais claros no momento.<br>
+                    Aguardando confluencia de indicadores.
+                </div>
+            `;
+            return;
+        }
+
+        let html = '';
+        a.sinais.forEach(s => {
+            const isBuy = s.tipo === 'COMPRA';
+            html += `
+                <div class="sinal-card ${isBuy ? 'compra' : 'venda'}">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <span class="sinal-badge ${isBuy ? 'compra' : 'venda'}">${s.tipo}</span>
+                        <span style="font-size:12px; color:var(--text-secondary)">
+                            Confianca: <strong style="color:${isBuy ? 'var(--accent-green)' : 'var(--accent-red)'}">${s.confianca}%</strong>
+                        </span>
+                    </div>
+                    <div class="sinal-detail">
+                        <div class="sinal-detail-item">
+                            <span style="color:var(--text-secondary)">Entrada</span>
+                            <span style="font-weight:600">${s.preco_entrada.toLocaleString('pt-BR')}</span>
+                        </div>
+                        <div class="sinal-detail-item">
+                            <span style="color:var(--text-secondary)">Stop Loss</span>
+                            <span style="color:var(--accent-red); font-weight:600">${s.stop_loss.toLocaleString('pt-BR')}</span>
+                        </div>
+                        <div class="sinal-detail-item">
+                            <span style="color:var(--text-secondary)">TP1</span>
+                            <span style="color:var(--accent-green)">${s.take_profit_1.toLocaleString('pt-BR')}</span>
+                        </div>
+                        <div class="sinal-detail-item">
+                            <span style="color:var(--text-secondary)">TP2</span>
+                            <span style="color:var(--accent-green)">${s.take_profit_2.toLocaleString('pt-BR')}</span>
+                        </div>
+                        <div class="sinal-detail-item">
+                            <span style="color:var(--text-secondary)">TP3</span>
+                            <span style="color:var(--accent-green)">${s.take_profit_3.toLocaleString('pt-BR')}</span>
+                        </div>
+                        <div class="sinal-detail-item">
+                            <span style="color:var(--text-secondary)">R/R</span>
+                            <span style="font-weight:600">${s.risco_retorno}:1</span>
+                        </div>
+                    </div>
+                    <div style="margin-top:8px; display:flex; gap:4px; flex-wrap:wrap;">
+                        <span class="tag tag-blue">${s.fibonacci_zona}</span>
+                        <span class="tag ${s.rsi_status === 'SOBREVENDIDO' ? 'tag-green' : s.rsi_status === 'SOBRECOMPRADO' ? 'tag-red' : 'tag-yellow'}">RSI ${s.rsi_status}</span>
+                        <span class="tag ${s.macd_status === 'ALTA' ? 'tag-green' : 'tag-red'}">MACD ${s.macd_status}</span>
+                        <span class="tag ${s.violinada_risco === 'BAIXO' ? 'tag-green' : s.violinada_risco === 'ALTO' ? 'tag-red' : 'tag-yellow'}">Violinada: ${s.violinada_risco}</span>
+                    </div>
+                    <div class="motivo-list">
+                        ${s.motivos.map(m => `<div class="motivo-item">${m}</div>`).join('')}
+                    </div>
+                </div>
+            `;
+        });
+
+        container.innerHTML = html;
+    }
+
+    function atualizarSR(a) {
+        const container = document.getElementById('srSection');
+        let html = '';
+
+        if (a.resistencias && a.resistencias.length > 0) {
+            html += '<div style="margin-bottom:6px; font-size:11px; color:var(--accent-red); font-weight:600;">RESISTENCIAS</div>';
+            [...a.resistencias].reverse().forEach(r => {
+                const isNear = Math.abs(a.preco_atual - r) / a.preco_atual < 0.003;
+                html += `<div class="indicator-row" style="${isNear ? 'background:rgba(255,23,68,0.1); padding:2px 6px; border-radius:3px;' : ''}">
+                    <span style="color:var(--accent-red)">R</span>
+                    <span class="indicator-value">${r.toLocaleString('pt-BR')} ${isNear ? '<span class="tag tag-red" style="font-size:9px;">PROXIMO</span>' : ''}</span>
+                </div>`;
+            });
+        }
+
+        html += `<div class="indicator-row" style="background:rgba(33,150,243,0.15); padding:4px 6px; border-radius:3px; margin:6px 0;">
+            <span style="color:var(--accent-blue); font-weight:600">PRECO ATUAL</span>
+            <span class="indicator-value" style="color:var(--accent-blue)">${a.preco_atual.toLocaleString('pt-BR')}</span>
+        </div>`;
+
+        if (a.suportes && a.suportes.length > 0) {
+            html += '<div style="margin-top:6px; margin-bottom:6px; font-size:11px; color:var(--accent-green); font-weight:600;">SUPORTES</div>';
+            [...a.suportes].reverse().forEach(s => {
+                const isNear = Math.abs(a.preco_atual - s) / a.preco_atual < 0.003;
+                html += `<div class="indicator-row" style="${isNear ? 'background:rgba(0,200,83,0.1); padding:2px 6px; border-radius:3px;' : ''}">
+                    <span style="color:var(--accent-green)">S</span>
+                    <span class="indicator-value">${s.toLocaleString('pt-BR')} ${isNear ? '<span class="tag tag-green" style="font-size:9px;">PROXIMO</span>' : ''}</span>
+                </div>`;
+            });
+        }
+
+        container.innerHTML = html || '<div style="color:var(--text-muted); font-size:12px;">Sem niveis identificados</div>';
+    }
+
+    function atualizarMultiTF() {
+        const p = state.painel;
+        if (!p || !p.timeframes) return;
+
+        const container = document.getElementById('multiTfGrid');
+        const tfs = ['5m', '15m', '1h', '4h', '1d'];
+        const labels = ['5M', '15M', '1H', '4H', '1D'];
+
+        let html = '';
+        tfs.forEach((tf, i) => {
+            const data = p.timeframes[tf];
+            if (data) {
+                let trendIcon, trendColor;
+                if (data.tendencia === 'ALTA') { trendIcon = '&uarr;'; trendColor = 'var(--accent-green)'; }
+                else if (data.tendencia === 'BAIXA') { trendIcon = '&darr;'; trendColor = 'var(--accent-red)'; }
+                else { trendIcon = '&harr;'; trendColor = 'var(--text-muted)'; }
+
+                html += `
+                    <div class="tf-cell" style="cursor:pointer;" onclick="trocarTimeframe('${tf}')">
+                        <div class="tf-cell-header">${labels[i]}</div>
+                        <div class="tf-cell-value" style="color:${trendColor}">${trendIcon}</div>
+                        <div class="tf-cell-sub">RSI ${data.rsi?.toFixed(0) || '--'}</div>
+                        <div class="tf-cell-sub" style="font-size:9px; color:${
+                            data.violinada_score > 60 ? 'var(--accent-red)' :
+                            data.violinada_score > 30 ? 'var(--accent-orange)' : 'var(--accent-green)'
+                        }">VIO ${data.violinada_score?.toFixed(0) || '--'}%</div>
+                    </div>
+                `;
+            } else {
+                html += `
+                    <div class="tf-cell">
+                        <div class="tf-cell-header">${labels[i]}</div>
+                        <div class="tf-cell-value">--</div>
+                    </div>
+                `;
+            }
+        });
+
+        container.innerHTML = html;
+    }
+    </script>
+</body>
+</html>
