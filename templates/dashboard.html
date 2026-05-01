@@ -605,8 +605,9 @@
                     <div class="preco-change" id="precoChange">--</div>
                 </div>
                 <div style="text-align: right; font-size: 12px; color: var(--text-secondary);">
-                    <div>EMA 20: <span id="ema20Val" style="color: var(--accent-orange);">--</span></div>
-                    <div>EMA 50: <span id="ema50Val" style="color: var(--accent-purple);">--</span></div>
+                    <div>VWAP: <span id="vwapVal" style="color: var(--accent-yellow);">--</span></div>
+                    <div>EMA 9: <span id="ema9Val" style="color: var(--accent-green);">--</span> | EMA 21: <span id="ema21Val" style="color: var(--accent-orange);">--</span></div>
+                    <div>ATR: <span id="atrVal" style="color: var(--accent-blue);">--</span></div>
                 </div>
             </div>
 
@@ -646,6 +647,14 @@
                     <div class="tf-cell"><div class="tf-cell-header">1H</div><div class="tf-cell-value">--</div></div>
                     <div class="tf-cell"><div class="tf-cell-header">4H</div><div class="tf-cell-value">--</div></div>
                     <div class="tf-cell"><div class="tf-cell-header">1D</div><div class="tf-cell-value">--</div></div>
+                </div>
+            </div>
+
+            <!-- Contexto Operacional -->
+            <div class="sidebar-section">
+                <div class="section-title">Contexto Operacional</div>
+                <div id="contextoSection">
+                    <div class="loading"><div class="spinner"></div> Carregando...</div>
                 </div>
             </div>
 
@@ -816,8 +825,10 @@
 
         // Preco
         document.getElementById('precoDisplay').textContent = a.preco_atual.toLocaleString('pt-BR');
-        document.getElementById('ema20Val').textContent = a.ema_20?.toLocaleString('pt-BR') || '--';
-        document.getElementById('ema50Val').textContent = a.ema_50?.toLocaleString('pt-BR') || '--';
+        document.getElementById('vwapVal').textContent = a.vwap?.toLocaleString('pt-BR') || '--';
+        document.getElementById('ema9Val').textContent = a.ema_9?.toLocaleString('pt-BR') || '--';
+        document.getElementById('ema21Val').textContent = a.ema_21?.toLocaleString('pt-BR') || '--';
+        document.getElementById('atrVal').textContent = a.atr?.toLocaleString('pt-BR') || '--';
 
         // Tendencia no preco
         const changeEl = document.getElementById('precoChange');
@@ -838,6 +849,9 @@
 
         // Graficos
         atualizarGraficos(a);
+
+        // Contexto Operacional
+        atualizarContexto(a);
 
         // Fibonacci
         atualizarFibonacci(a);
@@ -1159,6 +1173,57 @@
     // =====================================================
     // SIDEBAR SECTIONS
     // =====================================================
+    function atualizarContexto(a) {
+        const container = document.getElementById('contextoSection');
+        const lat = a.lateralizacao || {};
+        const pb = a.pullback || {};
+        const horario = a.horario_operacional || {};
+        let latClass = lat.lateral ? 'tag-red' : 'tag-green';
+        let latLabel = lat.lateral ? 'LATERAL - BLOQUEADO' : 'TENDENCIAL';
+        let pbClass = pb.confirmado ? 'tag-green' : (pb.pullback ? 'tag-yellow' : 'tag-blue');
+        let pbLabel = pb.confirmado ? 'CONFIRMADO' : (pb.pullback ? 'AGUARDANDO' : 'SEM PULLBACK');
+        container.innerHTML = `
+            <div class="indicator-row">
+                <span class="indicator-label">VWAP</span>
+                <span class="indicator-value" style="color:var(--accent-yellow)">${a.vwap?.toLocaleString('pt-BR') || '--'}</span>
+            </div>
+            <div class="indicator-row">
+                <span class="indicator-label">EMA 9 / 21</span>
+                <span class="indicator-value">
+                    <span style="color:var(--accent-green)">${a.ema_9?.toLocaleString('pt-BR') || '--'}</span> /
+                    <span style="color:var(--accent-orange)">${a.ema_21?.toLocaleString('pt-BR') || '--'}</span>
+                </span>
+            </div>
+            <div class="indicator-row">
+                <span class="indicator-label">ATR (14)</span>
+                <span class="indicator-value" style="color:var(--accent-blue)">${a.atr?.toLocaleString('pt-BR') || '--'}</span>
+            </div>
+            <div class="indicator-row">
+                <span class="indicator-label">Mercado</span>
+                <span class="tag ${latClass}">${latLabel}</span>
+            </div>
+            <div class="indicator-row">
+                <span class="indicator-label">Lateralizacao</span>
+                <span class="indicator-value">${lat.score || 0}% (${lat.cruzamentos_ema || 0} cruzamentos)</span>
+            </div>
+            <div class="indicator-row">
+                <span class="indicator-label">Pullback</span>
+                <span class="tag ${pbClass}">${pbLabel}</span>
+            </div>
+            ${pb.pullback ? `<div class="indicator-row">
+                <span class="indicator-label">Zona</span>
+                <span class="indicator-value">${pb.zona || '--'}</span>
+            </div>
+            <div class="indicator-row">
+                <span class="indicator-label">Candle Reversao</span>
+                <span class="tag ${pb.candle_reversao ? 'tag-green' : 'tag-red'}">${pb.candle_reversao ? 'SIM' : 'NAO'}</span>
+            </div>` : ''}
+            <div style="margin-top:8px; padding-top:8px; border-top:1px solid var(--border); font-size:10px; color:var(--text-muted);">
+                Janelas: ${horario.janela_1 || '--'} | ${horario.janela_2 || '--'}
+            </div>
+        `;
+    }
+
     function atualizarFibonacci(a) {
         if (!a.fibonacci) return;
         const f = a.fibonacci;
