@@ -360,20 +360,24 @@
         </div>
 
         <div class="pt-tabs">
-            <div class="pt-tab active" onclick="ptMudarTab('trading')">SALDO</div>
+            <div class="pt-tab active" onclick="ptMudarTab('trading')">OPERAR</div>
             <div class="pt-tab" onclick="ptMudarTab('historico')">HISTORICO</div>
             <div class="pt-tab" onclick="ptMudarTab('relatorio')">RELATORIO DO DIA</div>
             <div class="pt-tab" id="ptTabReplayBtn" onclick="ptMudarTab('replay')" style="background:#1e40af;">REPLAY PREGAO</div>
         </div>
 
         <div class="pt-content">
-            <!-- TAB: OPERAR (Saldo) -->
+            <!-- TAB: OPERAR (Trading + Sinais IA) -->
             <div class="pt-tab-content active" id="ptTabTrading">
                 <!-- Balance Bar -->
                 <div class="pt-balance-bar">
                     <div class="pt-balance-item">
                         <div class="pt-balance-label">Saldo Disponivel</div>
                         <div class="pt-balance-value positive" id="ptSaldo">R$ 0,00</div>
+                    </div>
+                    <div class="pt-balance-item">
+                        <div class="pt-balance-label">Em Posicoes</div>
+                        <div class="pt-balance-value" id="ptEmPosicao" style="color:var(--accent-orange)">R$ 0,00</div>
                     </div>
                     <div class="pt-balance-item">
                         <div class="pt-balance-label">P&L do Dia</div>
@@ -393,18 +397,84 @@
                     <button onclick="ptResetarConta()" style="background:var(--accent-red);">RESETAR CONTA</button>
                 </div>
 
-                <div style="padding:20px;text-align:center;color:var(--text-muted);border:1px solid var(--border);border-radius:8px;margin-top:12px;">
-                    <div style="font-size:32px;margin-bottom:8px;">&#128176;</div>
-                    <div style="font-size:14px;font-weight:600;color:var(--text-primary);margin-bottom:8px;">Gerenciamento de Saldo</div>
-                    <div style="font-size:12px;">Adicione creditos acima para usar no simulador.<br>Use a aba <b>REPLAY PREGAO</b> (mercado fechado) para operar no pregao anterior.</div>
+                <!-- SINAIS IA -->
+                <div style="margin-top:8px;border:1px solid var(--border);border-radius:8px;overflow:hidden;">
+                    <div style="background:linear-gradient(90deg,#1e3a5f,#0f172a);padding:10px 14px;display:flex;justify-content:space-between;align-items:center;">
+                        <div style="display:flex;align-items:center;gap:8px;">
+                            <span style="font-size:16px;">&#129302;</span>
+                            <span style="font-size:13px;font-weight:700;color:#60a5fa;">SINAIS IA</span>
+                            <span style="font-size:10px;color:var(--text-muted);">Analise automatica multi-timeframe</span>
+                        </div>
+                        <button onclick="carregarSinaisIA()" style="padding:4px 12px;background:#1e40af;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:11px;font-weight:700;">ATUALIZAR</button>
+                    </div>
+                    <div id="sinaisIAContent" style="padding:10px;">
+                        <div style="text-align:center;padding:16px;color:var(--text-muted);font-size:12px;">Clique ATUALIZAR para buscar sinais IA</div>
+                    </div>
                 </div>
 
-                <!-- Hidden elements needed by existing JS -->
-                <div style="display:none;">
-                    <span id="ptPrecoBuy">0</span><span id="ptPrecoSell">0</span>
-                    <span id="ptEmPosicao">R$ 0,00</span>
-                    <span id="ptPosCount">0</span>
-                    <div id="ptPosTable"></div>
+                <!-- Trading Panel -->
+                <div class="pt-trading-panel" style="margin-top:8px;">
+                    <div class="pt-trade-side buy">
+                        <div class="pt-price-live buy-price" id="ptPrecoBuy">--</div>
+                        <div class="pt-input-group">
+                            <label>Contratos</label>
+                            <input type="number" id="ptQtdBuy" value="1" min="1" max="999">
+                        </div>
+                        <div class="pt-input-group">
+                            <label>Stop Loss (pts)</label>
+                            <input type="number" id="ptStopBuy" placeholder="Ex: 150" step="5">
+                        </div>
+                        <div class="pt-input-group">
+                            <label>Take Profit (pts)</label>
+                            <input type="number" id="ptAlvoBuy" placeholder="Ex: 300" step="5">
+                        </div>
+                        <button class="pt-trade-btn buy" id="ptBtnBuy" onclick="ptComprar()">COMPRAR</button>
+                    </div>
+                    <div class="pt-trade-side sell">
+                        <div class="pt-price-live sell-price" id="ptPrecoSell">--</div>
+                        <div class="pt-input-group">
+                            <label>Contratos</label>
+                            <input type="number" id="ptQtdSell" value="1" min="1" max="999">
+                        </div>
+                        <div class="pt-input-group">
+                            <label>Stop Loss (pts)</label>
+                            <input type="number" id="ptStopSell" placeholder="Ex: 150" step="5">
+                        </div>
+                        <div class="pt-input-group">
+                            <label>Take Profit (pts)</label>
+                            <input type="number" id="ptAlvoSell" placeholder="Ex: 300" step="5">
+                        </div>
+                        <button class="pt-trade-btn sell" id="ptBtnSell" onclick="ptVender()">VENDER</button>
+                    </div>
+                </div>
+
+                <!-- Open Positions -->
+                <div class="pt-positions">
+                    <div class="pt-pos-header">
+                        <span>POSICOES ABERTAS (<span id="ptPosCount">0</span>)</span>
+                        <button class="btn" onclick="ptFecharTodas()" style="font-size:10px;padding:4px 10px;">Fechar Todas</button>
+                    </div>
+                    <div id="ptPosTable">
+                        <div class="pt-empty">
+                            <div class="pt-empty-icon">$</div>
+                            Nenhuma posicao aberta. Clique COMPRAR ou VENDER para iniciar.
+                        </div>
+                    </div>
+                </div>
+
+                <!-- HEATMAP -->
+                <div style="margin-top:8px;border:1px solid var(--border);border-radius:8px;overflow:hidden;">
+                    <div style="background:linear-gradient(90deg,#3b1f0b,#1a0a00);padding:10px 14px;display:flex;justify-content:space-between;align-items:center;">
+                        <div style="display:flex;align-items:center;gap:8px;">
+                            <span style="font-size:16px;">&#128293;</span>
+                            <span style="font-size:13px;font-weight:700;color:#f97316;">HEATMAP</span>
+                            <span style="font-size:10px;color:var(--text-muted);">Melhores horarios para operar</span>
+                        </div>
+                        <button onclick="carregarHeatmap()" style="padding:4px 12px;background:#c2410c;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:11px;font-weight:700;">CARREGAR</button>
+                    </div>
+                    <div id="heatmapContent" style="padding:10px;">
+                        <div style="text-align:center;padding:16px;color:var(--text-muted);font-size:12px;">Clique CARREGAR para ver o heatmap</div>
+                    </div>
                 </div>
             </div>
 
@@ -2194,6 +2264,164 @@ async function simInit() {
         function simAtualizarPlacar() {}
         function simAtualizarHistorico() {}
         function executarReplay() { simInit(); }
+
+
+// =====================================================
+// SINAIS IA - Analise automatica multi-timeframe
+// =====================================================
+async function carregarSinaisIA() {
+    const container = document.getElementById('sinaisIAContent');
+    container.innerHTML = '<div style="text-align:center;padding:12px;color:var(--text-muted);font-size:12px;">Analisando mercado com IA...</div>';
+    try {
+        const res = await fetch('/api/sinais-ia?ativo=' + ptState.ativo);
+        const data = await res.json();
+        if (data.erro) { container.innerHTML = '<div style="color:#ef4444;padding:8px;">Erro: ' + data.erro + '</div>'; return; }
+        
+        let html = '';
+        
+        // Indicadores resumo
+        const ind = data.indicadores || {};
+        html += '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;">';
+        if (ind.rsi != null) {
+            const rsiC = ind.rsi > 70 ? '#ef4444' : ind.rsi < 30 ? '#22c55e' : '#888';
+            html += '<span style="padding:2px 8px;border-radius:4px;font-size:10px;font-weight:700;background:rgba(255,255,255,0.05);border:1px solid ' + rsiC + ';color:' + rsiC + ';">RSI ' + ind.rsi + '</span>';
+        }
+        const tfs = [['5m', ind.tendencia_5m], ['15m', ind.tendencia_15m], ['1h', ind.tendencia_1h]];
+        tfs.forEach(function(tf) {
+            if (tf[1] && tf[1] !== 'N/A') {
+                const c = tf[1] === 'ALTA' ? '#22c55e' : tf[1] === 'BAIXA' ? '#ef4444' : '#888';
+                html += '<span style="padding:2px 8px;border-radius:4px;font-size:10px;font-weight:700;background:rgba(255,255,255,0.05);border:1px solid ' + c + ';color:' + c + ';">' + tf[0] + ' ' + tf[1] + '</span>';
+            }
+        });
+        if (ind.macd) {
+            const mc = ind.macd.includes('ALTA') || ind.macd.includes('COMPRA') ? '#22c55e' : ind.macd.includes('BAIXA') || ind.macd.includes('VENDA') ? '#ef4444' : '#888';
+            html += '<span style="padding:2px 8px;border-radius:4px;font-size:10px;font-weight:700;background:rgba(255,255,255,0.05);border:1px solid ' + mc + ';color:' + mc + ';">MACD ' + ind.macd + '</span>';
+        }
+        html += '</div>';
+        
+        // Sinais
+        data.sinais.forEach(function(s) {
+            if (s.tipo === 'NEUTRO') {
+                html += '<div style="padding:12px;border:1px solid #555;border-radius:6px;text-align:center;">';
+                html += '<span style="font-size:14px;font-weight:700;color:#888;">&#9940; SEM SINAL CLARO</span>';
+                html += '<div style="font-size:11px;color:var(--text-muted);margin-top:4px;">' + (s.motivos||[]).join(' | ') + '</div>';
+                html += '</div>';
+                return;
+            }
+            
+            const isCompra = s.tipo === 'COMPRA';
+            const cor = isCompra ? '#22c55e' : '#ef4444';
+            const bg = isCompra ? 'rgba(34,197,94,0.08)' : 'rgba(239,68,68,0.08)';
+            
+            html += '<div style="padding:10px;border:2px solid ' + cor + ';border-radius:8px;background:' + bg + ';margin-bottom:6px;">';
+            
+            // Header com tipo e confiança
+            html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">';
+            html += '<div style="display:flex;align-items:center;gap:8px;">';
+            html += '<span style="font-size:18px;font-weight:900;color:' + cor + ';">' + (isCompra ? '&#9650;' : '&#9660;') + ' ' + s.tipo + '</span>';
+            html += '<span style="font-size:11px;color:var(--text-muted);">' + s.ativo + ' | ' + s.timestamp + '</span>';
+            html += '</div>';
+            
+            // Barra de confiança
+            html += '<div style="display:flex;align-items:center;gap:6px;">';
+            html += '<div style="width:60px;height:8px;background:#333;border-radius:4px;overflow:hidden;"><div style="height:100%;width:' + s.confianca + '%;background:' + cor + ';border-radius:4px;"></div></div>';
+            html += '<span style="font-size:12px;font-weight:800;color:' + cor + ';">' + s.confianca + '%</span>';
+            html += '</div></div>';
+            
+            // Entrada, Stop, Alvo
+            html += '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:6px;">';
+            html += '<div style="text-align:center;padding:6px;background:rgba(255,255,255,0.03);border-radius:4px;">';
+            html += '<div style="font-size:9px;color:var(--text-muted);margin-bottom:2px;">ENTRADA</div>';
+            html += '<div style="font-size:14px;font-weight:800;color:var(--text-primary);">' + (s.preco_entrada||0).toLocaleString('pt-BR') + '</div></div>';
+            html += '<div style="text-align:center;padding:6px;background:rgba(239,68,68,0.06);border-radius:4px;border:1px solid rgba(239,68,68,0.2);">';
+            html += '<div style="font-size:9px;color:#ef4444;margin-bottom:2px;">STOP LOSS</div>';
+            html += '<div style="font-size:14px;font-weight:800;color:#ef4444;">' + (s.stop_loss||0).toLocaleString('pt-BR') + '</div>';
+            html += '<div style="font-size:9px;color:#ef4444;">-' + s.stop_pts + ' pts</div></div>';
+            html += '<div style="text-align:center;padding:6px;background:rgba(34,197,94,0.06);border-radius:4px;border:1px solid rgba(34,197,94,0.2);">';
+            html += '<div style="font-size:9px;color:#22c55e;margin-bottom:2px;">TAKE PROFIT</div>';
+            html += '<div style="font-size:14px;font-weight:800;color:#22c55e;">' + (s.take_profit||0).toLocaleString('pt-BR') + '</div>';
+            html += '<div style="font-size:9px;color:#22c55e;">+' + s.alvo_pts + ' pts</div></div>';
+            html += '</div>';
+            
+            // R:R e Motivos
+            html += '<div style="display:flex;justify-content:space-between;align-items:center;">';
+            html += '<span style="font-size:10px;color:var(--text-muted);">R:R ' + s.rr + '</span>';
+            html += '<div style="display:flex;gap:4px;flex-wrap:wrap;">';
+            (s.motivos||[]).forEach(function(m) {
+                html += '<span style="padding:1px 6px;border-radius:3px;font-size:9px;background:rgba(255,255,255,0.05);color:var(--text-secondary);">' + m + '</span>';
+            });
+            html += '</div></div>';
+            
+            // Botão para usar sinal
+            html += '<div style="margin-top:8px;display:flex;gap:6px;">';
+            html += '<button onclick="usarSinalIA(' + JSON.stringify(s).replace(/"/g, '&quot;') + ')" style="flex:1;padding:6px;background:' + cor + ';color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;font-weight:800;">USAR ESTE SINAL</button>';
+            html += '</div>';
+            
+            html += '</div>';
+        });
+        
+        container.innerHTML = html;
+    } catch(e) {
+        container.innerHTML = '<div style="color:#ef4444;padding:8px;">Erro: ' + e.message + '</div>';
+    }
+}
+
+function usarSinalIA(sinal) {
+    if (sinal.tipo === 'COMPRA') {
+        document.getElementById('ptStopBuy').value = sinal.stop_pts;
+        document.getElementById('ptAlvoBuy').value = sinal.alvo_pts;
+        document.getElementById('ptStopSell').value = '';
+        document.getElementById('ptAlvoSell').value = '';
+    } else if (sinal.tipo === 'VENDA') {
+        document.getElementById('ptStopSell').value = sinal.stop_pts;
+        document.getElementById('ptAlvoSell').value = sinal.alvo_pts;
+        document.getElementById('ptStopBuy').value = '';
+        document.getElementById('ptAlvoBuy').value = '';
+    }
+}
+
+// =====================================================
+// HEATMAP - Melhores horarios para operar
+// =====================================================
+async function carregarHeatmap() {
+    const container = document.getElementById('heatmapContent');
+    container.innerHTML = '<div style="text-align:center;padding:12px;color:var(--text-muted);font-size:12px;">Calculando volatilidade historica...</div>';
+    try {
+        const res = await fetch('/api/heatmap?ativo=' + ptState.ativo);
+        const data = await res.json();
+        if (!data.heatmap || data.heatmap.length === 0) { container.innerHTML = '<div style="color:#ef4444;padding:8px;">Sem dados</div>'; return; }
+        
+        let html = '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(65px,1fr));gap:4px;">';
+        data.heatmap.forEach(function(h) {
+            const v = h.volatilidade;
+            let bg, textC;
+            if (v >= 80) { bg = '#dc2626'; textC = '#fff'; }
+            else if (v >= 65) { bg = '#ea580c'; textC = '#fff'; }
+            else if (v >= 50) { bg = '#ca8a04'; textC = '#fff'; }
+            else if (v >= 35) { bg = '#16a34a'; textC = '#fff'; }
+            else { bg = '#1e3a5f'; textC = '#94a3b8'; }
+            
+            html += '<div style="padding:6px 4px;text-align:center;border-radius:4px;background:' + bg + ';color:' + textC + ';">';
+            html += '<div style="font-size:11px;font-weight:800;">' + h.hora + '</div>';
+            html += '<div style="font-size:9px;opacity:0.8;">' + v + '%</div>';
+            html += '</div>';
+        });
+        html += '</div>';
+        
+        // Legenda
+        html += '<div style="display:flex;gap:8px;margin-top:8px;justify-content:center;flex-wrap:wrap;">';
+        html += '<span style="font-size:9px;color:var(--text-muted);display:flex;align-items:center;gap:3px;"><span style="width:10px;height:10px;background:#dc2626;border-radius:2px;display:inline-block;"></span>Muito volatil</span>';
+        html += '<span style="font-size:9px;color:var(--text-muted);display:flex;align-items:center;gap:3px;"><span style="width:10px;height:10px;background:#ea580c;border-radius:2px;display:inline-block;"></span>Volatil</span>';
+        html += '<span style="font-size:9px;color:var(--text-muted);display:flex;align-items:center;gap:3px;"><span style="width:10px;height:10px;background:#ca8a04;border-radius:2px;display:inline-block;"></span>Moderado</span>';
+        html += '<span style="font-size:9px;color:var(--text-muted);display:flex;align-items:center;gap:3px;"><span style="width:10px;height:10px;background:#16a34a;border-radius:2px;display:inline-block;"></span>Calmo</span>';
+        html += '<span style="font-size:9px;color:var(--text-muted);display:flex;align-items:center;gap:3px;"><span style="width:10px;height:10px;background:#1e3a5f;border-radius:2px;display:inline-block;"></span>Baixo</span>';
+        html += '</div>';
+        
+        container.innerHTML = html;
+    } catch(e) {
+        container.innerHTML = '<div style="color:#ef4444;padding:8px;">Erro: ' + e.message + '</div>';
+    }
+}
 
 </script>
 </body>
