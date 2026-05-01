@@ -554,6 +554,9 @@
                 <div class="status-dot" id="statusDot"></div>
                 <span id="statusText">Conectando...</span>
             </div>
+            <div id="cacheBanner" style="display:none; background:rgba(255,152,0,0.15); border:1px solid rgba(255,152,0,0.3); padding:4px 10px; border-radius:4px; font-size:11px; color:#ff9800;">
+                <span id="cacheBannerText"></span>
+            </div>
         </div>
         <div class="header-controls">
             <div class="countdown">
@@ -772,14 +775,31 @@
             state.analise = analiseData.analise;
             state.painel = painelData.painel;
 
-            document.getElementById('statusText').textContent =
-                `Online | Atualizado: ${analiseData.ultima_atualizacao || '--'}`;
-            document.getElementById('statusDot').style.background = 'var(--accent-green)';
+            const cacheBanner = document.getElementById('cacheBanner');
+            const cacheBannerText = document.getElementById('cacheBannerText');
+
+            if (analiseData.usando_cache) {
+                const dataPregao = analiseData.cache_data_pregao || '--';
+                document.getElementById('statusText').textContent =
+                    `Ultimo pregao (${dataPregao}) | ${analiseData.ultima_atualizacao || '--'}`;
+                document.getElementById('statusDot').style.background = 'var(--accent-orange)';
+                cacheBanner.style.display = 'block';
+                if (analiseData.mercado_aberto) {
+                    cacheBannerText.textContent = 'Aguardando dados do mercado...';
+                } else {
+                    cacheBannerText.textContent = `Mercado fechado - exibindo dados do pregao de ${dataPregao}. Atualiza automaticamente quando abrir.`;
+                }
+            } else {
+                document.getElementById('statusText').textContent =
+                    `Online | Atualizado: ${analiseData.ultima_atualizacao || '--'}`;
+                document.getElementById('statusDot').style.background = 'var(--accent-green)';
+                cacheBanner.style.display = 'none';
+            }
 
             atualizarUI();
         } catch (e) {
             console.error('Erro ao carregar dados:', e);
-            document.getElementById('statusText').textContent = 'Erro de conexao';
+            document.getElementById('statusText').textContent = 'Erro de conexao - tentando reconectar...';
             document.getElementById('statusDot').style.background = 'var(--accent-red)';
         }
     }
