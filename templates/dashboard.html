@@ -2133,7 +2133,7 @@ async function carregarVelasReplay() {
             }).catch(err=>{rd.innerHTML='<div style="padding:10px;color:var(--accent-red);">Erro: '+err.message+'</div>';});
         }
         
-        function executarReplay()
+        function executarReplay() { carregarVelasReplay(); }
 
 </script>
 </body>
