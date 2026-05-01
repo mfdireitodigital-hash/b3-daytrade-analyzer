@@ -2584,9 +2584,11 @@ async def simulador_real(ativo: str = Query("WIN")):
             except Exception as _e:
                 pass  # Non-critical
             
-            # DECISAO FINAL - PRO TRADER: ULTRA SELETIVO + ADAPTATIVO
-            # Score minimo adaptativo (começa 7, AI ajusta baseado em resultados)
-            _score_min = obter_score_minimo()
+            # DECISAO FINAL - PRO TRADER: SO ENTRA NO SEGURO
+            # Score minimo 9 = A+ SETUP ONLY. Nao entra em BOM, OK, Duvidoso.
+            # "Entre so no que for seguro" - Fabio
+            # Livermore: "O dinheiro grande esta no ESPERAR, nao no trading"
+            _score_min = max(9, obter_score_minimo())  # NUNCA abaixo de 9
             operar = score >= _score_min and tipo_sinal is not None and not horario_ruim and not contra_tendencia
             decisao = "OPERAR" if operar else "NAO OPERAR"
             
