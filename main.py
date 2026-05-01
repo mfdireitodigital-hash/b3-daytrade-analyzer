@@ -262,7 +262,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="ANALISE B3 - 24/7",
     description="ANALISE TECNICA EM TEMPO REAL - MINI-INDICE E MINI-DOLAR DA B3",
-    version="3.2.0",
+    version="3.6.0",
     lifespan=lifespan
 )
 
@@ -589,7 +589,7 @@ async def get_status():
         "contratos_vigentes": contratos,
         "timeframes": TIMEFRAMES,
         "intervalo_refresh": "5 minutos",
-        "versao": "3.5.0",
+        "versao": "3.6.0",
         "fontes_dados": ["yfinance (candles OHLCV)",
             "Investing.com (preço futuro real)",
             "Book de Ofertas (simulado)",
