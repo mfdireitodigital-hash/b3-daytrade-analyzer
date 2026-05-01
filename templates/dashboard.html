@@ -400,6 +400,34 @@
                     <button onclick="ptResetarConta()" style="background:var(--accent-red);">RESETAR CONTA</button>
                 </div>
 
+                <!-- OPERAR: COMPRAR / VENDER com Stop e Alvo -->
+                <div style="margin-top:8px;border:1px solid var(--border);border-radius:8px;overflow:hidden;background:var(--bg-card);">
+                    <div style="background:linear-gradient(90deg,#1a2e1a,#0f172a);padding:10px 14px;">
+                        <span style="font-size:13px;font-weight:700;color:#60a5fa;">OPERAR (Dados Reais do Pregao Anterior)</span>
+                    </div>
+                    <div style="padding:12px;">
+                        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px;">
+                            <div style="display:flex;align-items:center;gap:4px;">
+                                <span style="font-size:11px;color:var(--text-muted);">Stop (pts):</span>
+                                <input id="ptStop" type="number" value="200" style="width:60px;padding:4px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:4px;color:var(--text-primary);font-size:12px;text-align:center;">
+                            </div>
+                            <div style="display:flex;align-items:center;gap:4px;">
+                                <span style="font-size:11px;color:var(--text-muted);">Alvo (pts):</span>
+                                <input id="ptAlvo" type="number" value="300" style="width:60px;padding:4px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:4px;color:var(--text-primary);font-size:12px;text-align:center;">
+                            </div>
+                            <div style="display:flex;align-items:center;gap:4px;">
+                                <span style="font-size:11px;color:var(--text-muted);">Contratos:</span>
+                                <input id="ptQtd" type="number" value="1" min="1" style="width:40px;padding:4px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:4px;color:var(--text-primary);font-size:12px;text-align:center;">
+                            </div>
+                        </div>
+                        <div style="display:flex;gap:8px;">
+                            <button onclick="ptComprar()" style="flex:1;padding:10px;background:linear-gradient(135deg,#16a34a,#15803d);color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:14px;font-weight:800;letter-spacing:1px;">COMPRAR</button>
+                            <button onclick="ptVender()" style="flex:1;padding:10px;background:linear-gradient(135deg,#dc2626,#b91c1c);color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:14px;font-weight:800;letter-spacing:1px;">VENDER</button>
+                        </div>
+                        <div style="font-size:9px;color:var(--text-muted);margin-top:6px;text-align:center;">Mercado fechado: simula com dados REAIS do ultimo pregao. A AI da dicas, voce decide!</div>
+                    </div>
+                </div>
+
                 <!-- MELHORES ENTRADAS DO PREGAO (auto-load) -->
                 <div style="margin-top:8px;border:1px solid var(--border);border-radius:8px;overflow:hidden;" id="ptMelhoresEntradas">
                     <div style="background:linear-gradient(90deg,#1e3a5f,#0f172a);padding:10px 14px;display:flex;justify-content:space-between;align-items:center;">
