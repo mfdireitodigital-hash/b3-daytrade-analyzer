@@ -26,11 +26,12 @@ from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 from dotenv import load_dotenv
 import random
+import hashlib
 
 import numpy as np
 
 from analysis_engine import analisar_completo
-from data_provider import DataProvider
+from data_provider import DataProvider, obter_contrato_vigente
 
 load_dotenv()
 
@@ -57,16 +58,58 @@ app_state = {
 TIMEFRAMES = ["5m", "15m", "1h", "4h", "1d"]
 ATIVOS = ["WIN", "WDO"]
 
-# Usuários autorizados
-USUARIOS = {
-    "fabianodomingues": "123@mudar",
-    "fabiodomingues": "123@mudar",
-}
+# Arquivo de usuários persistente
+USERS_FILE = APP_DIR / "usuarios.json"
+
+# Usuários admin (podem criar novos users)
+ADMIN_USERS = ["fabianodomingues", "fabiodomingues"]
+
+
+def _hash_senha(senha: str) -> str:
+    return hashlib.sha256(senha.encode()).hexdigest()
+
+
+def carregar_usuarios() -> dict:
+    """Carrega usuários do arquivo JSON ou cria com defaults"""
+    try:
+        if USERS_FILE.exists():
+            with open(USERS_FILE, "r") as f:
+                return json.load(f)
+    except Exception:
+        pass
+    # Defaults
+    users = {
+        "fabianodomingues": {"senha_hash": _hash_senha("123@mudar"), "admin": True},
+        "fabiodomingues": {"senha_hash": _hash_senha("123@mudar"), "admin": True},
+    }
+    salvar_usuarios(users)
+    return users
+
+
+def salvar_usuarios(users: dict):
+    """Salva usuários no arquivo JSON"""
+    try:
+        with open(USERS_FILE, "w") as f:
+            json.dump(users, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        logger.error(f"Erro ao salvar usuarios: {e}")
 
 
 class LoginRequest(BaseModel):
     usuario: str
     senha: str
+
+
+class CriarUsuarioRequest(BaseModel):
+    usuario: str
+    senha: str
+    admin_user: str
+
+
+class AlterarSenhaRequest(BaseModel):
+    usuario: str
+    senha_atual: str
+    senha_nova: str
 
 
 def converter_numpy(obj):
@@ -208,8 +251,8 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="B3 Day Trade Analyzer",
-    description="Análise técnica em tempo real para Mini-Índice e Mini-Dólar da B3",
+    title="ANALISE B3 - 24/7",
+    description="ANALISE TECNICA EM TEMPO REAL - MINI-INDICE E MINI-DOLAR DA B3",
     version="2.0.0",
     lifespan=lifespan
 )
@@ -359,9 +402,121 @@ async def login(req: LoginRequest):
     """Autenticação de usuários"""
     usuario = req.usuario.strip().lower()
     senha = req.senha.strip()
-    if usuario in USUARIOS and USUARIOS[usuario] == senha:
-        return JSONResponse({"sucesso": True, "usuario": usuario, "mensagem": "Login realizado com sucesso"})
+    users = carregar_usuarios()
+    if usuario in users:
+        user_data = users[usuario]
+        # Suporte legacy (senha em texto) e novo (hash)
+        if isinstance(user_data, dict):
+            if user_data.get("senha_hash") == _hash_senha(senha):
+                is_admin = user_data.get("admin", False)
+                return JSONResponse({"sucesso": True, "usuario": usuario, "admin": is_admin, "mensagem": "Login realizado com sucesso"})
+        elif user_data == senha:  # legacy
+            return JSONResponse({"sucesso": True, "usuario": usuario, "admin": usuario in ADMIN_USERS, "mensagem": "Login realizado com sucesso"})
     return JSONResponse({"sucesso": False, "mensagem": "Usuário ou senha inválidos"}, status_code=401)
+
+
+@app.post("/api/usuarios/criar")
+async def criar_usuario(req: CriarUsuarioRequest):
+    """Cria novo usuário (apenas admins)"""
+    admin = req.admin_user.strip().lower()
+    users = carregar_usuarios()
+    user_data = users.get(admin, {})
+    is_admin = user_data.get("admin", False) if isinstance(user_data, dict) else admin in ADMIN_USERS
+    if not is_admin:
+        return JSONResponse({"sucesso": False, "mensagem": "Sem permissão"}, status_code=403)
+    novo_user = req.usuario.strip().lower()
+    if novo_user in users:
+        return JSONResponse({"sucesso": False, "mensagem": "Usuário já existe"}, status_code=400)
+    users[novo_user] = {"senha_hash": _hash_senha(req.senha.strip()), "admin": False}
+    salvar_usuarios(users)
+    return JSONResponse({"sucesso": True, "mensagem": f"Usuário {novo_user} criado com sucesso"})
+
+
+@app.post("/api/usuarios/alterar-senha")
+async def alterar_senha(req: AlterarSenhaRequest):
+    """Altera senha do próprio usuário"""
+    usuario = req.usuario.strip().lower()
+    users = carregar_usuarios()
+    if usuario not in users:
+        return JSONResponse({"sucesso": False, "mensagem": "Usuário não encontrado"}, status_code=404)
+    user_data = users[usuario]
+    # Verificar senha atual
+    if isinstance(user_data, dict):
+        if user_data.get("senha_hash") != _hash_senha(req.senha_atual.strip()):
+            return JSONResponse({"sucesso": False, "mensagem": "Senha atual incorreta"}, status_code=401)
+    elif user_data != req.senha_atual.strip():
+        return JSONResponse({"sucesso": False, "mensagem": "Senha atual incorreta"}, status_code=401)
+    # Atualizar
+    users[usuario] = {"senha_hash": _hash_senha(req.senha_nova.strip()), "admin": user_data.get("admin", usuario in ADMIN_USERS) if isinstance(user_data, dict) else usuario in ADMIN_USERS}
+    salvar_usuarios(users)
+    return JSONResponse({"sucesso": True, "mensagem": "Senha alterada com sucesso"})
+
+
+@app.get("/api/candles")
+async def get_candles(
+    ativo: str = Query("WIN", description="Ativo: WIN ou WDO"),
+    timeframe: str = Query("5m", description="Timeframe")
+):
+    """Retorna dados OHLCV para gráficos de velas"""
+    ativo = ativo.upper()
+    if ativo not in ATIVOS:
+        return JSONResponse({"erro": "Ativo inválido"}, status_code=400)
+    candles = await app_state["provider"].obter_candles_json(ativo, timeframe)
+    contrato = app_state["provider"].get_contrato_info(ativo)
+    return JSONResponse({
+        "candles": candles,
+        "contrato": contrato.get("ticker_b3", ativo),
+        "nome": contrato.get("nome", ativo),
+        "timeframe": timeframe,
+    })
+
+
+@app.get("/api/contrato")
+async def get_contrato(ativo: str = Query("WIN")):
+    """Retorna informações do contrato vigente"""
+    ativo = ativo.upper()
+    contrato = obter_contrato_vigente(ativo)
+    return JSONResponse(contrato)
+
+
+@app.get("/api/simulacao-capital")
+async def get_simulacao_capital(
+    ativo: str = Query("WIN"),
+    timeframe: str = Query("5m")
+):
+    """Simula resultado financeiro para diferentes quantidades de contratos"""
+    ativo = ativo.upper()
+    analise = app_state["analises"].get(ativo, {}).get(timeframe, {})
+    contrato_info = app_state["provider"].get_contrato_info(ativo)
+    valor_pt = contrato_info.get("valor_tick", 0.20)
+
+    # Pegar sinais do dia
+    sinais = analise.get("sinais", [])
+    resultados = []
+    for n_contratos in [1, 2, 3, 5, 10, 20, 50]:
+        total_pts = 0
+        ops = 0
+        for sinal in sinais:
+            pts = sinal.get("pts_estimados", 0)
+            if pts == 0:
+                atr = analise.get("atr", 50 if "WIN" in ativo else 5)
+                pts = atr * 0.5  # estimativa conservadora
+            total_pts += pts
+            ops += 1
+        resultado_fin = round(total_pts * valor_pt * n_contratos, 2)
+        resultados.append({
+            "contratos": n_contratos,
+            "pontos": round(total_pts, 1),
+            "resultado": resultado_fin,
+            "operacoes": ops,
+        })
+
+    return JSONResponse({
+        "ativo": ativo,
+        "contrato": contrato_info.get("ticker_b3", ativo),
+        "valor_ponto": valor_pt,
+        "simulacoes": resultados,
+    })
 
 
 @app.get("/api/demo")
@@ -369,7 +524,9 @@ async def get_demo(ativo: str = Query("WIN", description="Ativo: WIN ou WDO")):
     """Gera simulação de operações de day trade para modo demo"""
     ativo_upper = ativo.upper()
     operacoes = []
-    ativos_demo = ["WINM26", "WDOM26"] if "WIN" in ativo_upper else ["WDOM26", "WINM26"]
+    contrato_win = obter_contrato_vigente("WIN")["ticker_b3"]
+    contrato_wdo = obter_contrato_vigente("WDO")["ticker_b3"]
+    ativos_demo = [contrato_win, contrato_wdo] if "WIN" in ativo_upper else [contrato_wdo, contrato_win]
     tipos = ["COMPRA", "VENDA"]
     total_resultado = 0
 
