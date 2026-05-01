@@ -163,6 +163,21 @@ class DataProvider:
                 "close": round(float(row["close"]), 2),
                 "volume": int(row.get("volume", 0)),
             })
+        # Filtrar candles fora do horário B3 (09:00-18:00) para intraday
+        if candles:
+            filtered = []
+            for c in candles:
+                try:
+                    t = c["time"]
+                    if "T" in t:
+                        hour = int(t.split("T")[1].split(":")[0])
+                        if 9 <= hour < 18:
+                            filtered.append(c)
+                    else:
+                        filtered.append(c)
+                except:
+                    filtered.append(c)
+            candles = filtered if filtered else candles
         return candles
 
     async def obter_dados(self, ativo: str, timeframe: str) -> pd.DataFrame:
@@ -183,6 +198,21 @@ class DataProvider:
                 dados = self._obter_yfinance(ativo, timeframe)
 
             if dados is not None and len(dados) > 0:
+                # Filtrar dados fora do horário B3 (09:00-18:00 BRT)
+                if timeframe not in ["1d", "4h"]:
+                    try:
+                        from datetime import timezone
+                        BRT = timezone(timedelta(hours=-3))
+                        # Converter para BRT e filtrar
+                        if dados.index.tz is not None:
+                            dados_brt = dados.index.tz_convert(BRT)
+                        else:
+                            dados_brt = dados.index.tz_localize('UTC').tz_convert(BRT)
+                        mask = (dados_brt.hour >= 9) & (dados_brt.hour < 18)
+                        dados = dados[mask]
+                    except Exception as e:
+                        logger.warning(f"Erro ao filtrar horario B3: {e}")
+                
                 self.cache[cache_key] = (datetime.now(), dados)
                 return dados
 
@@ -317,64 +347,124 @@ class DataProvider:
     def _gerar_dados_simulados(self, ativo: str, timeframe: str) -> pd.DataFrame:
         """
         Gera dados simulados realistas para desenvolvimento.
+        RESPEITA RIGOROSAMENTE horario B3: 09:00-18:00 BRT (UTC-3).
         NÃO usar para operações reais!
         """
-        np.random.seed(42)
+        from datetime import timezone
+        BRT = timezone(timedelta(hours=-3))
+        
+        # Seed baseado no dia para dados consistentes no mesmo dia
+        agora_brt = datetime.now(BRT)
+        np.random.seed(int(agora_brt.strftime('%Y%m%d')))
 
         # Parâmetros por ativo
         if ativo == "WIN":
             base_price = 128500
-            volatilidade = 150
-            n_candles = 200
+            volatilidade = 80  # Volatilidade realista para 5min
         else:  # WDO
             base_price = 5650
-            volatilidade = 15
-            n_candles = 200
+            volatilidade = 4
 
         # Parâmetros por timeframe
         tf_minutes = {"5m": 5, "15m": 15, "1h": 60, "4h": 240, "1d": 1440}
         minutes = tf_minutes.get(timeframe, 5)
 
-        # Gerar timestamps
-        now = datetime.now()
+        # Gerar timestamps RIGOROSAMENTE dentro do horário B3 (09:00-18:00 BRT)
         timestamps = []
-        for i in range(n_candles, 0, -1):
-            t = now - timedelta(minutes=minutes * i)
-            # Filtrar horário de pregão (9h-18h) para intraday
-            if minutes < 1440:
-                if t.weekday() >= 5:  # Pular fim de semana
-                    continue
-                if t.hour < 9 or t.hour >= 18:
-                    continue
-            timestamps.append(t)
+        
+        if minutes >= 1440:  # Diário
+            for i in range(120, 0, -1):
+                t = agora_brt - timedelta(days=i)
+                if t.weekday() < 5:  # Só dias úteis
+                    # Usar 17:00 BRT como timestamp do candle diário
+                    t = t.replace(hour=17, minute=0, second=0, microsecond=0)
+                    timestamps.append(t)
+        else:
+            # Intraday: gerar candles de 09:00 até 17:55 BRT (último candle antes de 18:00)
+            # Gerar últimos 5 dias úteis
+            dias = []
+            d = agora_brt.replace(hour=0, minute=0, second=0, microsecond=0)
+            while len(dias) < 5:
+                if d.weekday() < 5:  # Só dias úteis
+                    dias.append(d)
+                d = d - timedelta(days=1)
+            dias.reverse()
+            
+            for dia in dias:
+                hora_inicio = 9  # 09:00 BRT
+                hora_fim = 18    # 18:00 BRT
+                minuto = 0
+                h = hora_inicio
+                m = 0
+                while True:
+                    t = dia.replace(hour=h, minute=m, second=0, microsecond=0)
+                    total_min = h * 60 + m
+                    if total_min >= hora_fim * 60:
+                        break
+                    timestamps.append(t)
+                    m += minutes
+                    if m >= 60:
+                        h += m // 60
+                        m = m % 60
+                    if h >= hora_fim:
+                        break
+            
+            # Se mercado está aberto agora, cortar no minuto atual
+            if agora_brt.weekday() < 5 and 9 <= agora_brt.hour < 18:
+                timestamps = [t for t in timestamps if t <= agora_brt]
 
         if not timestamps:
-            timestamps = [now - timedelta(minutes=minutes * i) for i in range(n_candles, 0, -1)]
+            # Fallback: gerar pelo menos algo
+            timestamps = [agora_brt - timedelta(minutes=minutes * i) for i in range(100, 0, -1)]
 
-        # Gerar preços com random walk + tendência
+        # Gerar preços com random walk SUAVE (sem gaps entre candles)
         prices = [base_price]
-        trend = np.random.choice([-1, 1]) * volatilidade * 0.1
+        trend = np.random.choice([-0.5, 0.5]) * volatilidade * 0.05
 
         for i in range(1, len(timestamps)):
-            change = np.random.normal(trend, volatilidade)
-            # Adicionar ciclos para simular movimentos de mercado
-            cycle = np.sin(i / 20) * volatilidade * 2
-            new_price = prices[-1] + change + cycle * 0.1
+            # Verificar se é um novo dia (gap overnight permitido)
+            if timestamps[i].date() != timestamps[i-1].date():
+                # Gap de abertura: pequeno, realista
+                gap = np.random.normal(0, volatilidade * 0.3)
+                new_price = prices[-1] + gap
+            else:
+                # Dentro do mesmo dia: movimentos suaves
+                change = np.random.normal(trend, volatilidade * 0.3)
+                cycle = np.sin(i / 30) * volatilidade * 0.1
+                new_price = prices[-1] + change + cycle
             prices.append(new_price)
 
-        # Gerar OHLCV
+        # Gerar OHLCV com candles COERENTES (open = close anterior dentro do dia)
         data = []
+        prev_close = None
+        prev_date = None
+        
         for i, (t, close) in enumerate(zip(timestamps, prices)):
-            hl_range = abs(np.random.normal(0, volatilidade * 0.5))
-            body = np.random.normal(0, volatilidade * 0.3)
-
-            open_p = close - body
-            high = max(open_p, close) + abs(np.random.normal(0, hl_range * 0.5))
-            low = min(open_p, close) - abs(np.random.normal(0, hl_range * 0.5))
+            # Open = close do candle anterior (dentro do mesmo dia)
+            if prev_close is not None and prev_date == t.date():
+                open_p = prev_close
+            else:
+                # Primeiro candle do dia ou gap overnight
+                open_p = close + np.random.normal(0, volatilidade * 0.1)
+            
+            # High e low realistas
+            body_size = abs(close - open_p)
+            wick_up = abs(np.random.normal(0, volatilidade * 0.15))
+            wick_down = abs(np.random.normal(0, volatilidade * 0.15))
+            
+            high = max(open_p, close) + wick_up
+            low = min(open_p, close) - wick_down
 
             # Volume com variação realista
             base_vol = 5000 if ativo == "WIN" else 3000
-            volume = max(100, int(np.random.lognormal(np.log(base_vol), 0.8)))
+            # Mais volume na abertura e fechamento
+            hour = t.hour
+            vol_mult = 1.0
+            if hour == 9 or hour == 17:
+                vol_mult = 2.0
+            elif hour == 10 or hour == 16:
+                vol_mult = 1.5
+            volume = max(100, int(np.random.lognormal(np.log(base_vol * vol_mult), 0.5)))
 
             data.append({
                 'open': round(open_p, 2),
@@ -383,8 +473,13 @@ class DataProvider:
                 'close': round(close, 2),
                 'volume': volume
             })
+            
+            prev_close = close
+            prev_date = t.date()
 
-        df = pd.DataFrame(data, index=pd.DatetimeIndex(timestamps))
+        # Remover timezone info para o pandas index (armazenar como naive mas representando BRT)
+        naive_timestamps = [t.replace(tzinfo=None) for t in timestamps]
+        df = pd.DataFrame(data, index=pd.DatetimeIndex(naive_timestamps))
         return df
 
     def _parse_brapi_response(self, data: dict) -> Optional[pd.DataFrame]:
