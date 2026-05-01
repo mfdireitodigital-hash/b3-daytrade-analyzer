@@ -222,7 +222,9 @@ async def auto_refresh_loop():
                 logger.info("Mercado fechado - usando cache do último pregão")
         except Exception as e:
             logger.error(f"Erro no auto-refresh: {e}")
-        await asyncio.sleep(300)
+        # 60s when market is open, 300s when closed
+        interval = 60 if mercado_aberto() else 300
+        await asyncio.sleep(interval)
 
 
 @asynccontextmanager
