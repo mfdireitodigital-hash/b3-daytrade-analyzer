@@ -91,9 +91,9 @@ class DataProvider:
                 logger.info(f"Usando cache em memoria para {ativo}/{timeframe}")
                 return cached_data
 
-        # Sem dados disponiveis - retorna None (main.py usara cache em disco)
-        logger.warning(f"Sem dados disponiveis para {ativo}/{timeframe}")
-        return None
+        # Sem dados disponiveis - usar dados simulados como fallback
+        logger.warning(f"Sem dados disponiveis para {ativo}/{timeframe}, usando simulados")
+        return self._gerar_dados_simulados(ativo, timeframe)
 
     def _obter_yfinance(self, ativo: str, timeframe: str) -> pd.DataFrame:
         """Obtém dados via yfinance"""
