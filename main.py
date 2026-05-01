@@ -2576,8 +2576,14 @@ async def simulador_real(ativo: str = Query("WIN")):
             }
             velas_analisadas.append(vela_info)
             
-            # SIMULATE ALL recommended operations (each independently)
-            if operar and tipo_sinal:
+            # Check if position closed (+ cooldown)
+            if posicao_aberta:
+                current_day_idx = day_indices.index(pos_idx) if pos_idx in day_indices else 0
+                if current_day_idx >= posicao_aberta.get("close_idx", 0):
+                    posicao_aberta = None
+            
+            # SIMULATE operations: uma por vez, cooldown entre ops, evitar fim do dia
+            if operar and tipo_sinal and posicao_aberta is None and hora_int < 17 and not (hora_int == 16 and minuto > 30):
                 stop_pts = round(atr_v * 1.5)
                 stop_pts = max(round(stop_pts / 5) * 5, 50)  # round to tick, min 50
                 alvo_pts = round(stop_pts * 2)
@@ -2667,7 +2673,8 @@ async def simulador_real(ativo: str = Query("WIN")):
                     "detalhes_perda": detalhes_perda,
                 })
                 
-                # Each operation is independent - simulating ALL entries
+                # Block next entries: cooldown de 3 velas (15min) apos esta op fechar
+                posicao_aberta = {"close_idx": future_start + velas_na_op + 3}  # +3 velas cooldown
         
         # ---- RESUMO DO DIA ----
         first_v = velas_analisadas[0] if velas_analisadas else {}
