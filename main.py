@@ -35,6 +35,7 @@ from learning_engine import (
 from trading_books_knowledge import (
     aplicar_scoring_avancado, obter_livros_lista, obter_todos_conceitos
 )
+from smc_engine import aplicar_smc_scoring
 
 load_dotenv()
 
@@ -2562,6 +2563,17 @@ async def simulador_real(ativo: str = Query("WIN")):
             except Exception as _e:
                 pass  # Non-critical
             
+            # 12. SMC - Smart Money Concepts (FVG, Liquidity Sweep, Order Block, BOS/CHoCH)
+            smc_data = {}
+            try:
+                _smc_score, _smc_motivos, smc_data = aplicar_smc_scoring(
+                    dados, pos_idx, tipo_sinal, tend
+                )
+                score += _smc_score
+                motivos_operar.extend(_smc_motivos)
+            except Exception as _e:
+                pass  # Non-critical
+            
             # DECISAO FINAL - PRO TRADER: ULTRA SELETIVO + ADAPTATIVO
             # Score minimo adaptativo (começa 7, AI ajusta baseado em resultados)
             _score_min = obter_score_minimo()
@@ -2592,6 +2604,7 @@ async def simulador_real(ativo: str = Query("WIN")):
                 "resistencia": round(resistencia, 0) if resistencia else None,
                 "vwap": round(vwap, 0) if vwap else None,
                 "fib_level": fib_level,
+                "smc": smc_data,
             }
             velas_analisadas.append(vela_info)
             
@@ -2776,9 +2789,22 @@ async def simulador_real(ativo: str = Query("WIN")):
                 if not found_pattern:
                     analise_completa += "Nenhum padrao relevante nesta vela.\n"
                 
-                analise_completa += f"\n9. HORARIO: {hora} - {'Horario FORTE (abertura/volatilidade alta)' if bom_horario else 'Horario fraco/almoco'}\n"
+                # SMC (Smart Money Concepts)
+                analise_completa += f"\n9. SMART MONEY CONCEPTS (SMC):\n"
+                if smc_data.get("fvg"):
+                    analise_completa += f"   FVG: {smc_data['fvg']['detalhe']}\n"
+                if smc_data.get("liquidity_sweep"):
+                    analise_completa += f"   LIQUIDITY SWEEP: {smc_data['liquidity_sweep']['detalhe']}\n"
+                if smc_data.get("order_block"):
+                    analise_completa += f"   ORDER BLOCK: {smc_data['order_block']['detalhe']}\n"
+                if smc_data.get("estrutura"):
+                    analise_completa += f"   ESTRUTURA: {smc_data['estrutura']['detalhe']}\n"
+                if not smc_data:
+                    analise_completa += "   Nenhum padrao SMC detectado nesta vela.\n"
                 
-                analise_completa += f"\n10. SCORE CONFLUENCIA: {score}/11\n"
+                analise_completa += f"\n10. HORARIO: {hora} - {'Horario FORTE (abertura/volatilidade alta)' if bom_horario else 'Horario fraco/almoco'}\n"
+                
+                analise_completa += f"\n11. SCORE CONFLUENCIA: {score}/15\n"
                 analise_completa += f"    Confianca: {conf_label} ({confianca}/5)\n"
                 analise_completa += f"    Fatores A FAVOR: {', '.join(motivos_operar) if motivos_operar else 'nenhum'}\n"
                 analise_completa += f"    Fatores CONTRA: {', '.join(motivos_nao_operar) if motivos_nao_operar else 'nenhum'}\n"

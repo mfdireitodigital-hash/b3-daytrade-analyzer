@@ -824,7 +824,7 @@
             </div>
             <!-- Confluencia -->
             <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:12px;">
-                <div style="font-size:11px;font-weight:700;color:var(--accent-green);text-transform:uppercase;margin-bottom:6px;">Confluencia (11 pontos)</div>
+                <div style="font-size:11px;font-weight:700;color:var(--accent-green);text-transform:uppercase;margin-bottom:6px;">Confluencia (15 pontos)</div>
                 <div id="simRealConf" style="font-size:11px;">--</div>
             </div>
             <!-- Noticias -->
@@ -1194,7 +1194,7 @@ async function ptCarregarMelhoresEntradas() {
                 h += '<div style="display:flex;align-items:center;gap:6px;">';
                 h += '<span style="font-size:10px;font-weight:800;color:' + cOp + ';background:' + cOp + '15;padding:2px 6px;border-radius:3px;">' + op.tipo + '</span>';
                 h += '<span style="font-weight:700;font-size:12px;font-family:monospace;">' + op.hora_entrada + ' → ' + op.hora_saida + '</span>';
-                h += '<span style="font-size:10px;background:rgba(255,255,255,0.05);padding:1px 5px;border-radius:3px;">Score ' + op.score + '/11 | ' + op.conf_label + '</span>';
+                h += '<span style="font-size:10px;background:rgba(255,255,255,0.05);padding:1px 5px;border-radius:3px;">Score ' + op.score + '/15 | ' + op.conf_label + '</span>';
                 h += '</div>';
                 h += '<div style="display:flex;align-items:center;gap:6px;">';
                 h += '<span style="font-size:16px;font-weight:900;color:' + cRes + ';">' + op.resultado + '</span>';
@@ -1257,7 +1257,7 @@ async function ptCarregarMelhoresEntradas() {
         h += '<div style="display:flex;gap:1px;height:20px;border-radius:4px;overflow:hidden;">';
         data.velas.forEach(v => {
             const c2 = v.decisao==='OPERAR'?'#22c55e':v.score>=3?'#ca8a04':'rgba(239,68,68,0.4)';
-            h += '<div title="' + v.hora + ' Score:' + v.score + '/11 ' + v.decisao + '" style="flex:1;background:' + c2 + ';min-width:2px;cursor:pointer;"></div>';
+            h += '<div title="' + v.hora + ' Score:' + v.score + '/15 ' + v.decisao + '" style="flex:1;background:' + c2 + ';min-width:2px;cursor:pointer;"></div>';
         });
         h += '</div><div style="display:flex;justify-content:space-between;font-size:9px;color:var(--text-muted);margin-top:2px;"><span>09:00</span><span>11:00</span><span>13:00</span><span>15:00</span><span>17:00</span></div>';
         
@@ -2700,7 +2700,7 @@ async function simInit() {
 // =====================================================
 async function carregarSinaisIA() {
     const container = document.getElementById('sinaisIAContent');
-    container.innerHTML = '<div style="text-align:center;padding:12px;color:var(--text-muted);font-size:12px;">Analisando com Triple Screen + Confluencia 11 pontos...</div>';
+    container.innerHTML = '<div style="text-align:center;padding:12px;color:var(--text-muted);font-size:12px;">Analisando com Triple Screen + Confluencia 15 pontos...</div>';
     try {
         const res = await fetch('/api/sinais-ia?ativo=' + ptState.ativo);
         const data = await res.json();
@@ -3247,7 +3247,7 @@ async function simRealAnalisar() {
         confH += '<div style="display:flex;gap:1px;height:24px;border-radius:4px;overflow:hidden;">';
         velas.forEach(v => {
             const c2 = v.decisao==='OPERAR'?'#22c55e':v.score>=3?'#ca8a04':'rgba(239,68,68,0.4)';
-            confH += '<div title="' + v.hora + ' | Score:' + v.score + '/11 | ' + v.decisao + '" style="flex:1;background:' + c2 + ';min-width:2px;cursor:pointer;"></div>';
+            confH += '<div title="' + v.hora + ' | Score:' + v.score + '/15 | ' + v.decisao + '" style="flex:1;background:' + c2 + ';min-width:2px;cursor:pointer;"></div>';
         });
         confH += '</div><div style="display:flex;justify-content:space-between;font-size:9px;color:var(--text-muted);margin-top:2px;"><span>09:00</span><span>11:00</span><span>13:00</span><span>15:00</span><span>17:00</span></div>';
         document.getElementById('simRealConf').innerHTML = confH;
@@ -3421,15 +3421,23 @@ async function simRealAnalisar() {
             const hasOp = ops.find(op => op.hora_entrada === v.hora);
             const opBadge = hasOp ? '<span style="background:' + (hasOp.tipo==='COMPRA'?'#22c55e':'#ef4444') + ';color:#fff;padding:0 4px;border-radius:2px;font-size:8px;font-weight:800;margin-left:4px;">' + hasOp.tipo.charAt(0) + '</span>' : '';
             
+            // SMC indicators
+            let smcBadge = '';
+            if (v.smc) {
+                if (v.smc.fvg) smcBadge += '<span style="color:#f59e0b;font-size:8px;margin-left:2px;" title="' + v.smc.fvg.detalhe + '">FVG</span>';
+                if (v.smc.liquidity_sweep) smcBadge += '<span style="color:#ec4899;font-size:8px;margin-left:2px;" title="' + v.smc.liquidity_sweep.detalhe + '">SWEEP</span>';
+                if (v.smc.order_block) smcBadge += '<span style="color:#8b5cf6;font-size:8px;margin-left:2px;" title="' + v.smc.order_block.detalhe + '">OB</span>';
+                if (v.smc.estrutura) smcBadge += '<span style="color:#06b6d4;font-size:8px;margin-left:2px;" title="' + v.smc.estrutura.detalhe + '">' + (v.smc.estrutura.tipo.includes('BOS')?'BOS':'CHoCH') + '</span>';
+            }
             const motivo = isOp ? v.motivos_operar.slice(0,2).join(', ') : v.motivos_nao_operar.slice(0,2).join(', ');
             
             oH += '<div style="display:grid;grid-template-columns:55px 1fr 40px 55px 55px 80px;gap:2px;font-size:10px;padding:4px 6px;background:' + bg + ';border-left:' + bLeft + ';border-bottom:1px solid rgba(255,255,255,0.02);">';
             oH += '<div style="font-weight:700;font-family:monospace;">' + v.hora + opBadge + '</div>';
             oH += '<div style="color:' + cDec + ';font-weight:700;font-size:9px;">' + v.decisao + (v.tipo_sinal ? ' (' + v.tipo_sinal + ')' : '') + '</div>';
-            oH += '<div style="font-weight:700;">' + v.score + '/11</div>';
+            oH += '<div style="font-weight:700;">' + v.score + '/15</div>';
             oH += '<div style="color:' + cRsi + ';">' + v.rsi + '</div>';
             oH += '<div style="color:' + cTend + ';font-size:9px;">' + v.tendencia + '</div>';
-            oH += '<div style="font-size:9px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="' + motivo + '">' + motivo + '</div>';
+            oH += '<div style="font-size:9px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="' + motivo + '">' + motivo + smcBadge + '</div>';
             oH += '</div>';
         });
         
