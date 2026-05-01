@@ -621,6 +621,7 @@ async def get_correlacao():
     """Correlação WIN/WDO em tempo real"""
     from analysis_engine import analisar_correlacao_ativos
     try:
+        provider = app_state["provider"]
         dados_win = await provider.obter_dados("WIN", "5m")
         dados_wdo = await provider.obter_dados("WDO", "5m")
         resultado = analisar_correlacao_ativos(dados_win, dados_wdo)
@@ -641,6 +642,7 @@ async def get_zero_loss(
     """Calcula proteção Zero Loss para uma posição"""
     from analysis_engine import ZeroLossProtection, calcular_atr_series
     try:
+        provider = app_state["provider"]
         dados = await provider.obter_dados(ativo, "5m")
         atr = float(calcular_atr_series(dados).iloc[-1]) if len(dados) > 14 else 100
         
@@ -658,6 +660,7 @@ async def get_absorcao(ativo: str = Query("WIN")):
     """Detecta absorção no ativo"""
     from analysis_engine import detectar_absorcao
     try:
+        provider = app_state["provider"]
         dados = await provider.obter_dados(ativo, "5m")
         return detectar_absorcao(dados)
     except Exception as e:
