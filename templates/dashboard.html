@@ -3354,6 +3354,53 @@ async function simRealAnalisar() {
             oH += '</div>';
         }
         
+        // ---- APRENDIZADO DA AI ----
+        if (data.aprendizado) {
+            const ap = data.aprendizado;
+            oH += '<div style="font-size:12px;font-weight:800;color:#a855f7;margin:12px 0 8px 0;padding:6px 0;border-bottom:1px solid var(--border);">APRENDIZADO DA AI (Self-Learning)</div>';
+            oH += '<div style="background:rgba(168,85,247,0.05);border:1px solid rgba(168,85,247,0.2);border-radius:8px;padding:12px;margin-bottom:10px;">';
+            
+            // Stats globais
+            oH += '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:10px;">';
+            oH += '<div style="text-align:center;"><div style="font-size:9px;color:var(--text-muted);">Sessoes</div><div style="font-size:18px;font-weight:800;color:#a855f7;">' + ap.total_sessoes + '</div></div>';
+            oH += '<div style="text-align:center;"><div style="font-size:9px;color:var(--text-muted);">Total Ops</div><div style="font-size:18px;font-weight:800;">' + ap.total_operacoes + '</div></div>';
+            oH += '<div style="text-align:center;"><div style="font-size:9px;color:var(--text-muted);">WR Global</div><div style="font-size:18px;font-weight:800;color:' + (ap.win_rate_global>=60?'#22c55e':'#ca8a04') + ';">' + ap.win_rate_global + '%</div></div>';
+            oH += '<div style="text-align:center;"><div style="font-size:9px;color:var(--text-muted);">Score Min</div><div style="font-size:18px;font-weight:800;color:#60a5fa;">' + ap.score_minimo + '</div></div>';
+            oH += '<div style="text-align:center;"><div style="font-size:9px;color:var(--text-muted);">P&L Total</div><div style="font-size:18px;font-weight:800;color:' + (ap.total_rs>=0?'#22c55e':'#ef4444') + ';">R$ ' + ap.total_rs.toFixed(2) + '</div></div>';
+            oH += '</div>';
+            
+            // Pesos adaptativos
+            if (ap.pesos) {
+                oH += '<div style="font-size:10px;font-weight:700;color:#a855f7;margin:8px 0 4px;">PESOS ADAPTATIVOS (AI ajusta com resultados):</div>';
+                oH += '<div style="display:flex;gap:4px;flex-wrap:wrap;">';
+                for (const [k, v] of Object.entries(ap.pesos)) {
+                    const cor = v > 1.2 ? '#22c55e' : v < 0.8 ? '#ef4444' : '#888';
+                    const seta = v > 1.0 ? '↑' : v < 1.0 ? '↓' : '=';
+                    oH += '<span style="background:rgba(255,255,255,0.05);padding:2px 6px;border-radius:3px;font-size:9px;color:' + cor + ';">' + k + ': ' + v.toFixed(2) + ' ' + seta + '</span>';
+                }
+                oH += '</div>';
+            }
+            
+            // Insights
+            if (ap.insights && ap.insights.length > 0) {
+                oH += '<div style="font-size:10px;font-weight:700;color:#a855f7;margin:8px 0 4px;">INSIGHTS (aprendizados):</div>';
+                ap.insights.slice(-5).forEach(ins => {
+                    const corIns = ins.tipo === 'POSITIVO' ? '#22c55e' : ins.tipo === 'ALERTA' ? '#ef4444' : '#60a5fa';
+                    oH += '<div style="font-size:9px;color:' + corIns + ';margin:2px 0;">• [' + ins.tipo + '] ' + ins.mensagem + '</div>';
+                });
+            }
+            
+            // Livros estudados
+            if (ap.livros_estudados && ap.livros_estudados.length > 0) {
+                oH += '<div style="font-size:10px;font-weight:700;color:#a855f7;margin:8px 0 4px;">LIVROS ESTUDADOS:</div>';
+                ap.livros_estudados.forEach(livro => {
+                    oH += '<div style="font-size:9px;color:var(--text-muted);margin:2px 0;">📚 ' + livro.titulo + ' (' + livro.autor + ') - ' + livro.conceitos.length + ' conceitos</div>';
+                });
+            }
+            
+            oH += '</div>';
+        }
+        
         // RELATORIO COMPLETO VELA POR VELA
         oH += '<div style="font-size:12px;font-weight:800;color:var(--accent-blue);margin:12px 0 8px 0;padding:6px 0;border-bottom:1px solid var(--border);">RELATORIO COMPLETO 09:00-18:00 (' + velas.length + ' velas)</div>';
         

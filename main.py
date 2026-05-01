@@ -28,6 +28,10 @@ import traceback
 
 from analysis_engine import analisar_completo
 from data_provider import DataProvider, obter_contrato_vigente
+from learning_engine import (
+    carregar_learning, registrar_sessao, obter_pesos_atuais,
+    obter_score_minimo, obter_resumo_aprendizado, registrar_livro
+)
 
 load_dotenv()
 
@@ -2544,10 +2548,10 @@ async def simulador_real(ativo: str = Query("WIN")):
                             motivos_operar.append("Candlestick: Engolfo de Baixa")
                 except: pass
             
-            # DECISAO FINAL - PRO TRADER: ULTRA SELETIVO
-            # Score minimo 7 = BOM setup. Nao entra em OK, Duvidoso, Sem Setup.
-            # Elder: "The goal is to trade only A+ setups and sit on your hands the rest"
-            operar = score >= 7 and tipo_sinal is not None and not horario_ruim and not contra_tendencia
+            # DECISAO FINAL - PRO TRADER: ULTRA SELETIVO + ADAPTATIVO
+            # Score minimo adaptativo (começa 7, AI ajusta baseado em resultados)
+            _score_min = obter_score_minimo()
+            operar = score >= _score_min and tipo_sinal is not None and not horario_ruim and not contra_tendencia
             decisao = "OPERAR" if operar else "NAO OPERAR"
             
             # Confianca (Bellafiore) - PRO scoring
@@ -2850,11 +2854,26 @@ async def simulador_real(ativo: str = Query("WIN")):
         velas_operar = sum(1 for v in velas_analisadas if v["decisao"] == "OPERAR")
         velas_nao = sum(1 for v in velas_analisadas if v["decisao"] == "NAO OPERAR")
         
+        # ---- APRENDIZADO: registrar sessao e evoluir ----
+        if operacoes_recomendadas:
+            try:
+                learning_data = registrar_sessao(
+                    ativo, dia_anterior.strftime("%d/%m/%Y"),
+                    operacoes_recomendadas,
+                    {"win_rate": win_rate, "total_pts": total_pts}
+                )
+            except Exception as e:
+                logger.error(f"Erro registrando aprendizado: {e}")
+        
+        # Dados de aprendizado para exibição
+        aprendizado = obter_resumo_aprendizado()
+        
         return JSONResponse({
             "dia": dia_anterior.strftime("%d/%m/%Y"),
             "ativo": ativo,
             "contrato": contrato_nome,
             "valor_ponto": valor_ponto,
+            "aprendizado": aprendizado,
             "resumo": {
                 "abertura": abertura,
                 "fechamento": fechamento,
@@ -2885,6 +2904,16 @@ async def simulador_real(ativo: str = Query("WIN")):
         logger.error(f"Erro simulador-real: {e}")
         import traceback; traceback.print_exc()
         return JSONResponse({"erro": str(e)}, status_code=500)
+
+@app.get("/api/learning")
+async def get_learning():
+    """Retorna dados de aprendizado da AI"""
+    try:
+        resumo = obter_resumo_aprendizado()
+        return JSONResponse(resumo)
+    except Exception as e:
+        return JSONResponse({"erro": str(e)}, status_code=500)
+
 
 @app.get("/api/heatmap")
 async def get_heatmap(ativo: str = Query("WIN")):
