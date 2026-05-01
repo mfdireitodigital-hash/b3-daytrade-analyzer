@@ -8,12 +8,12 @@ Endpoints:
   GET /api/painel    → Painel multi-timeframe
   GET /api/sinais    → Sinais ativos de entrada
   GET /api/status    → Status do sistema
-"""
+"""h
 
 import os
 import json
 import asyncio
-import logging
+import loggingh
 from datetime import datetime
 from contextlib import asynccontextmanager
 
@@ -85,12 +85,9 @@ async def lifespan(app: FastAPI):
     app_state["provider"] = DataProvider(source=source)
     logger.info(f"Data provider inicializado: {source}")
 
-    # Primeira atualização
-    await atualizar_analises()
-
-    # Iniciar loop de auto-refresh
+    # Iniciar loop de auto-refresh em background (NAO bloqueia startup)
     app_state["auto_refresh_task"] = asyncio.create_task(auto_refresh_loop())
-    logger.info("Auto-refresh iniciado (intervalo: 5 minutos)")
+    logger.info("Auto-refresh iniciado em background (intervalo: 5 minutos)")
 
     yield
 
