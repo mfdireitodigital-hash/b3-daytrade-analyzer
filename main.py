@@ -1361,7 +1361,8 @@ async def replay_velas(ativo: str = "WIN"):
     try:
         provider = app_state["provider"]
         ticker = "^BVSP" if ativo == "WIN" else "USDBRL=X"
-        contrato = provider.obter_contrato_vigente(ativo)
+        from data_provider import obter_contrato_vigente as _ocv
+        contrato = _ocv(ativo)
         valor_ponto = 0.20 if ativo == "WIN" else 10.00
 
         dados = yf.download(ticker, period="5d", interval="5m", progress=False)
