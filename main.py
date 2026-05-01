@@ -1363,7 +1363,8 @@ async def replay_velas(ativo: str = "WIN"):
         provider = app_state["provider"]
         ticker = "^BVSP" if ativo == "WIN" else "USDBRL=X"
         from data_provider import obter_contrato_vigente as _ocv
-        contrato = _ocv(ativo)
+        contrato_info = _ocv(ativo)
+        contrato_nome = contrato_info.get('ticker_b3', ativo)
         valor_ponto = 0.20 if ativo == "WIN" else 10.00
 
         dados = yf.download(ticker, period="5d", interval="5m", progress=False)
@@ -1466,7 +1467,7 @@ async def replay_velas(ativo: str = "WIN"):
         return JSONResponse({
             "dia": dia_anterior.strftime("%d/%m/%Y"),
             "ativo": ativo,
-            "contrato": contrato["codigo"],
+            "contrato": contrato_nome,
             "valor_ponto": valor_ponto,
             "mercado": mercado,
             "total_velas": len(velas),
