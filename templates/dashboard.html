@@ -1172,7 +1172,7 @@ function renderPriceChart(a) {
     });
 
     const candles = a.dados.map(d => ({
-        time: Math.floor(new Date(d.time || d.date || Date.now()).getTime() / 1000),
+        time: Math.floor(new Date((d.time || d.date || '') + ((d.time || d.date || '').includes('Z') || (d.time || d.date || '').includes('+') ? '' : 'Z')).getTime() / 1000),
         open: d.open, high: d.high, low: d.low, close: d.close,
     })).filter(c => !isNaN(c.time) && c.open > 0);
 
