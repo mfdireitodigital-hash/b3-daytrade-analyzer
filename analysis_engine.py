@@ -1,5 +1,5 @@
 """
-B3 TRADE IRMÃOS DOMINGUES - Engine de Análise Técnica
+ANALISE B3 - 24/7 - Engine de Análise Técnica
 Foco: Mini-Índice (WIN) e Mini-Dólar (WDO)
 Indicadores: VWAP, EMA 9/21, Fibonacci, RSI, MACD, ATR, Volume, Anti-Violinada
 Estratégia: Pullback em EMA/VWAP com confirmação de candle
@@ -502,16 +502,16 @@ def gerar_sinais(
             confianca_venda += 15
 
     # --- RSI ---
-    if rsi < 30:
+    if rsi < 20:
         motivos_compra.append(f"RSI sobrevendido ({rsi:.1f})")
         confianca_compra += 20
-    elif rsi < 40:
+    elif rsi < 30:
         motivos_compra.append(f"RSI em zona de compra ({rsi:.1f})")
         confianca_compra += 10
-    elif rsi > 70:
+    elif rsi > 80:
         motivos_venda.append(f"RSI sobrecomprado ({rsi:.1f})")
         confianca_venda += 20
-    elif rsi > 60:
+    elif rsi > 70:
         motivos_venda.append(f"RSI em zona de venda ({rsi:.1f})")
         confianca_venda += 10
 
@@ -615,7 +615,7 @@ def gerar_sinais(
             confianca=min(confianca_compra, 100),
             motivos=motivos_compra,
             fibonacci_zona=_zona_fibonacci_atual(preco, fibonacci),
-            rsi_status="SOBREVENDIDO" if rsi < 30 else ("SOBRECOMPRADO" if rsi > 70 else "NEUTRO"),
+            rsi_status="SOBREVENDIDO" if rsi < 20 else ("SOBRECOMPRADO" if rsi > 80 else "NEUTRO"),
             macd_status="ALTA" if macd_hist > 0 else "BAIXA",
             volume_status=volume.pressao,
             violinada_risco=violinada_risco
@@ -645,7 +645,7 @@ def gerar_sinais(
             confianca=min(confianca_venda, 100),
             motivos=motivos_venda,
             fibonacci_zona=_zona_fibonacci_atual(preco, fibonacci),
-            rsi_status="SOBREVENDIDO" if rsi < 30 else ("SOBRECOMPRADO" if rsi > 70 else "NEUTRO"),
+            rsi_status="SOBREVENDIDO" if rsi < 20 else ("SOBRECOMPRADO" if rsi > 80 else "NEUTRO"),
             macd_status="ALTA" if macd_hist > 0 else "BAIXA",
             volume_status=volume.pressao,
             violinada_risco=violinada_risco
