@@ -1697,6 +1697,254 @@ def _sinal_principal(painel: dict) -> dict:
     return {"tipo": "NEUTRO", "confianca": 0, "motivos": ["Sem sinais claros no momento"]}
 
 
+
+
+@app.get("/api/sinais-ia")
+async def get_sinais_ia(ativo: str = Query("WIN")):
+    """Sinais IA estilo Vortex Trade - detecta setups com entrada/stop/alvo"""
+    ativo = ativo.upper()
+    try:
+        analise_5m = app_state["analises"].get(ativo, {}).get("5m", {})
+        analise_15m = app_state["analises"].get(ativo, {}).get("15m", {})
+        analise_1h = app_state["analises"].get(ativo, {}).get("1h", {})
+        
+        preco = analise_5m.get("preco_atual", 0)
+        if not preco:
+            rt = app_state.get("preco_realtime", {}).get(ativo, {})
+            preco = rt.get("preco", 0)
+        
+        spec = {"WIN": {"tick": 5, "vp": 0.20, "atr_mult": 1.5}, "WDO": {"tick": 0.5, "vp": 10.0, "atr_mult": 1.2}}
+        s = spec.get(ativo, spec["WIN"])
+        
+        sinais_gerados = []
+        
+        # Get indicators
+        rsi = analise_5m.get("rsi", {}).get("valor", 50) if isinstance(analise_5m.get("rsi"), dict) else analise_5m.get("rsi", 50)
+        if isinstance(rsi, dict): rsi = rsi.get("valor", 50)
+        tendencia_5m = analise_5m.get("tendencia", "LATERAL")
+        tendencia_15m = analise_15m.get("tendencia", "LATERAL") if analise_15m else "N/A"
+        tendencia_1h = analise_1h.get("tendencia", "LATERAL") if analise_1h else "N/A"
+        macd_status = analise_5m.get("macd", {}).get("status", "NEUTRO") if isinstance(analise_5m.get("macd"), dict) else "NEUTRO"
+        
+        atr = analise_5m.get("atr", 150) if ativo == "WIN" else analise_5m.get("atr", 15)
+        if isinstance(atr, dict): atr = atr.get("valor", 150 if ativo == "WIN" else 15)
+        if not atr or atr == 0: atr = 150 if ativo == "WIN" else 15
+        
+        stop_pts = round(atr * s["atr_mult"])
+        # Round to tick
+        stop_pts = max(round(stop_pts / s["tick"]) * s["tick"], s["tick"] * 10)
+        alvo_pts = round(stop_pts * 2)  # R:R 1:2
+        
+        score_alta = 0
+        score_baixa = 0
+        motivos_alta = []
+        motivos_baixa = []
+        
+        # RSI
+        if rsi and rsi < 30:
+            score_alta += 2
+            motivos_alta.append(f"RSI sobrevendido ({rsi:.0f})")
+        elif rsi and rsi < 40:
+            score_alta += 1
+            motivos_alta.append(f"RSI baixo ({rsi:.0f})")
+        elif rsi and rsi > 70:
+            score_baixa += 2
+            motivos_baixa.append(f"RSI sobrecomprado ({rsi:.0f})")
+        elif rsi and rsi > 60:
+            score_baixa += 1
+            motivos_baixa.append(f"RSI alto ({rsi:.0f})")
+        
+        # Tendencia 5m
+        if tendencia_5m == "ALTA":
+            score_alta += 1
+            motivos_alta.append("Tendencia 5m ALTA")
+        elif tendencia_5m == "BAIXA":
+            score_baixa += 1
+            motivos_baixa.append("Tendencia 5m BAIXA")
+        
+        # Tendencia 15m (peso maior)
+        if tendencia_15m == "ALTA":
+            score_alta += 2
+            motivos_alta.append("Tendencia 15m ALTA")
+        elif tendencia_15m == "BAIXA":
+            score_baixa += 2
+            motivos_baixa.append("Tendencia 15m BAIXA")
+        
+        # Tendencia 1h (peso maior ainda)
+        if tendencia_1h == "ALTA":
+            score_alta += 3
+            motivos_alta.append("Tendencia 1h ALTA")
+        elif tendencia_1h == "BAIXA":
+            score_baixa += 3
+            motivos_baixa.append("Tendencia 1h BAIXA")
+        
+        # MACD
+        if "ALTA" in macd_status.upper() or "COMPRA" in macd_status.upper():
+            score_alta += 1
+            motivos_alta.append("MACD comprador")
+        elif "BAIXA" in macd_status.upper() or "VENDA" in macd_status.upper():
+            score_baixa += 1
+            motivos_baixa.append("MACD vendedor")
+        
+        # EMA crossover
+        ema9 = analise_5m.get("ema9", 0)
+        ema21 = analise_5m.get("ema21", 0)
+        if isinstance(ema9, dict): ema9 = ema9.get("valor", 0)
+        if isinstance(ema21, dict): ema21 = ema21.get("valor", 0)
+        if ema9 and ema21 and ema9 > 0 and ema21 > 0:
+            if ema9 > ema21:
+                score_alta += 1
+                motivos_alta.append(f"EMA9 > EMA21")
+            else:
+                score_baixa += 1
+                motivos_baixa.append(f"EMA9 < EMA21")
+        
+        max_score = max(score_alta, score_baixa)
+        total_possible = 10
+        confianca = min(round(max_score / total_possible * 100), 95)
+        
+        if score_alta >= 3 and score_alta > score_baixa:
+            sinais_gerados.append({
+                "tipo": "COMPRA",
+                "ativo": ativo,
+                "preco_entrada": preco,
+                "stop_loss": round(preco - stop_pts, 2),
+                "take_profit": round(preco + alvo_pts, 2),
+                "stop_pts": stop_pts,
+                "alvo_pts": alvo_pts,
+                "rr": "1:2",
+                "confianca": confianca,
+                "motivos": motivos_alta,
+                "timestamp": datetime.now(BRT).strftime("%H:%M:%S"),
+            })
+        
+        if score_baixa >= 3 and score_baixa > score_alta:
+            sinais_gerados.append({
+                "tipo": "VENDA",
+                "ativo": ativo,
+                "preco_entrada": preco,
+                "stop_loss": round(preco + stop_pts, 2),
+                "take_profit": round(preco - alvo_pts, 2),
+                "stop_pts": stop_pts,
+                "alvo_pts": alvo_pts,
+                "rr": "1:2",
+                "confianca": confianca,
+                "motivos": motivos_baixa,
+                "timestamp": datetime.now(BRT).strftime("%H:%M:%S"),
+            })
+        
+        if not sinais_gerados:
+            sinais_gerados.append({
+                "tipo": "NEUTRO",
+                "ativo": ativo,
+                "confianca": 0,
+                "motivos": ["Sem confluencia suficiente - aguardar setup"],
+                "timestamp": datetime.now(BRT).strftime("%H:%M:%S"),
+            })
+        
+        return JSONResponse({
+            "sinais": sinais_gerados,
+            "indicadores": {
+                "rsi": round(rsi, 1) if rsi else None,
+                "tendencia_5m": tendencia_5m,
+                "tendencia_15m": tendencia_15m,
+                "tendencia_1h": tendencia_1h,
+                "macd": macd_status,
+                "ema9": round(ema9, 2) if ema9 else None,
+                "ema21": round(ema21, 2) if ema21 else None,
+                "atr": round(atr, 2) if atr else None,
+            },
+            "mercado_aberto": mercado_aberto(),
+            "preco_atual": preco,
+            "timestamp": datetime.now(BRT).strftime("%H:%M:%S"),
+        })
+    except Exception as e:
+        logger.error(f"Erro sinais-ia: {e}")
+        return JSONResponse({"sinais": [], "erro": str(e)}, status_code=500)
+
+
+@app.get("/api/heatmap")
+async def get_heatmap(ativo: str = Query("WIN")):
+    """Heatmap de melhores horarios para operar - baseado em volatilidade historica"""
+    ativo = ativo.upper()
+    try:
+        contrato = obter_contrato_vigente(ativo)
+        ticker = contrato.get("ticker_b3", "^BVSP" if ativo == "WIN" else "BRL=X")
+        
+        # Get 5 days of 5min data
+        df = yf.download(ticker, period="5d", interval="5m", progress=False)
+        if df.empty:
+            df = yf.download("^BVSP" if ativo == "WIN" else "BRL=X", period="5d", interval="5m", progress=False)
+        
+        if df.empty:
+            # Return static heatmap based on known B3 patterns
+            heatmap = []
+            for h in range(9, 18):
+                for m in [0, 30]:
+                    hora = f"{h:02d}:{m:02d}"
+                    # Known B3 patterns: opening and closing are most volatile
+                    if h == 9 and m == 0:
+                        score = 95
+                    elif h == 9 and m == 30:
+                        score = 85
+                    elif h == 10 and m == 0:
+                        score = 70
+                    elif h >= 11 and h <= 13:
+                        score = 40 + random.randint(0, 15)
+                    elif h == 14:
+                        score = 55
+                    elif h == 15:
+                        score = 65
+                    elif h == 16:
+                        score = 75
+                    elif h == 17:
+                        score = 90
+                    else:
+                        score = 50
+                    heatmap.append({"hora": hora, "volatilidade": score, "qualidade": "OTIMO" if score >= 70 else "BOM" if score >= 50 else "FRACO"})
+            return JSONResponse({"heatmap": heatmap, "ativo": ativo, "fonte": "padrao_b3"})
+        
+        # Flatten columns if MultiIndex
+        if hasattr(df.columns, 'levels'):
+            df.columns = [c[0] if isinstance(c, tuple) else c for c in df.columns]
+        
+        df["hora"] = df.index.strftime("%H:%M")
+        df["amplitude"] = df["High"] - df["Low"]
+        
+        # Group by 30min slots
+        df["slot"] = df.index.hour * 2 + (df.index.minute >= 30).astype(int)
+        stats = df.groupby("slot").agg({"amplitude": ["mean", "count"]})
+        stats.columns = ["amp_media", "count"]
+        
+        max_amp = stats["amp_media"].max() if stats["amp_media"].max() > 0 else 1
+        
+        heatmap = []
+        for slot_idx, row in stats.iterrows():
+            h = slot_idx // 2
+            m = (slot_idx % 2) * 30
+            if h < 9 or h >= 18:
+                continue
+            score = min(round(row["amp_media"] / max_amp * 100), 100)
+            heatmap.append({
+                "hora": f"{h:02d}:{m:02d}",
+                "volatilidade": score,
+                "amplitude_media": round(float(row["amp_media"]), 2),
+                "amostras": int(row["count"]),
+                "qualidade": "OTIMO" if score >= 70 else "BOM" if score >= 50 else "FRACO",
+            })
+        
+        return JSONResponse({"heatmap": heatmap, "ativo": ativo, "fonte": "yfinance_5d"})
+    except Exception as e:
+        logger.error(f"Erro heatmap: {e}")
+        # Return static fallback
+        heatmap = []
+        for h in range(9, 18):
+            for m in [0, 30]:
+                score = 90 if h in [9, 17] else 70 if h in [10, 16] else 50
+                heatmap.append({"hora": f"{h:02d}:{m:02d}", "volatilidade": score, "qualidade": "OTIMO" if score >= 70 else "BOM" if score >= 50 else "FRACO"})
+        return JSONResponse({"heatmap": heatmap, "ativo": ativo, "fonte": "fallback"})
+
+
 if __name__ == "__main__":
     import uvicorn
     port = int(os.getenv("PORT", 8080))
