@@ -983,6 +983,16 @@ function abrirPaperTrading() {
     // Start live updates every 5 seconds
     if (ptState.updateInterval) clearInterval(ptState.updateInterval);
     ptState.updateInterval = setInterval(ptTickUpdate, 5000);
+    // Auto-load sinais IA and heatmap on init
+    setTimeout(function() { carregarSinaisIA(); carregarHeatmap(); }, 2000);
+    // Auto-refresh sinais every 60s when market open
+    setInterval(function() {
+        const now = new Date();
+        const utc = now.getTime() + now.getTimezoneOffset() * 60000;
+        const brt = new Date(utc - 3 * 3600000);
+        const h = brt.getHours(); const d = brt.getDay();
+        if (d >= 1 && d <= 5 && h >= 9 && h < 18) { carregarSinaisIA(); }
+    }, 60000);
 }
 
 function fecharPaperTrading() {
@@ -1006,6 +1016,7 @@ function ptMudarTab(tab) {
     document.getElementById('ptTab' + tab.charAt(0).toUpperCase() + tab.slice(1)).classList.add('active');
     if (tab === 'historico') ptRenderHistorico();
     if (tab === 'relatorio') ptRenderRelatorio();
+    if (tab === 'trading') { carregarSinaisIA(); carregarHeatmap(); }
     if (tab === 'replay') { if(!window.simData) simInit(); }
 }
 
@@ -1026,20 +1037,7 @@ function ptCheckMarket() {
         el.className = 'pt-market-status closed';
         el.innerHTML = '<div class="status-dot offline"></div><span>MERCADO FECHADO</span>';
     }
-    // Control replay tab visibility based on market status
-    const replayBtn = document.getElementById('ptTabReplayBtn');
-    const replayTab = document.getElementById('ptTabReplay');
-    if (replayBtn) {
-        if (isOpen) {
-            replayBtn.style.display = 'none';
-            // If user is on replay tab during market open, switch to saldo
-            if (replayTab && replayTab.classList.contains('active')) {
-                ptMudarTab('trading');
-            }
-        } else {
-            replayBtn.style.display = '';
-        }
-    }
+    // Replay tab is always visible - it's for training anytime
     return isOpen;
 }
 
