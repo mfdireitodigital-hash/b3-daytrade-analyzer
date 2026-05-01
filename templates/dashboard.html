@@ -400,28 +400,19 @@
                     <button onclick="ptResetarConta()" style="background:var(--accent-red);">RESETAR CONTA</button>
                 </div>
 
-                <!-- SINAIS IA -->
-                <div style="margin-top:8px;border:1px solid var(--border);border-radius:8px;overflow:hidden;">
+                <!-- MELHORES ENTRADAS DO PREGAO (auto-load) -->
+                <div style="margin-top:8px;border:1px solid var(--border);border-radius:8px;overflow:hidden;" id="ptMelhoresEntradas">
                     <div style="background:linear-gradient(90deg,#1e3a5f,#0f172a);padding:10px 14px;display:flex;justify-content:space-between;align-items:center;">
                         <div style="display:flex;align-items:center;gap:8px;">
-                            <span style="font-size:16px;">&#129302;</span>
-                            <span style="font-size:13px;font-weight:700;color:#60a5fa;">SINAIS IA</span>
-                            <span style="font-size:10px;color:var(--text-muted);">Analise automatica multi-timeframe</span>
+                            <span style="font-size:16px;">&#127919;</span>
+                            <span style="font-size:13px;font-weight:700;color:#60a5fa;">MELHORES ENTRADAS DO PREGAO</span>
+                            <span style="font-size:10px;color:var(--text-muted);" id="ptMelhoresLabel">Confluencia 4+ pontos</span>
                         </div>
-                        <button onclick="carregarSinaisIA()" style="padding:4px 12px;background:#1e40af;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:11px;font-weight:700;">ATUALIZAR</button>
+                        <button onclick="ptCarregarMelhoresEntradas()" style="padding:4px 12px;background:#1e40af;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:11px;font-weight:700;">ANALISAR</button>
                     </div>
-                    <div id="sinaisIAContent" style="padding:10px;">
-                        <div style="text-align:center;padding:16px;color:var(--text-muted);font-size:12px;">Clique ATUALIZAR para buscar sinais IA</div>
+                    <div id="ptMelhoresContent" style="padding:10px;">
+                        <div style="text-align:center;padding:16px;color:var(--text-muted);font-size:12px;">Carregando melhores entradas do pregao...</div>
                     </div>
-                </div>
-
-                <!-- Info: Use SIMULADOR REAL -->
-                <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:16px;margin-top:8px;text-align:center;">
-                    <div style="font-size:13px;color:var(--text-muted);margin-bottom:8px;">Para operar com analise completa, use o</div>
-                    <button class="btn" onclick="fecharPaperTrading();abrirSimuladorReal();" style="background:var(--accent-blue);border-color:var(--accent-blue);color:#fff;font-weight:700;font-size:14px;padding:10px 24px;">
-                        SIMULADOR REAL
-                    </button>
-                    <div style="font-size:10px;color:var(--text-muted);margin-top:8px;">Analise Triple Screen + Confluencia + Noticias + Heatmap</div>
                 </div>
                 <!-- Open Positions -->
                 <div class="pt-positions">
@@ -1127,15 +1118,10 @@ function abrirPaperTrading() {
     if (ptState.updateInterval) clearInterval(ptState.updateInterval);
     ptState.updateInterval = setInterval(ptTickUpdate, 5000);
     // Auto-load sinais IA and heatmap on init
-    setTimeout(function() { carregarSinaisIA(); carregarHeatmap(); }, 2000);
-    // Auto-refresh sinais every 60s when market open
-    setInterval(function() {
-        const now = new Date();
-        const utc = now.getTime() + now.getTimezoneOffset() * 60000;
-        const brt = new Date(utc - 3 * 3600000);
-        const h = brt.getHours(); const d = brt.getDay();
-        if (d >= 1 && d <= 5 && h >= 9 && h < 18) { carregarSinaisIA(); }
-    }, 60000);
+    // Auto-load melhores entradas do pregao
+    setTimeout(function() { ptCarregarMelhoresEntradas(); carregarHeatmap(); }, 1000);
+    // Auto-refresh melhores entradas every 120s when market open
+    setInterval(function() { ptCarregarMelhoresEntradas(); }, 120000);
 }
 
 function fecharPaperTrading() {
@@ -1162,6 +1148,126 @@ function ptMudarTab(tab) {
     if (tab === 'trading') { carregarSinaisIA(); carregarHeatmap(); }
     if (tab === 'replay') { if(!window.simData) simInit(); }
 
+}
+
+// ---- MELHORES ENTRADAS DO PREGAO ----
+async function ptCarregarMelhoresEntradas() {
+    const container = document.getElementById('ptMelhoresContent');
+    if (!container) return;
+    container.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-muted);">Analisando todas as velas com 7 confluencias...</div>';
+    
+    try {
+        const res = await fetch('/api/simulador-real?ativo=' + ptState.ativo);
+        const data = await res.json();
+        if (data.erro) { container.innerHTML = '<div style="color:#ef4444;padding:12px;">' + data.erro + '</div>'; return; }
+        
+        const label = document.getElementById('ptMelhoresLabel');
+        if (label) label.textContent = 'Pregao ' + data.dia + ' | ' + data.contrato;
+        
+        // Filter velas with score >= 4 (OPERAR with good confluence)
+        const boas = data.velas.filter(v => v.score >= 4 && v.decisao === 'OPERAR');
+        const ops = data.operacoes || [];
+        const perf = data.performance || {};
+        
+        let h = '';
+        
+        // Performance summary if operations exist
+        if (ops.length > 0) {
+            const corP = perf.total_rs >= 0 ? '#22c55e' : '#ef4444';
+            h += '<div style="background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:10px;display:flex;justify-content:space-around;text-align:center;flex-wrap:wrap;gap:8px;">';
+            h += '<div><div style="font-size:9px;color:var(--text-muted);">OPS</div><div style="font-size:18px;font-weight:800;">' + perf.total_operacoes + '</div></div>';
+            h += '<div><div style="font-size:9px;color:var(--text-muted);">WIN RATE</div><div style="font-size:18px;font-weight:800;color:' + (perf.win_rate>=50?'#22c55e':'#ef4444') + ';">' + perf.win_rate + '%</div></div>';
+            h += '<div><div style="font-size:9px;color:var(--text-muted);">PONTOS</div><div style="font-size:18px;font-weight:800;color:' + (perf.total_pts>=0?'#22c55e':'#ef4444') + ';">' + (perf.total_pts>=0?'+':'') + perf.total_pts + '</div></div>';
+            h += '<div><div style="font-size:9px;color:var(--text-muted);">P&L</div><div style="font-size:18px;font-weight:800;color:' + corP + ';">' + (perf.total_rs>=0?'+':'') + 'R$ ' + perf.total_rs.toFixed(2) + '</div></div>';
+            h += '</div>';
+        }
+        
+        // Operations executed
+        if (ops.length > 0) {
+            h += '<div style="font-size:11px;font-weight:800;color:var(--accent-blue);margin:8px 0 6px;padding-bottom:4px;border-bottom:1px solid var(--border);">OPERACOES EXECUTADAS (' + ops.length + ')</div>';
+            ops.forEach((op, idx) => {
+                const isW = op.resultado === 'WIN';
+                const cOp = op.tipo === 'COMPRA' ? '#22c55e' : '#ef4444';
+                const cRes = isW ? '#22c55e' : '#ef4444';
+                h += '<div style="background:rgba(255,255,255,0.02);border:1px solid ' + cOp + '30;border-left:3px solid ' + cOp + ';border-radius:6px;padding:8px 10px;margin-bottom:5px;">';
+                h += '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:4px;">';
+                h += '<div style="display:flex;align-items:center;gap:6px;">';
+                h += '<span style="font-size:10px;font-weight:800;color:' + cOp + ';background:' + cOp + '15;padding:2px 6px;border-radius:3px;">' + op.tipo + '</span>';
+                h += '<span style="font-weight:700;font-size:12px;font-family:monospace;">' + op.hora_entrada + ' → ' + op.hora_saida + '</span>';
+                h += '<span style="font-size:10px;background:rgba(255,255,255,0.05);padding:1px 5px;border-radius:3px;">Score ' + op.score + '/7 | ' + op.conf_label + '</span>';
+                h += '</div>';
+                h += '<div style="display:flex;align-items:center;gap:6px;">';
+                h += '<span style="font-size:16px;font-weight:900;color:' + cRes + ';">' + op.resultado + '</span>';
+                h += '<span style="font-size:12px;font-weight:800;color:' + cRes + ';">' + (op.pts>=0?'+':'') + op.pts + 'pts</span>';
+                h += '<span style="font-size:11px;color:' + cRes + ';">' + (op.resultado_rs>=0?'+':'') + 'R$ ' + op.resultado_rs.toFixed(2) + '</span>';
+                h += '</div></div>';
+                h += '<div style="font-size:10px;color:var(--text-muted);margin-top:4px;">Confluencia: ' + op.motivos.join(' | ') + '</div>';
+                // Train button
+                h += '<div style="margin-top:6px;"><button onclick="ptTreinarEntrada(' + idx + ',\'' + op.tipo + '\',' + op.stop_pts + ',' + op.alvo_pts + ')" style="padding:4px 12px;background:' + cOp + ';color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:10px;font-weight:700;">TREINAR ESTA ENTRADA</button></div>';
+                h += '</div>';
+            });
+        }
+        
+        // Best setups by hour (score 4+)
+        h += '<div style="font-size:11px;font-weight:800;color:#22c55e;margin:10px 0 6px;padding-bottom:4px;border-bottom:1px solid var(--border);">MELHORES MOMENTOS DO DIA (' + boas.length + ' velas com Score 4+)</div>';
+        
+        if (boas.length === 0) {
+            h += '<div style="padding:12px;color:var(--text-muted);text-align:center;">Nenhuma vela atingiu score 4+ neste pregao. Dia de ficar fora.</div>';
+        } else {
+            // Group by hour
+            const porHora = {};
+            boas.forEach(v => {
+                const hr = v.hora.split(':')[0];
+                if (!porHora[hr]) porHora[hr] = [];
+                porHora[hr].push(v);
+            });
+            
+            Object.entries(porHora).sort((a,b) => parseInt(a[0]) - parseInt(b[0])).forEach(([hr, velas]) => {
+                h += '<div style="margin-bottom:6px;">';
+                h += '<div style="font-size:10px;font-weight:700;color:var(--accent-blue);padding:3px 0;">' + hr + ':00 - ' + velas.length + ' oportunidade(s)</div>';
+                velas.forEach(v => {
+                    const cSinal = v.tipo_sinal === 'COMPRA' ? '#22c55e' : '#ef4444';
+                    const confPct = Math.round(v.score / 7 * 100);
+                    h += '<div style="display:flex;align-items:center;gap:6px;padding:4px 8px;background:rgba(255,255,255,0.02);border-left:2px solid ' + cSinal + ';border-radius:0 4px 4px 0;margin-bottom:3px;flex-wrap:wrap;">';
+                    h += '<span style="font-family:monospace;font-weight:700;font-size:11px;min-width:40px;">' + v.hora + '</span>';
+                    h += '<span style="font-size:9px;font-weight:800;color:' + cSinal + ';background:' + cSinal + '15;padding:1px 5px;border-radius:3px;">' + v.tipo_sinal + '</span>';
+                    h += '<span style="font-size:10px;font-weight:700;">Score ' + v.score + '/7</span>';
+                    h += '<span style="font-size:9px;background:' + (v.confianca>=4?'#22c55e':v.confianca>=3?'#ca8a04':'#ef4444') + ';color:#fff;padding:1px 5px;border-radius:3px;">' + v.conf_label + '</span>';
+                    // Confluence bar
+                    h += '<div style="flex:1;min-width:60px;height:4px;background:#333;border-radius:2px;"><div style="height:100%;width:' + confPct + '%;background:' + (confPct>=70?'#22c55e':confPct>=50?'#ca8a04':'#ef4444') + ';border-radius:2px;"></div></div>';
+                    h += '<span style="font-size:9px;color:var(--text-muted);">' + v.motivos_operar.slice(0,2).join(', ') + '</span>';
+                    h += '</div>';
+                });
+                h += '</div>';
+            });
+        }
+        
+        // Timeline
+        h += '<div style="font-size:10px;color:var(--text-muted);margin:8px 0 4px;">Timeline (verde=operar | amarelo=cautela | vermelho=fora):</div>';
+        h += '<div style="display:flex;gap:1px;height:20px;border-radius:4px;overflow:hidden;">';
+        data.velas.forEach(v => {
+            const c2 = v.decisao==='OPERAR'?'#22c55e':v.score>=3?'#ca8a04':'rgba(239,68,68,0.4)';
+            h += '<div title="' + v.hora + ' Score:' + v.score + '/7 ' + v.decisao + '" style="flex:1;background:' + c2 + ';min-width:2px;cursor:pointer;"></div>';
+        });
+        h += '</div><div style="display:flex;justify-content:space-between;font-size:9px;color:var(--text-muted);margin-top:2px;"><span>09:00</span><span>11:00</span><span>13:00</span><span>15:00</span><span>17:00</span></div>';
+        
+        container.innerHTML = h;
+        
+    } catch(e) {
+        container.innerHTML = '<div style="color:#ef4444;padding:12px;">Erro: ' + e.message + '</div>';
+    }
+}
+
+// Train a specific recommended entry
+function ptTreinarEntrada(opIdx, tipo, stopPts, alvoPts) {
+    if (ptState.balance <= 0) { alert('Adicione dinheiro demonstracao primeiro!'); return; }
+    const qtd = parseInt(document.getElementById('ptQtd').value) || 1;
+    // Set stop/alvo fields
+    document.getElementById('ptStop').value = stopPts;
+    document.getElementById('ptAlvo').value = alvoPts;
+    // Use the operation's candle index
+    window.ptSimIdx = opIdx * 10; // approximate
+    ptSimularComDadosReais(tipo, qtd, stopPts, alvoPts);
 }
 
 // ---- Market Status ----
