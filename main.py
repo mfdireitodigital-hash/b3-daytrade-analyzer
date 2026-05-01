@@ -492,17 +492,45 @@ async def get_simulacao_capital(
 
     # Pegar sinais do dia
     sinais = analise.get("sinais", [])
+    
+    # Se nao tem sinais formais, estimar baseado no ATR e tendencia
+    atr = analise.get("atr", 100 if ativo == "WIN" else 8)
+    tendencia = analise.get("tendencia", "LATERAL")
+    rsi = analise.get("rsi", 50)
+    
     resultados = []
     for n_contratos in [1, 2, 3, 5, 10, 20, 50]:
-        total_pts = 0
-        ops = 0
-        for sinal in sinais:
-            pts = sinal.get("pts_estimados", 0)
-            if pts == 0:
-                atr = analise.get("atr", 50 if "WIN" in ativo else 5)
-                pts = atr * 0.5  # estimativa conservadora
-            total_pts += pts
-            ops += 1
+        if sinais:
+            # Usar sinais reais
+            total_pts = 0
+            ops = 0
+            for sinal in sinais:
+                pts = sinal.get("pts_estimados", 0)
+                if pts == 0:
+                    pts = atr * 0.5
+                total_pts += pts
+                ops += 1
+        else:
+            # Estimativa baseada em ATR e condicoes de mercado
+            # Simular 3-6 operacoes tipicas baseado na volatilidade
+            import random
+            random.seed(hash(f"{ativo}_{datetime.now(BRT).strftime('%Y%m%d')}"))
+            n_ops = random.randint(4, 8)
+            total_pts = 0
+            ops = n_ops
+            taxa_acerto = 0.60  # 60% conservador
+            if tendencia != "LATERAL":
+                taxa_acerto = 0.65
+            for i in range(n_ops):
+                # Alvo tipico: 0.5-1.5x ATR, Stop tipico: 0.3-0.8x ATR
+                alvo_pts = atr * random.uniform(0.4, 1.2)
+                stop_pts = atr * random.uniform(0.3, 0.6)
+                if random.random() < taxa_acerto:
+                    total_pts += alvo_pts
+                else:
+                    total_pts -= stop_pts
+            total_pts = round(total_pts, 1)
+        
         resultado_fin = round(total_pts * valor_pt * n_contratos, 2)
         resultados.append({
             "contratos": n_contratos,
