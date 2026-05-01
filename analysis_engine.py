@@ -442,6 +442,329 @@ def _agrupar_niveis(niveis: list, tolerancia: float = 0.001) -> list:
     return agrupados
 
 
+# =====================================================
+# INDICADORES TÉCNICOS EXTRAS
+# =====================================================
+
+def calcular_bollinger(dados: pd.DataFrame, periodo: int = 20, desvios: float = 2.0) -> dict:
+    """Calcula Bandas de Bollinger"""
+    if len(dados) < periodo:
+        return {"upper": 0, "middle": 0, "lower": 0, "width": 0, "percent_b": 50, "squeeze": False}
+    sma = dados['close'].rolling(window=periodo).mean()
+    std = dados['close'].rolling(window=periodo).std()
+    upper = sma + (std * desvios)
+    lower = sma - (std * desvios)
+    
+    u = float(upper.iloc[-1])
+    m = float(sma.iloc[-1])
+    l = float(lower.iloc[-1])
+    preco = float(dados['close'].iloc[-1])
+    width = (u - l) / m * 100 if m > 0 else 0
+    percent_b = (preco - l) / (u - l) * 100 if (u - l) > 0 else 50
+    
+    # Squeeze detection (bandwidth < 4%)
+    squeeze = width < 4.0
+    
+    return {
+        "upper": round(u, 2),
+        "middle": round(m, 2),
+        "lower": round(l, 2),
+        "width": round(width, 2),
+        "percent_b": round(percent_b, 1),
+        "squeeze": squeeze,
+        "status": "SQUEEZE" if squeeze else ("SOBRECOMPRADO" if percent_b > 80 else "SOBREVENDIDO" if percent_b < 20 else "NEUTRO"),
+    }
+
+
+def calcular_estocastico(dados: pd.DataFrame, k_periodo: int = 14, d_periodo: int = 3) -> dict:
+    """Calcula Estocástico %K e %D"""
+    if len(dados) < k_periodo:
+        return {"k": 50, "d": 50, "status": "NEUTRO"}
+    low_min = dados['low'].rolling(window=k_periodo).min()
+    high_max = dados['high'].rolling(window=k_periodo).max()
+    denom = high_max - low_min
+    k = ((dados['close'] - low_min) / denom.replace(0, np.nan)) * 100
+    k = k.fillna(50)
+    d = k.rolling(window=d_periodo).mean().fillna(50)
+    
+    k_val = float(k.iloc[-1])
+    d_val = float(d.iloc[-1])
+    
+    # Status
+    if k_val > 80 and d_val > 80:
+        status = "SOBRECOMPRADO"
+    elif k_val < 20 and d_val < 20:
+        status = "SOBREVENDIDO"
+    elif k_val > d_val and k.iloc[-2] <= d.iloc[-2]:
+        status = "CRUZAMENTO_ALTA"
+    elif k_val < d_val and k.iloc[-2] >= d.iloc[-2]:
+        status = "CRUZAMENTO_BAIXA"
+    else:
+        status = "NEUTRO"
+    
+    return {
+        "k": round(k_val, 1),
+        "d": round(d_val, 1),
+        "status": status,
+    }
+
+
+def calcular_adx(dados: pd.DataFrame, periodo: int = 14) -> dict:
+    """Calcula ADX, DI+ e DI-"""
+    if len(dados) < periodo + 1:
+        return {"adx": 0, "di_plus": 0, "di_minus": 0, "status": "NEUTRO", "forca": "FRACO"}
+    
+    high = dados['high']
+    low = dados['low']
+    close = dados['close']
+    
+    # True Range
+    tr1 = high - low
+    tr2 = abs(high - close.shift(1))
+    tr3 = abs(low - close.shift(1))
+    tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+    
+    # +DM and -DM
+    up_move = high - high.shift(1)
+    down_move = low.shift(1) - low
+    
+    plus_dm = np.where((up_move > down_move) & (up_move > 0), up_move, 0)
+    minus_dm = np.where((down_move > up_move) & (down_move > 0), down_move, 0)
+    
+    plus_dm = pd.Series(plus_dm, index=dados.index)
+    minus_dm = pd.Series(minus_dm, index=dados.index)
+    
+    # Smoothed TR, +DM, -DM
+    atr = tr.rolling(window=periodo, min_periods=1).mean()
+    plus_di = 100 * (plus_dm.rolling(window=periodo, min_periods=1).mean() / atr.replace(0, np.nan))
+    minus_di = 100 * (minus_dm.rolling(window=periodo, min_periods=1).mean() / atr.replace(0, np.nan))
+    
+    plus_di = plus_di.fillna(0)
+    minus_di = minus_di.fillna(0)
+    
+    # DX and ADX
+    dx = 100 * abs(plus_di - minus_di) / (plus_di + minus_di).replace(0, np.nan)
+    dx = dx.fillna(0)
+    adx = dx.rolling(window=periodo, min_periods=1).mean()
+    
+    adx_val = float(adx.iloc[-1])
+    di_p = float(plus_di.iloc[-1])
+    di_m = float(minus_di.iloc[-1])
+    
+    # Força da tendência
+    if adx_val > 50:
+        forca = "MUITO_FORTE"
+    elif adx_val > 25:
+        forca = "FORTE"
+    elif adx_val > 20:
+        forca = "MODERADO"
+    else:
+        forca = "FRACO"
+    
+    # Status
+    if di_p > di_m and adx_val > 20:
+        status = "ALTA"
+    elif di_m > di_p and adx_val > 20:
+        status = "BAIXA"
+    else:
+        status = "NEUTRO"
+    
+    return {
+        "adx": round(adx_val, 1),
+        "di_plus": round(di_p, 1),
+        "di_minus": round(di_m, 1),
+        "status": status,
+        "forca": forca,
+    }
+
+
+def calcular_obv(dados: pd.DataFrame) -> dict:
+    """Calcula On-Balance Volume (OBV)"""
+    if len(dados) < 2:
+        return {"obv": 0, "obv_sma": 0, "status": "NEUTRO", "divergencia": "NENHUMA"}
+    
+    close = dados['close']
+    volume = dados['volume']
+    
+    obv = pd.Series(0.0, index=dados.index)
+    for i in range(1, len(dados)):
+        if close.iloc[i] > close.iloc[i-1]:
+            obv.iloc[i] = obv.iloc[i-1] + volume.iloc[i]
+        elif close.iloc[i] < close.iloc[i-1]:
+            obv.iloc[i] = obv.iloc[i-1] - volume.iloc[i]
+        else:
+            obv.iloc[i] = obv.iloc[i-1]
+    
+    obv_sma = obv.rolling(window=20, min_periods=1).mean()
+    obv_val = float(obv.iloc[-1])
+    obv_sma_val = float(obv_sma.iloc[-1])
+    
+    # Divergência: preço sobe mas OBV cai (ou vice-versa)
+    if len(dados) >= 10:
+        preco_trend = close.iloc[-1] - close.iloc[-10]
+        obv_trend = obv.iloc[-1] - obv.iloc[-10]
+        if preco_trend > 0 and obv_trend < 0:
+            divergencia = "BAIXA"  # Bearish divergence
+        elif preco_trend < 0 and obv_trend > 0:
+            divergencia = "ALTA"  # Bullish divergence
+        else:
+            divergencia = "NENHUMA"
+    else:
+        divergencia = "NENHUMA"
+    
+    return {
+        "obv": round(obv_val, 0),
+        "obv_sma": round(obv_sma_val, 0),
+        "status": "ALTA" if obv_val > obv_sma_val else "BAIXA",
+        "divergencia": divergencia,
+    }
+
+
+def calcular_ichimoku(dados: pd.DataFrame) -> dict:
+    """Calcula Ichimoku Cloud (Tenkan, Kijun, Senkou A/B, Chikou)"""
+    if len(dados) < 52:
+        return {"tenkan": 0, "kijun": 0, "senkou_a": 0, "senkou_b": 0, "status": "NEUTRO", "nuvem": "NEUTRO"}
+    
+    high = dados['high']
+    low = dados['low']
+    close = dados['close']
+    
+    # Tenkan-sen (Conversion Line) - 9 periods
+    tenkan = (high.rolling(9).max() + low.rolling(9).min()) / 2
+    # Kijun-sen (Base Line) - 26 periods
+    kijun = (high.rolling(26).max() + low.rolling(26).min()) / 2
+    # Senkou Span A - midpoint of Tenkan and Kijun (shifted 26)
+    senkou_a = ((tenkan + kijun) / 2)
+    # Senkou Span B - 52 period (shifted 26)
+    senkou_b = ((high.rolling(52).max() + low.rolling(52).min()) / 2)
+    
+    t = float(tenkan.iloc[-1])
+    k = float(kijun.iloc[-1])
+    sa = float(senkou_a.iloc[-1])
+    sb = float(senkou_b.iloc[-1])
+    preco = float(close.iloc[-1])
+    
+    # Cloud color
+    if sa > sb:
+        nuvem = "ALTA"
+    elif sa < sb:
+        nuvem = "BAIXA"
+    else:
+        nuvem = "NEUTRO"
+    
+    # Status
+    if preco > max(sa, sb) and t > k:
+        status = "FORTE_ALTA"
+    elif preco > max(sa, sb):
+        status = "ALTA"
+    elif preco < min(sa, sb) and t < k:
+        status = "FORTE_BAIXA"
+    elif preco < min(sa, sb):
+        status = "BAIXA"
+    else:
+        status = "DENTRO_NUVEM"
+    
+    return {
+        "tenkan": round(t, 2),
+        "kijun": round(k, 2),
+        "senkou_a": round(sa, 2),
+        "senkou_b": round(sb, 2),
+        "status": status,
+        "nuvem": nuvem,
+    }
+
+
+def calcular_pivot_points(dados: pd.DataFrame) -> dict:
+    """Calcula Pivot Points (clássico) baseado no dia anterior"""
+    if len(dados) < 2:
+        return {"pivot": 0, "r1": 0, "r2": 0, "r3": 0, "s1": 0, "s2": 0, "s3": 0, "posicao": "NEUTRO"}
+    
+    # Usar último candle completo como referência
+    h = float(dados['high'].iloc[-2])
+    l = float(dados['low'].iloc[-2])
+    c = float(dados['close'].iloc[-2])
+    
+    pivot = (h + l + c) / 3
+    r1 = 2 * pivot - l
+    s1 = 2 * pivot - h
+    r2 = pivot + (h - l)
+    s2 = pivot - (h - l)
+    r3 = h + 2 * (pivot - l)
+    s3 = l - 2 * (h - pivot)
+    
+    preco = float(dados['close'].iloc[-1])
+    if preco > r2:
+        posicao = "ACIMA_R2"
+    elif preco > r1:
+        posicao = "ACIMA_R1"
+    elif preco > pivot:
+        posicao = "ACIMA_PIVOT"
+    elif preco > s1:
+        posicao = "ABAIXO_PIVOT"
+    elif preco > s2:
+        posicao = "ABAIXO_S1"
+    else:
+        posicao = "ABAIXO_S2"
+    
+    return {
+        "pivot": round(pivot, 2),
+        "r1": round(r1, 2),
+        "r2": round(r2, 2),
+        "r3": round(r3, 2),
+        "s1": round(s1, 2),
+        "s2": round(s2, 2),
+        "s3": round(s3, 2),
+        "posicao": posicao,
+    }
+
+
+def calcular_vwap_bands(dados: pd.DataFrame, desvios: float = 2.0) -> dict:
+    """Calcula VWAP com bandas de desvio padrão"""
+    if len(dados) < 5:
+        return {"vwap": 0, "upper_1": 0, "upper_2": 0, "lower_1": 0, "lower_2": 0, "posicao": "NEUTRO"}
+    tp = (dados['high'] + dados['low'] + dados['close']) / 3
+    vol = dados['volume'].replace(0, np.nan)
+    cum_tp_vol = (tp * vol).cumsum()
+    cum_vol = vol.cumsum()
+    vwap = cum_tp_vol / cum_vol
+    
+    # Standard deviation of VWAP
+    vwap_sq = ((tp - vwap) ** 2 * vol).cumsum() / cum_vol
+    vwap_std = np.sqrt(vwap_sq)
+    
+    v = float(vwap.iloc[-1])
+    s = float(vwap_std.iloc[-1]) if not np.isnan(vwap_std.iloc[-1]) else 0
+    preco = float(dados['close'].iloc[-1])
+    
+    upper_1 = v + s
+    upper_2 = v + s * desvios
+    lower_1 = v - s
+    lower_2 = v - s * desvios
+    
+    if preco > upper_2:
+        posicao = "ACIMA_BANDA2"
+    elif preco > upper_1:
+        posicao = "ACIMA_BANDA1"
+    elif preco > v:
+        posicao = "ACIMA_VWAP"
+    elif preco > lower_1:
+        posicao = "ABAIXO_VWAP"
+    elif preco > lower_2:
+        posicao = "ABAIXO_BANDA1"
+    else:
+        posicao = "ABAIXO_BANDA2"
+    
+    return {
+        "vwap": round(v, 2),
+        "upper_1": round(upper_1, 2),
+        "upper_2": round(upper_2, 2),
+        "lower_1": round(lower_1, 2),
+        "lower_2": round(lower_2, 2),
+        "posicao": posicao,
+    }
+
+
+
 def gerar_sinais(
     dados: pd.DataFrame,
     fibonacci: FibonacciLevels,
@@ -1256,6 +1579,16 @@ def analisar_completo(dados: pd.DataFrame, timeframe: str, ativo: str) -> dict:
 
     pullback_info = detectar_pullback(dados, tendencia)
 
+
+    # === Indicadores extras ===
+    bollinger = calcular_bollinger(dados)
+    estocastico = calcular_estocastico(dados)
+    adx = calcular_adx(dados)
+    obv = calcular_obv(dados)
+    ichimoku = calcular_ichimoku(dados)
+    pivot_points = calcular_pivot_points(dados)
+    vwap_bands = calcular_vwap_bands(dados)
+
     sinais = gerar_sinais(dados, fibonacci, rsi_atual, macd_v, macd_s, macd_h,
         volume, violinada, tendencia=tendencia, pullback_info=pullback_info,
         lateralizacao=lateralizacao, vwap_atual=vwap_atual)
@@ -1376,4 +1709,11 @@ def analisar_completo(dados: pd.DataFrame, timeframe: str, ativo: str) -> dict:
         "pullback": pullback_info,
         "horario_operacional": horario_op,
         "gestao_risco": gestao.status_completo(),
+        "bollinger": bollinger,
+        "estocastico": estocastico,
+        "adx": adx,
+        "obv": obv,
+        "ichimoku": ichimoku,
+        "pivot_points": pivot_points,
+        "vwap_bands": vwap_bands,
     }
