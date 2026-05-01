@@ -615,6 +615,55 @@ async def get_demo(ativo: str = Query("WIN", description="Ativo: WIN ou WDO")):
     })
 
 
+
+@app.get("/api/correlacao")
+async def get_correlacao():
+    """Correlação WIN/WDO em tempo real"""
+    from analysis_engine import analisar_correlacao_ativos
+    try:
+        dados_win = await provider.obter_dados("WIN", "5m")
+        dados_wdo = await provider.obter_dados("WDO", "5m")
+        resultado = analisar_correlacao_ativos(dados_win, dados_wdo)
+        return resultado
+    except Exception as e:
+        return {"disponivel": False, "erro": str(e)}
+
+
+@app.get("/api/zero-loss")
+async def get_zero_loss(
+    ativo: str = Query("WIN"),
+    entrada: float = Query(0),
+    atual: float = Query(0),
+    alvo: float = Query(0),
+    stop: float = Query(0),
+    tipo: str = Query("COMPRA"),
+):
+    """Calcula proteção Zero Loss para uma posição"""
+    from analysis_engine import ZeroLossProtection, calcular_atr_series
+    try:
+        dados = await provider.obter_dados(ativo, "5m")
+        atr = float(calcular_atr_series(dados).iloc[-1]) if len(dados) > 14 else 100
+        
+        zlp = ZeroLossProtection(ativo)
+        resultado = zlp.gestao_posicao_completa(entrada, atual, alvo, stop, atr, tipo)
+        resultado["ativo"] = ativo
+        resultado["atr_atual"] = round(atr, 2)
+        return resultado
+    except Exception as e:
+        return {"erro": str(e)}
+
+
+@app.get("/api/absorcao")
+async def get_absorcao(ativo: str = Query("WIN")):
+    """Detecta absorção no ativo"""
+    from analysis_engine import detectar_absorcao
+    try:
+        dados = await provider.obter_dados(ativo, "5m")
+        return detectar_absorcao(dados)
+    except Exception as e:
+        return {"erro": str(e)}
+
+
 def _calcular_tendencia_geral(painel: dict) -> str:
     """Calcula tendência geral baseada em múltiplos timeframes"""
     pesos = {"5m": 1, "15m": 2, "1h": 3, "4h": 4, "1d": 5}
