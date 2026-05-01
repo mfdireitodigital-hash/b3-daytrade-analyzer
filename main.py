@@ -8,12 +8,12 @@ Endpoints:
   GET /api/painel    → Painel multi-timeframe
   GET /api/sinais    → Sinais ativos de entrada
   GET /api/status    → Status do sistema
-"""h
+"""
 
 import os
 import json
 import asyncio
-import loggingh
+import logging
 from datetime import datetime
 from contextlib import asynccontextmanager
 
