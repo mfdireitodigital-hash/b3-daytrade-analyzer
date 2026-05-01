@@ -926,9 +926,10 @@ async def get_replay(ativo: str = Query("WIN"), contratos: int = Query(1)):
 
     try:
         # Pegar velas em 3 timeframes
-        dados_5m = await data_provider.obter_dados(ativo_upper, "5m")
-        dados_15m = await data_provider.obter_dados(ativo_upper, "15m")
-        dados_1h = await data_provider.obter_dados(ativo_upper, "1h")
+        provider = app_state["provider"]
+        dados_5m = await provider.obter_dados(ativo_upper, "5m")
+        dados_15m = await provider.obter_dados(ativo_upper, "15m")
+        dados_1h = await provider.obter_dados(ativo_upper, "1h")
 
         if dados_5m is None or len(dados_5m) < 50:
             return JSONResponse({"erro": "Dados insuficientes para replay (5m)"})
@@ -1189,7 +1190,7 @@ async def get_replay(ativo: str = Query("WIN"), contratos: int = Query(1)):
         return JSONResponse({
             "dia": dia_str,
             "ativo": ativo_upper,
-            "contrato": data_provider.get_contrato_info(ativo_upper).get("ticker_b3", ativo_upper),
+            "contrato": provider.get_contrato_info(ativo_upper).get("ticker_b3", ativo_upper),
             "contratos": contratos,
             "valor_ponto": valor_ponto,
             "mercado": {
