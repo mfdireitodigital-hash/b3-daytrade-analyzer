@@ -97,6 +97,67 @@
             letter-spacing: 0.5px;
         }
         .login-topbar-btn:hover { background: #16a34a; }
+        /* Centered login */
+        .login-center {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .login-box {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 40px 36px 32px;
+            text-align: center;
+            width: 380px;
+            max-width: 95vw;
+        }
+        .login-logo {
+            font-size: 26px;
+            font-weight: 800;
+            color: var(--text-primary);
+            letter-spacing: 2px;
+            margin-bottom: 4px;
+        }
+        .login-subtitle {
+            font-size: 12px;
+            color: var(--text-secondary);
+            letter-spacing: 3px;
+            margin-bottom: 28px;
+        }
+        .login-form {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        .login-form input {
+            padding: 12px 14px;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            color: var(--text-primary);
+            font-size: 14px;
+            outline: none;
+            width: 100%;
+        }
+        .login-form input:focus {
+            border-color: var(--accent-green);
+        }
+        .login-form .login-topbar-btn {
+            width: 100%;
+            padding: 12px;
+            font-size: 15px;
+            border-radius: 8px;
+            margin-top: 4px;
+        }
+        .login-footer-text {
+            margin-top: 20px;
+            font-size: 11px;
+            color: var(--text-muted);
+            letter-spacing: 1px;
+        }
+
         .login-error {
             color: var(--accent-red);
             font-size: 12px;
@@ -104,93 +165,6 @@
         }
 
         /* Preview area - last market data */
-        .preview-area {
-            flex: 1;
-            overflow-y: auto;
-            padding: 16px;
-        }
-        .preview-header {
-            text-align: center;
-            margin-bottom: 16px;
-        }
-        .preview-title {
-            font-size: 14px;
-            color: var(--text-secondary);
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            margin-bottom: 4px;
-        }
-        .preview-contract {
-            font-size: 20px;
-            font-weight: 700;
-            color: var(--text-primary);
-        }
-        .preview-date {
-            font-size: 12px;
-            color: var(--text-muted);
-            margin-top: 2px;
-        }
-        .preview-tabs {
-            display: flex;
-            justify-content: center;
-            gap: 8px;
-            margin-bottom: 16px;
-        }
-        .preview-tab {
-            padding: 8px 24px;
-            background: var(--bg-card);
-            border: 1px solid var(--border);
-            border-radius: 6px;
-            color: var(--text-secondary);
-            cursor: pointer;
-            font-size: 13px;
-            font-weight: 600;
-        }
-        .preview-tab:hover { border-color: var(--accent-green); color: var(--text-primary); }
-        .preview-tab.active {
-            background: var(--accent-green);
-            border-color: var(--accent-green);
-            color: #000;
-        }
-        .preview-grid {
-            display: grid;
-            grid-template-columns: 1fr 300px;
-            gap: 12px;
-            max-width: 1200px;
-            margin: 0 auto;
-        }
-        @media (max-width: 768px) {
-            .preview-grid { grid-template-columns: 1fr; }
-            .login-topbar-form input { width: 120px; }
-        }
-        .preview-chart {
-            background: var(--bg-secondary);
-            border: 1px solid var(--border);
-            border-radius: 8px;
-            padding: 12px;
-            min-height: 350px;
-        }
-        .preview-sidebar {
-            display: flex;
-            flex-direction: column;
-            gap: 12px;
-        }
-        .preview-card {
-            background: var(--bg-secondary);
-            border: 1px solid var(--border);
-            border-radius: 8px;
-            padding: 14px;
-        }
-        .preview-card-title {
-            font-size: 11px;
-            font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 0.8px;
-            color: var(--text-muted);
-            margin-bottom: 10px;
-            padding-bottom: 6px;
-            border-bottom: 1px solid var(--border);
-        }
         .stat-row {
             display: flex;
             justify-content: space-between;
@@ -214,14 +188,6 @@
         .sim-card-label { font-size: 10px; color: var(--text-muted); }
         .sim-card-value { font-size: 14px; font-weight: 700; font-family: monospace; margin-top: 2px; }
         .sim-card-pts { font-size: 9px; color: var(--text-muted); }
-        .preview-footer {
-            text-align: center;
-            margin-top: 16px;
-            padding: 12px;
-            font-size: 12px;
-            color: var(--text-muted);
-        }
-
         /* ============================================= */
         /* DASHBOARD                                     */
         /* ============================================= */
@@ -701,52 +667,17 @@
 <!-- LOGIN SCREEN + PREVIEW OF LAST MARKET         -->
 <!-- ============================================= -->
 <div class="login-screen" id="loginScreen">
-    <div class="login-topbar">
-        <div class="login-topbar-logo">ANALISE B3 - 24/7</div>
-        <div class="login-topbar-form">
-            <input type="text" id="loginUser" placeholder="Usuario" autocomplete="off" autocapitalize="off">
-            <input type="password" id="loginPass" placeholder="Senha">
-            <button class="login-topbar-btn" id="loginBtn" onclick="fazerLogin()">ENTRAR</button>
-            <span class="login-error" id="loginError"></span>
-        </div>
-    </div>
-    <div class="preview-area">
-        <div class="preview-header">
-            <div class="preview-title">ULTIMO PREGAO</div>
-            <div class="preview-contract" id="previewContract">Carregando...</div>
-            <div class="preview-date" id="previewDate"></div>
-        </div>
-        <div class="preview-tabs">
-            <div class="preview-tab active" data-ativo="WIN" onclick="trocarPreview('WIN')">MINI-INDICE (WIN)</div>
-            <div class="preview-tab" data-ativo="WDO" onclick="trocarPreview('WDO')">MINI-DOLAR (WDO)</div>
-        </div>
-        <div class="preview-grid">
-            <div class="preview-chart">
-                <div id="previewChartContainer" style="width:100%;height:320px;"></div>
+    <div class="login-center">
+        <div class="login-box">
+            <div class="login-logo">ANALISE B3 - 24/7</div>
+            <div class="login-subtitle">MINI-INDICE & MINI-DOLAR</div>
+            <div class="login-form">
+                <input type="text" id="loginUser" placeholder="Usuario" autocomplete="off" autocapitalize="off">
+                <input type="password" id="loginPass" placeholder="Senha">
+                <button class="login-topbar-btn" id="loginBtn" onclick="fazerLogin()">ENTRAR</button>
+                <span class="login-error" id="loginError"></span>
             </div>
-            <div class="preview-sidebar">
-                <div class="preview-card">
-                    <div class="preview-card-title">Indicadores</div>
-                    <div id="previewIndicators">
-                        <div class="loading"><span class="spinner"></span> Carregando...</div>
-                    </div>
-                </div>
-                <div class="preview-card">
-                    <div class="preview-card-title">Simulacao de Capital</div>
-                    <div id="previewSimulacao">
-                        <div class="loading"><span class="spinner"></span> Carregando...</div>
-                    </div>
-                </div>
-                <div class="preview-card">
-                    <div class="preview-card-title">Resultado Demo</div>
-                    <div id="previewDemo">
-                        <div class="loading"><span class="spinner"></span> Carregando...</div>
-                    </div>
-                </div>
-            </div>
-        </div>
-        <div class="preview-footer">
-            Faca login para acessar analise completa em tempo real, sinais de entrada, gestao de risco e mais.
+            <div class="login-footer-text">Analise tecnica em tempo real</div>
         </div>
     </div>
 </div>
@@ -939,7 +870,6 @@ let state = {
     countdownSeconds: 300,
     countdownInterval: null,
     usuarioLogado: null,
-    previewAtivo: 'WIN',
 };
 
 let currentUserAdmin = false;
@@ -1027,139 +957,7 @@ function fazerLogout() {
 // =====================================================
 // PREVIEW - LAST MARKET DATA ON LANDING PAGE
 // =====================================================
-let previewChart = null;
 
-async function carregarPreview(ativo) {
-    state.previewAtivo = ativo;
-
-    // Load contract info
-    try {
-        const cRes = await fetch('/api/contrato?ativo=' + ativo);
-        const cData = await cRes.json();
-        document.getElementById('previewContract').textContent = cData.nome || (ativo + ' - Contrato');
-    } catch(e) {
-        document.getElementById('previewContract').textContent = ativo;
-    }
-
-    // Load candles for chart
-    try {
-        const res = await fetch('/api/candles?ativo=' + ativo + '&timeframe=5m');
-        const data = await res.json();
-        const candles = data.candles || [];
-        if (candles.length > 0) {
-            const last = candles[candles.length - 1];
-            const lastDate = new Date(last.time);
-            document.getElementById('previewDate').textContent = lastDate.toLocaleDateString('pt-BR') + ' - ' + lastDate.toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'});
-            renderPreviewChart(candles);
-        }
-    } catch(e) { console.log('Preview candles error:', e); }
-
-    // Load analysis for indicators
-    try {
-        const aRes = await fetch('/api/analise?ativo=' + ativo + '&timeframe=5m');
-        const aData = await aRes.json();
-        const a = aData.analise || aData;
-        let indHtml = '';
-        indHtml += '<div class="stat-row"><span class="stat-label">Preco</span><span class="stat-value">' + ((a.preco_atual||0).toLocaleString('pt-BR')) + '</span></div>';
-        indHtml += '<div class="stat-row"><span class="stat-label">Tendencia</span><span class="stat-value" style="color:' + (a.tendencia==='ALTA'?'var(--accent-green)':a.tendencia==='BAIXA'?'var(--accent-red)':'var(--text-muted)') + '">' + (a.tendencia||'--') + '</span></div>';
-        indHtml += '<div class="stat-row"><span class="stat-label">RSI (14)</span><span class="stat-value">' + ((a.rsi||0).toFixed(1)) + '</span></div>';
-        indHtml += '<div class="stat-row"><span class="stat-label">VWAP</span><span class="stat-value" style="color:var(--accent-yellow)">' + ((a.vwap||0).toLocaleString('pt-BR')) + '</span></div>';
-        indHtml += '<div class="stat-row"><span class="stat-label">EMA 9</span><span class="stat-value" style="color:var(--accent-green)">' + ((a.ema_9||0).toLocaleString('pt-BR')) + '</span></div>';
-        indHtml += '<div class="stat-row"><span class="stat-label">EMA 21</span><span class="stat-value" style="color:var(--accent-orange)">' + ((a.ema_21||0).toLocaleString('pt-BR')) + '</span></div>';
-        indHtml += '<div class="stat-row"><span class="stat-label">ATR</span><span class="stat-value">' + ((a.atr||0).toFixed(1)) + '</span></div>';
-        indHtml += '<div class="stat-row"><span class="stat-label">MACD</span><span class="stat-value" style="color:' + ((a.macd_histograma||0)>=0?'var(--accent-green)':'var(--accent-red)') + '">' + ((a.macd_valor||0).toFixed(2)) + '</span></div>';
-        const lat = a.lateralizacao || {};
-        indHtml += '<div class="stat-row"><span class="stat-label">Lateral</span><span class="tag ' + (lat.lateral ? 'tag-red' : 'tag-green') + '">' + (lat.lateral ? 'SIM' : 'NAO') + '</span></div>';
-        document.getElementById('previewIndicators').innerHTML = indHtml;
-    } catch(e) {
-        document.getElementById('previewIndicators').innerHTML = '<div style="color:var(--text-muted);font-size:12px;">Dados indisponiveis</div>';
-    }
-
-    // Load capital simulation
-    try {
-        const sRes = await fetch('/api/simulacao-capital?ativo=' + ativo);
-        const sData = await sRes.json();
-        if (sData.simulacoes) {
-            let simHtml = '<div class="sim-grid">';
-            sData.simulacoes.forEach(s => {
-                const color = s.resultado >= 0 ? 'var(--accent-green)' : 'var(--accent-red)';
-                simHtml += '<div class="sim-card">';
-                simHtml += '<div class="sim-card-label">' + s.contratos + ' CT' + (s.contratos>1?'S':'') + '</div>';
-                simHtml += '<div class="sim-card-value" style="color:' + color + '">R$ ' + s.resultado.toLocaleString('pt-BR') + '</div>';
-                simHtml += '<div class="sim-card-pts">' + s.pontos + ' pts</div>';
-                simHtml += '</div>';
-            });
-            simHtml += '</div>';
-            document.getElementById('previewSimulacao').innerHTML = simHtml;
-        }
-    } catch(e) {
-        document.getElementById('previewSimulacao').innerHTML = '<div style="color:var(--text-muted);font-size:12px;">Indisponivel</div>';
-    }
-
-    // Load demo summary
-    try {
-        const dRes = await fetch('/api/demo?ativo=' + ativo);
-        const dData = await dRes.json();
-        const r = dData.resumo;
-        const saldoColor = r.saldo_pontos >= 0 ? 'var(--accent-green)' : 'var(--accent-red)';
-        let dHtml = '<div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; font-size:12px;">';
-        dHtml += '<div class="stat-row"><span class="stat-label">Operacoes</span><span class="stat-value">' + r.total + '</span></div>';
-        dHtml += '<div class="stat-row"><span class="stat-label">Wins</span><span class="stat-value" style="color:var(--accent-green)">' + r.wins + '</span></div>';
-        dHtml += '<div class="stat-row"><span class="stat-label">Losses</span><span class="stat-value" style="color:var(--accent-red)">' + r.losses + '</span></div>';
-        dHtml += '<div class="stat-row"><span class="stat-label">Acerto</span><span class="stat-value">' + r.taxa_acerto + '%</span></div>';
-        dHtml += '<div class="stat-row"><span class="stat-label">Pontos</span><span class="stat-value" style="color:' + saldoColor + '">' + (r.saldo_pontos>0?'+':'') + r.saldo_pontos + '</span></div>';
-        dHtml += '<div class="stat-row"><span class="stat-label">Financeiro</span><span class="stat-value" style="color:' + saldoColor + '">R$ ' + r.saldo_financeiro.toLocaleString('pt-BR') + '</span></div>';
-        dHtml += '</div>';
-        document.getElementById('previewDemo').innerHTML = dHtml;
-    } catch(e) {
-        document.getElementById('previewDemo').innerHTML = '<div style="color:var(--text-muted);font-size:12px;">Indisponivel</div>';
-    }
-}
-
-function renderPreviewChart(candles) {
-    const container = document.getElementById('previewChartContainer');
-    container.innerHTML = '';
-    const W = container.clientWidth;
-    const H = container.clientHeight || 320;
-
-    if (previewChart) { try { previewChart.remove(); } catch(e){} }
-
-    previewChart = LightweightCharts.createChart(container, {
-        width: W, height: H,
-        layout: { background: { type: 'solid', color: 'transparent' }, textColor: '#8b949e', fontSize: 10 },
-        grid: { vertLines: { color: 'rgba(255,255,255,0.03)' }, horzLines: { color: 'rgba(255,255,255,0.03)' } },
-        crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
-        rightPriceScale: { borderColor: 'rgba(255,255,255,0.1)' },
-        timeScale: { borderColor: 'rgba(255,255,255,0.1)', timeVisible: true, secondsVisible: false },
-    });
-
-    const series = previewChart.addCandlestickSeries({
-        upColor: '#22c55e', downColor: '#ef4444',
-        borderUpColor: '#22c55e', borderDownColor: '#ef4444',
-        wickUpColor: '#22c55e', wickDownColor: '#ef4444',
-    });
-
-    const mapped = candles.map(d => ({
-        time: Math.floor(new Date(d.time).getTime() / 1000),
-        open: d.open, high: d.high, low: d.low, close: d.close,
-    })).filter(c => !isNaN(c.time) && c.open > 0);
-
-    mapped.sort((a,b) => a.time - b.time);
-    const unique = [mapped[0]];
-    for (let i = 1; i < mapped.length; i++) {
-        if (mapped[i].time > unique[unique.length-1].time) unique.push(mapped[i]);
-    }
-    series.setData(unique);
-    previewChart.timeScale().fitContent();
-}
-
-function trocarPreview(ativo) {
-    document.querySelectorAll('.preview-tab').forEach(t => t.classList.toggle('active', t.dataset.ativo === ativo));
-    carregarPreview(ativo);
-}
-
-// Load preview on page load
-setTimeout(() => carregarPreview('WIN'), 300);
 
 // =====================================================
 // DEMO MODE
