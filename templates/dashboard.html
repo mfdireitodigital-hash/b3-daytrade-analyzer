@@ -2,8 +2,8 @@
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>B3 TRADE IRMÃOS DOMINGUES - Mini-Indice & Mini-Dolar</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>B3 TRADE IRMAOS DOMINGUES - Mini-Indice & Mini-Dolar</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-annotation/3.0.1/chartjs-plugin-annotation.min.js"></script>
     <style>
@@ -38,40 +38,334 @@
             background: var(--bg-primary);
             color: var(--text-primary);
             min-height: 100vh;
+            overflow-x: hidden;
         }
 
-        /* === HEADER === */
+        /* ============================================= */
+        /* LOGIN SCREEN                                  */
+        /* ============================================= */
+        .login-screen {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: var(--bg-primary);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+            transition: opacity 0.6s ease, transform 0.6s ease;
+        }
+        .login-screen.hidden {
+            opacity: 0;
+            transform: scale(1.1);
+            pointer-events: none;
+        }
+
+        .login-particles {
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            overflow: hidden;
+        }
+        .login-particle {
+            position: absolute;
+            width: 2px; height: 2px;
+            background: var(--accent-blue);
+            border-radius: 50%;
+            opacity: 0;
+            animation: floatParticle 6s infinite;
+        }
+        @keyframes floatParticle {
+            0% { opacity: 0; transform: translateY(100vh) scale(0); }
+            20% { opacity: 0.8; }
+            80% { opacity: 0.3; }
+            100% { opacity: 0; transform: translateY(-20vh) scale(1.5); }
+        }
+
+        .login-container {
+            position: relative;
+            z-index: 2;
+            width: 90%;
+            max-width: 420px;
+            text-align: center;
+        }
+        .login-logo {
+            font-size: 28px;
+            font-weight: 800;
+            background: linear-gradient(135deg, var(--accent-green), var(--accent-blue));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 6px;
+            letter-spacing: 1px;
+            animation: logoGlow 3s ease-in-out infinite;
+        }
+        @keyframes logoGlow {
+            0%, 100% { filter: brightness(1); }
+            50% { filter: brightness(1.3); }
+        }
+        .login-subtitle {
+            font-size: 13px;
+            color: var(--text-muted);
+            margin-bottom: 36px;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+        }
+        .login-box {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 36px 32px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+        }
+        .login-title {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 24px;
+            color: var(--text-primary);
+        }
+        .login-field {
+            margin-bottom: 18px;
+            text-align: left;
+        }
+        .login-field label {
+            display: block;
+            font-size: 12px;
+            color: var(--text-secondary);
+            margin-bottom: 6px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .login-field input {
+            width: 100%;
+            padding: 12px 16px;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            color: var(--text-primary);
+            font-size: 15px;
+            outline: none;
+            transition: border-color 0.3s;
+        }
+        .login-field input:focus {
+            border-color: var(--accent-blue);
+        }
+        .login-btn {
+            width: 100%;
+            padding: 14px;
+            background: linear-gradient(135deg, var(--accent-green), var(--accent-blue));
+            border: none;
+            border-radius: 8px;
+            color: #fff;
+            font-size: 15px;
+            font-weight: 700;
+            cursor: pointer;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            transition: transform 0.2s, box-shadow 0.3s;
+            margin-top: 8px;
+        }
+        .login-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(33, 150, 243, 0.3);
+        }
+        .login-btn:active { transform: translateY(0); }
+        .login-error {
+            color: var(--accent-red);
+            font-size: 13px;
+            margin-top: 12px;
+            min-height: 20px;
+        }
+        .login-version {
+            margin-top: 24px;
+            font-size: 11px;
+            color: var(--text-muted);
+        }
+
+        /* ============================================= */
+        /* LANDING / PRESENTATION SCREEN                 */
+        /* ============================================= */
+        .landing-screen {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: var(--bg-primary);
+            z-index: 8888;
+            display: none;
+            overflow: hidden;
+        }
+        .landing-screen.active { display: flex; align-items: center; justify-content: center; flex-direction: column; }
+        .landing-screen.exit {
+            animation: landingExit 1.2s ease-in-out forwards;
+        }
+        @keyframes landingExit {
+            0% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.8; transform: scale(1.05); }
+            100% { opacity: 0; transform: scale(0.9); pointer-events: none; }
+        }
+
+        .landing-bg-lines {
+            position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+            background:
+                linear-gradient(90deg, transparent 49.5%, rgba(33,150,243,0.03) 49.5%, rgba(33,150,243,0.03) 50.5%, transparent 50.5%),
+                linear-gradient(0deg, transparent 49.5%, rgba(0,200,83,0.03) 49.5%, rgba(0,200,83,0.03) 50.5%, transparent 50.5%);
+            background-size: 80px 80px;
+            animation: gridMove 20s linear infinite;
+        }
+        @keyframes gridMove {
+            0% { transform: translate(0, 0); }
+            100% { transform: translate(80px, 80px); }
+        }
+
+        .landing-content {
+            position: relative; z-index: 2;
+            text-align: center;
+            animation: landingFadeIn 1s ease-out;
+        }
+        @keyframes landingFadeIn {
+            0% { opacity: 0; transform: translateY(40px); }
+            100% { opacity: 1; transform: translateY(0); }
+        }
+
+        .landing-logo-big {
+            font-size: 42px;
+            font-weight: 900;
+            background: linear-gradient(135deg, var(--accent-green), var(--accent-blue), var(--accent-purple));
+            background-size: 200% 200%;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            animation: gradientShift 4s ease infinite;
+            margin-bottom: 8px;
+        }
+        @keyframes gradientShift {
+            0%, 100% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+        }
+
+        .landing-tagline {
+            font-size: 16px;
+            color: var(--text-secondary);
+            margin-bottom: 40px;
+            letter-spacing: 3px;
+            text-transform: uppercase;
+        }
+
+        .landing-features {
+            display: flex;
+            gap: 24px;
+            margin-bottom: 48px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+        .landing-feature {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 20px 24px;
+            width: 180px;
+            text-align: center;
+            opacity: 0;
+            animation: featureIn 0.6s ease-out forwards;
+        }
+        .landing-feature:nth-child(1) { animation-delay: 0.3s; }
+        .landing-feature:nth-child(2) { animation-delay: 0.5s; }
+        .landing-feature:nth-child(3) { animation-delay: 0.7s; }
+        .landing-feature:nth-child(4) { animation-delay: 0.9s; }
+        @keyframes featureIn {
+            0% { opacity: 0; transform: translateY(20px); }
+            100% { opacity: 1; transform: translateY(0); }
+        }
+
+        .feature-icon { font-size: 28px; margin-bottom: 10px; }
+        .feature-title {
+            font-size: 13px;
+            font-weight: 700;
+            color: var(--text-primary);
+            margin-bottom: 4px;
+        }
+        .feature-desc {
+            font-size: 11px;
+            color: var(--text-muted);
+        }
+
+        .landing-user-name {
+            font-size: 18px;
+            color: var(--accent-green);
+            margin-bottom: 24px;
+            opacity: 0;
+            animation: featureIn 0.6s ease-out 1.1s forwards;
+        }
+
+        .landing-enter-btn {
+            padding: 16px 48px;
+            background: linear-gradient(135deg, var(--accent-green), var(--accent-blue));
+            border: none;
+            border-radius: 8px;
+            color: #fff;
+            font-size: 16px;
+            font-weight: 700;
+            cursor: pointer;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            opacity: 0;
+            animation: featureIn 0.6s ease-out 1.3s forwards;
+            transition: transform 0.2s, box-shadow 0.3s;
+        }
+        .landing-enter-btn:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 12px 35px rgba(0,200,83,0.3);
+        }
+
+        /* ============================================= */
+        /* DASHBOARD ENTRANCE ANIMATION                  */
+        /* ============================================= */
+        .dashboard-wrapper {
+            display: none;
+            opacity: 0;
+        }
+        .dashboard-wrapper.active {
+            display: block;
+            animation: dashboardEnter 1s ease-out 0.3s forwards;
+        }
+        @keyframes dashboardEnter {
+            0% { opacity: 0; transform: translateY(30px); }
+            100% { opacity: 1; transform: translateY(0); }
+        }
+
+        /* ============================================= */
+        /* HEADER                                        */
+        /* ============================================= */
         .header {
             background: var(--bg-secondary);
             border-bottom: 1px solid var(--border);
-            padding: 12px 20px;
+            padding: 10px 16px;
             display: flex;
             justify-content: space-between;
             align-items: center;
             position: sticky;
             top: 0;
             z-index: 100;
+            flex-wrap: wrap;
+            gap: 8px;
         }
 
         .header-left {
             display: flex;
             align-items: center;
-            gap: 16px;
+            gap: 12px;
+            flex-wrap: wrap;
         }
 
         .logo {
-            font-size: 20px;
+            font-size: 18px;
             font-weight: 700;
             background: linear-gradient(135deg, var(--accent-green), var(--accent-blue));
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
+            white-space: nowrap;
         }
 
         .header-status {
             display: flex;
             align-items: center;
-            gap: 8px;
-            font-size: 12px;
+            gap: 6px;
+            font-size: 11px;
             color: var(--text-secondary);
         }
 
@@ -81,6 +375,7 @@
             border-radius: 50%;
             background: var(--accent-green);
             animation: pulse 2s infinite;
+            flex-shrink: 0;
         }
 
         @keyframes pulse {
@@ -90,25 +385,54 @@
 
         .header-controls {
             display: flex;
-            gap: 8px;
+            gap: 6px;
+            align-items: center;
+            flex-wrap: wrap;
         }
+
+        .user-badge {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 6px 10px;
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+        .user-badge strong { color: var(--accent-green); }
+
+        .btn-logout {
+            padding: 6px 12px;
+            background: transparent;
+            border: 1px solid var(--accent-red);
+            color: var(--accent-red);
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 11px;
+            transition: all 0.2s;
+        }
+        .btn-logout:hover { background: var(--accent-red); color: #fff; }
 
         /* === TABS DE ATIVO === */
         .ativo-tabs {
             display: flex;
             background: var(--bg-secondary);
             border-bottom: 1px solid var(--border);
-            padding: 0 20px;
+            padding: 0 16px;
+            overflow-x: auto;
         }
 
         .ativo-tab {
-            padding: 10px 24px;
+            padding: 10px 20px;
             cursor: pointer;
             border-bottom: 2px solid transparent;
             color: var(--text-secondary);
             font-weight: 500;
             font-size: 14px;
             transition: all 0.2s;
+            white-space: nowrap;
         }
 
         .ativo-tab:hover { color: var(--text-primary); }
@@ -120,14 +444,15 @@
         /* === TIMEFRAME SELECTOR === */
         .tf-bar {
             display: flex;
-            padding: 8px 20px;
+            padding: 8px 16px;
             gap: 4px;
             background: var(--bg-secondary);
             border-bottom: 1px solid var(--border);
+            overflow-x: auto;
         }
 
         .tf-btn {
-            padding: 6px 16px;
+            padding: 6px 14px;
             border: 1px solid var(--border);
             background: transparent;
             color: var(--text-secondary);
@@ -136,6 +461,7 @@
             font-size: 13px;
             font-weight: 500;
             transition: all 0.2s;
+            white-space: nowrap;
         }
 
         .tf-btn:hover { border-color: var(--accent-blue); color: var(--text-primary); }
@@ -145,14 +471,11 @@
             color: #fff;
         }
 
-        .tf-btn.op-principal {
-            position: relative;
-        }
+        .tf-btn.op-principal { position: relative; }
         .tf-btn.op-principal::after {
             content: 'OP';
             position: absolute;
-            top: -6px;
-            right: -6px;
+            top: -6px; right: -6px;
             background: var(--accent-orange);
             color: #000;
             font-size: 8px;
@@ -163,26 +486,34 @@
 
         /* === BTN GERAL === */
         .btn {
-            padding: 8px 16px;
+            padding: 6px 14px;
             border: 1px solid var(--border);
             background: var(--bg-card);
             color: var(--text-primary);
             border-radius: 6px;
             cursor: pointer;
-            font-size: 13px;
+            font-size: 12px;
             transition: all 0.2s;
+            white-space: nowrap;
         }
         .btn:hover { border-color: var(--accent-blue); }
         .btn-primary { background: var(--accent-blue); border-color: var(--accent-blue); color: #fff; }
         .btn-primary:hover { background: #1976d2; }
+        .btn-demo {
+            background: linear-gradient(135deg, var(--accent-purple), var(--accent-blue));
+            border-color: var(--accent-purple);
+            color: #fff;
+        }
+        .btn-demo:hover { opacity: 0.9; }
 
         /* === SINAL DESTAQUE === */
         .sinal-banner {
-            padding: 12px 20px;
+            padding: 10px 16px;
             display: flex;
             align-items: center;
-            gap: 16px;
-            font-size: 14px;
+            gap: 12px;
+            font-size: 13px;
+            flex-wrap: wrap;
         }
 
         .sinal-banner.compra { background: rgba(0, 200, 83, 0.1); border-bottom: 2px solid var(--accent-green); }
@@ -193,7 +524,7 @@
             padding: 4px 12px;
             border-radius: 4px;
             font-weight: 700;
-            font-size: 13px;
+            font-size: 12px;
             text-transform: uppercase;
         }
         .sinal-badge.compra { background: var(--accent-green); color: #000; }
@@ -201,7 +532,7 @@
         .sinal-badge.neutro { background: var(--text-muted); color: #fff; }
 
         .confianca-bar {
-            width: 100px;
+            width: 80px;
             height: 6px;
             background: var(--bg-hover);
             border-radius: 3px;
@@ -216,7 +547,7 @@
         /* === GRID PRINCIPAL === */
         .main-grid {
             display: grid;
-            grid-template-columns: 1fr 340px;
+            grid-template-columns: 1fr 320px;
             gap: 1px;
             background: var(--border);
             min-height: calc(100vh - 160px);
@@ -224,7 +555,7 @@
 
         .chart-area {
             background: var(--bg-primary);
-            padding: 16px;
+            padding: 12px;
         }
 
         .sidebar {
@@ -258,7 +589,7 @@
 
         /* === SIDEBAR SECTIONS === */
         .sidebar-section {
-            padding: 12px 16px;
+            padding: 12px 14px;
             border-bottom: 1px solid var(--border);
         }
 
@@ -276,18 +607,18 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding: 6px 0;
-            font-size: 13px;
+            padding: 5px 0;
+            font-size: 12px;
         }
 
         .indicator-label { color: var(--text-secondary); }
-        .indicator-value { font-weight: 600; font-family: 'SF Mono', 'Cascadia Code', monospace; }
+        .indicator-value { font-weight: 600; font-family: 'SF Mono', 'Cascadia Code', monospace; font-size: 12px; }
 
         .tag {
             display: inline-block;
             padding: 2px 8px;
             border-radius: 3px;
-            font-size: 11px;
+            font-size: 10px;
             font-weight: 600;
         }
         .tag-green { background: rgba(0, 200, 83, 0.15); color: var(--accent-green); }
@@ -301,8 +632,8 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding: 4px 0;
-            font-size: 12px;
+            padding: 3px 0;
+            font-size: 11px;
             font-family: 'SF Mono', 'Cascadia Code', monospace;
         }
 
@@ -313,18 +644,18 @@
         }
 
         .fib-dot {
-            width: 8px;
-            height: 8px;
+            width: 7px;
+            height: 7px;
             border-radius: 50%;
         }
 
         /* === VOLUME BAR === */
         .volume-bar-container {
             display: flex;
-            height: 20px;
+            height: 18px;
             border-radius: 4px;
             overflow: hidden;
-            margin: 8px 0;
+            margin: 6px 0;
         }
 
         .volume-bar-buy {
@@ -352,7 +683,7 @@
             display: flex;
             align-items: center;
             gap: 10px;
-            margin-top: 8px;
+            margin-top: 6px;
         }
 
         .meter-track {
@@ -382,7 +713,7 @@
 
         .tf-cell {
             background: var(--bg-card);
-            padding: 8px;
+            padding: 8px 4px;
             text-align: center;
         }
 
@@ -399,7 +730,7 @@
         }
 
         .tf-cell-sub {
-            font-size: 10px;
+            font-size: 9px;
             color: var(--text-secondary);
             margin-top: 2px;
         }
@@ -407,13 +738,13 @@
         /* === CHART CONTAINERS === */
         .chart-container {
             position: relative;
-            height: 400px;
+            height: 350px;
             margin-bottom: 8px;
         }
 
         .chart-sub-container {
             position: relative;
-            height: 150px;
+            height: 120px;
             margin-bottom: 8px;
         }
 
@@ -435,7 +766,7 @@
             background: var(--bg-card);
             border: 1px solid var(--border);
             border-radius: 6px;
-            padding: 12px;
+            padding: 10px;
             margin-bottom: 8px;
         }
 
@@ -445,9 +776,9 @@
         .sinal-detail {
             display: grid;
             grid-template-columns: 1fr 1fr;
-            gap: 6px;
-            margin-top: 8px;
-            font-size: 12px;
+            gap: 4px;
+            margin-top: 6px;
+            font-size: 11px;
         }
 
         .sinal-detail-item {
@@ -456,13 +787,13 @@
         }
 
         .motivo-list {
-            margin-top: 8px;
-            font-size: 11px;
+            margin-top: 6px;
+            font-size: 10px;
             color: var(--text-secondary);
         }
 
         .motivo-item {
-            padding: 3px 0;
+            padding: 2px 0;
             padding-left: 12px;
             position: relative;
         }
@@ -481,11 +812,11 @@
 
         /* === COUNTDOWN === */
         .countdown {
-            font-size: 12px;
+            font-size: 11px;
             color: var(--text-muted);
             display: flex;
             align-items: center;
-            gap: 6px;
+            gap: 4px;
         }
 
         .countdown-time {
@@ -496,14 +827,14 @@
 
         /* === PRECO DISPLAY === */
         .preco-display {
-            font-size: 28px;
+            font-size: 24px;
             font-weight: 700;
             font-family: 'SF Mono', 'Cascadia Code', monospace;
             margin-bottom: 4px;
         }
 
         .preco-change {
-            font-size: 14px;
+            font-size: 13px;
             font-weight: 600;
         }
 
@@ -515,23 +846,116 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            height: 200px;
+            height: 100px;
             color: var(--text-muted);
+            font-size: 12px;
         }
 
         .spinner {
-            width: 24px;
-            height: 24px;
+            width: 20px;
+            height: 20px;
             border: 2px solid var(--border);
             border-top-color: var(--accent-blue);
             border-radius: 50%;
             animation: spin 0.8s linear infinite;
-            margin-right: 12px;
+            margin-right: 10px;
         }
 
         @keyframes spin { to { transform: rotate(360deg); } }
 
-        /* === RESPONSIVE === */
+        /* ============================================= */
+        /* DEMO MODE                                     */
+        /* ============================================= */
+        .demo-overlay {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(10,14,23,0.95);
+            z-index: 500;
+            display: none;
+            overflow-y: auto;
+            padding: 20px;
+        }
+        .demo-overlay.active { display: block; }
+
+        .demo-container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        .demo-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 24px;
+            flex-wrap: wrap;
+            gap: 12px;
+        }
+        .demo-title {
+            font-size: 22px;
+            font-weight: 700;
+            background: linear-gradient(135deg, var(--accent-purple), var(--accent-blue));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .demo-close {
+            padding: 8px 16px;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            color: var(--text-primary);
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+        }
+        .demo-summary {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 12px;
+            margin-bottom: 24px;
+        }
+        .demo-stat {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 16px;
+            text-align: center;
+        }
+        .demo-stat-value {
+            font-size: 24px;
+            font-weight: 700;
+            font-family: 'SF Mono', monospace;
+        }
+        .demo-stat-label {
+            font-size: 11px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            margin-top: 4px;
+        }
+        .demo-ops-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12px;
+        }
+        .demo-ops-table th {
+            background: var(--bg-secondary);
+            padding: 10px 8px;
+            text-align: left;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            font-size: 10px;
+            letter-spacing: 0.5px;
+            border-bottom: 1px solid var(--border);
+            position: sticky;
+            top: 0;
+        }
+        .demo-ops-table td {
+            padding: 10px 8px;
+            border-bottom: 1px solid var(--border);
+            color: var(--text-primary);
+        }
+        .demo-ops-table tr:hover { background: var(--bg-hover); }
+
+        /* ============================================= */
+        /* RESPONSIVE MOBILE                             */
+        /* ============================================= */
         @media (max-width: 900px) {
             .main-grid {
                 grid-template-columns: 1fr;
@@ -540,29 +964,160 @@
                 max-height: none;
             }
             .multi-tf-grid {
-                grid-template-columns: repeat(3, 1fr);
+                grid-template-columns: repeat(5, 1fr);
             }
+            .chart-container { height: 280px; }
+            .chart-sub-container { height: 100px; }
+        }
+
+        @media (max-width: 600px) {
+            .header {
+                padding: 8px 10px;
+            }
+            .logo { font-size: 14px; }
+            .header-controls { gap: 4px; }
+            .ativo-tab { padding: 8px 14px; font-size: 13px; }
+            .tf-btn { padding: 5px 10px; font-size: 12px; }
+            .sinal-banner { padding: 8px 10px; gap: 8px; }
+            .preco-display { font-size: 20px; }
+            .chart-area { padding: 8px; }
+            .chart-container { height: 240px; }
+            .chart-sub-container { height: 90px; }
+            .sidebar-section { padding: 10px; }
+            .landing-logo-big { font-size: 26px; }
+            .landing-tagline { font-size: 12px; letter-spacing: 1px; margin-bottom: 24px; }
+            .landing-features { gap: 10px; }
+            .landing-feature { width: 140px; padding: 14px 12px; }
+            .feature-icon { font-size: 22px; }
+            .login-logo { font-size: 22px; }
+            .login-box { padding: 24px 20px; }
+            .demo-title { font-size: 18px; }
+            .demo-stat-value { font-size: 18px; }
+            .demo-ops-table { font-size: 11px; }
+            .demo-ops-table th, .demo-ops-table td { padding: 8px 4px; }
+            .user-badge { display: none; }
+            .countdown span:first-child { display: none; }
+        }
+
+        @media (max-width: 380px) {
+            .logo { font-size: 12px; }
+            .landing-logo-big { font-size: 22px; }
+            .landing-feature { width: 120px; padding: 10px 8px; }
         }
     </style>
 </head>
 <body>
+
+<!-- ============================================= -->
+<!-- LOGIN SCREEN                                  -->
+<!-- ============================================= -->
+<div class="login-screen" id="loginScreen">
+    <div class="login-particles" id="loginParticles"></div>
+    <div class="login-container">
+        <div class="login-logo">B3 TRADE IRMAOS DOMINGUES</div>
+        <div class="login-subtitle">Analise Tecnica Inteligente</div>
+        <div class="login-box">
+            <div class="login-title">Acesso ao Sistema</div>
+            <div class="login-field">
+                <label>Usuario</label>
+                <input type="text" id="loginUser" placeholder="Digite seu usuario" autocomplete="off" autocapitalize="off">
+            </div>
+            <div class="login-field">
+                <label>Senha</label>
+                <input type="password" id="loginPass" placeholder="Digite sua senha">
+            </div>
+            <button class="login-btn" id="loginBtn" onclick="fazerLogin()">ENTRAR</button>
+            <div class="login-error" id="loginError"></div>
+        </div>
+        <div class="login-version">v2.0.0 - Estrategia Institucional</div>
+    </div>
+</div>
+
+<!-- ============================================= -->
+<!-- LANDING / PRESENTATION SCREEN                 -->
+<!-- ============================================= -->
+<div class="landing-screen" id="landingScreen">
+    <div class="landing-bg-lines"></div>
+    <div class="landing-content">
+        <div class="landing-logo-big">B3 TRADE IRMAOS DOMINGUES</div>
+        <div class="landing-tagline">Mini-Indice & Mini-Dolar em Tempo Real</div>
+
+        <div class="landing-features">
+            <div class="landing-feature">
+                <div class="feature-icon">&#9888;</div>
+                <div class="feature-title">VWAP + EMA</div>
+                <div class="feature-desc">Contexto institucional com VWAP e EMA 9/21</div>
+            </div>
+            <div class="landing-feature">
+                <div class="feature-icon">&#128202;</div>
+                <div class="feature-title">PULLBACK</div>
+                <div class="feature-desc">Deteccao automatica de pullback com confirmacao</div>
+            </div>
+            <div class="landing-feature">
+                <div class="feature-icon">&#128737;</div>
+                <div class="feature-title">ANTI-LATERAL</div>
+                <div class="feature-desc">Bloqueio inteligente em mercado lateralizado</div>
+            </div>
+            <div class="landing-feature">
+                <div class="feature-icon">&#127919;</div>
+                <div class="feature-title">FIBONACCI</div>
+                <div class="feature-desc">Niveis de retraceo e extensao automaticos</div>
+            </div>
+        </div>
+
+        <div class="landing-user-name" id="landingUserName"></div>
+        <button class="landing-enter-btn" onclick="entrarDashboard()">ACESSAR DASHBOARD</button>
+    </div>
+</div>
+
+<!-- ============================================= -->
+<!-- DEMO OVERLAY                                  -->
+<!-- ============================================= -->
+<div class="demo-overlay" id="demoOverlay">
+    <div class="demo-container">
+        <div class="demo-header">
+            <div class="demo-title">MODO DEMO - Simulacao do Dia</div>
+            <div style="display:flex; gap:8px; align-items:center;">
+                <select id="demoAtivo" style="padding:8px 12px; background:var(--bg-card); border:1px solid var(--border); color:var(--text-primary); border-radius:6px; font-size:13px;">
+                    <option value="WIN">Mini-Indice (WIN)</option>
+                    <option value="WDO">Mini-Dolar (WDO)</option>
+                </select>
+                <button class="btn btn-primary" onclick="carregarDemo()">Simular</button>
+                <button class="demo-close" onclick="fecharDemo()">Fechar</button>
+            </div>
+        </div>
+        <div id="demoContent">
+            <div class="loading"><div class="spinner"></div> Selecione um ativo e clique em Simular</div>
+        </div>
+    </div>
+</div>
+
+<!-- ============================================= -->
+<!-- MAIN DASHBOARD                                -->
+<!-- ============================================= -->
+<div class="dashboard-wrapper" id="dashboardWrapper">
     <!-- HEADER -->
     <div class="header">
         <div class="header-left">
-            <div class="logo">B3 TRADE IRMÃOS DOMINGUES</div>
+            <div class="logo">B3 TRADE IRMAOS DOMINGUES</div>
             <div class="header-status">
                 <div class="status-dot" id="statusDot"></div>
                 <span id="statusText">Conectando...</span>
             </div>
-            <div id="cacheBanner" style="display:none; background:rgba(255,152,0,0.15); border:1px solid rgba(255,152,0,0.3); padding:4px 10px; border-radius:4px; font-size:11px; color:#ff9800;">
+            <div id="cacheBanner" style="display:none; background:rgba(255,152,0,0.15); border:1px solid rgba(255,152,0,0.3); padding:3px 8px; border-radius:4px; font-size:10px; color:#ff9800;">
                 <span id="cacheBannerText"></span>
             </div>
         </div>
         <div class="header-controls">
-            <div class="countdown">
-                Proxima atualizacao: <span class="countdown-time" id="countdown">05:00</span>
+            <div class="user-badge">
+                <span>&#128100;</span> <strong id="headerUser">--</strong>
             </div>
-            <button class="btn btn-primary" onclick="forcarAtualizacao()">Atualizar Agora</button>
+            <div class="countdown">
+                <span>Atualiza:</span> <span class="countdown-time" id="countdown">05:00</span>
+            </div>
+            <button class="btn btn-demo" onclick="abrirDemo()">DEMO</button>
+            <button class="btn btn-primary" onclick="forcarAtualizacao()">Atualizar</button>
+            <button class="btn-logout" onclick="fazerLogout()">Sair</button>
         </div>
     </div>
 
@@ -590,46 +1145,42 @@
         <span class="sinal-badge neutro" id="sinalBadge">AGUARDANDO</span>
         <span id="sinalTexto">Carregando analise...</span>
         <div class="confianca-bar">
-            <div class="confianca-fill" id="confiancaFill" style="width: 0%; background: var(--text-muted);" ></div>
+            <div class="confianca-fill" id="confiancaFill" style="width: 0%; background: var(--text-muted);"></div>
         </div>
-        <span id="confiancaTexto" style="font-size: 12px; color: var(--text-secondary);">--</span>
+        <span id="confiancaTexto" style="font-size: 11px; color: var(--text-secondary);">--</span>
     </div>
 
     <!-- MAIN GRID -->
     <div class="main-grid">
         <!-- CHART AREA -->
         <div class="chart-area">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; flex-wrap: wrap; gap: 8px;">
                 <div>
                     <div class="preco-display" id="precoDisplay">--</div>
                     <div class="preco-change" id="precoChange">--</div>
                 </div>
-                <div style="text-align: right; font-size: 12px; color: var(--text-secondary);">
+                <div style="text-align: right; font-size: 11px; color: var(--text-secondary);">
                     <div>VWAP: <span id="vwapVal" style="color: var(--accent-yellow);">--</span></div>
                     <div>EMA 9: <span id="ema9Val" style="color: var(--accent-green);">--</span> | EMA 21: <span id="ema21Val" style="color: var(--accent-orange);">--</span></div>
                     <div>ATR: <span id="atrVal" style="color: var(--accent-blue);">--</span></div>
                 </div>
             </div>
 
-            <!-- Candlestick Chart -->
             <div class="chart-container">
                 <div class="chart-label">PRICE + FIBONACCI</div>
                 <canvas id="priceChart"></canvas>
             </div>
 
-            <!-- RSI Chart -->
             <div class="chart-sub-container">
                 <div class="chart-label">RSI (14)</div>
                 <canvas id="rsiChart"></canvas>
             </div>
 
-            <!-- MACD Chart -->
             <div class="chart-sub-container">
                 <div class="chart-label">MACD (12, 26, 9)</div>
                 <canvas id="macdChart"></canvas>
             </div>
 
-            <!-- Volume Chart -->
             <div class="chart-sub-container">
                 <div class="chart-label">VOLUME</div>
                 <canvas id="volumeChart"></canvas>
@@ -638,7 +1189,6 @@
 
         <!-- SIDEBAR -->
         <div class="sidebar">
-            <!-- Multi-Timeframe Overview -->
             <div class="sidebar-section">
                 <div class="section-title">Visao Multi-Timeframe</div>
                 <div class="multi-tf-grid" id="multiTfGrid">
@@ -650,7 +1200,6 @@
                 </div>
             </div>
 
-            <!-- Contexto Operacional -->
             <div class="sidebar-section">
                 <div class="section-title">Contexto Operacional</div>
                 <div id="contextoSection">
@@ -658,7 +1207,6 @@
                 </div>
             </div>
 
-            <!-- Fibonacci -->
             <div class="sidebar-section">
                 <div class="section-title">Niveis Fibonacci</div>
                 <div id="fibLevels">
@@ -666,7 +1214,6 @@
                 </div>
             </div>
 
-            <!-- Volume Analysis -->
             <div class="sidebar-section">
                 <div class="section-title">Analise de Volume</div>
                 <div id="volumeAnalysis">
@@ -674,7 +1221,6 @@
                 </div>
             </div>
 
-            <!-- Violinada Detector -->
             <div class="sidebar-section">
                 <div class="section-title">Detector de Violinada</div>
                 <div id="violinadaSection">
@@ -682,7 +1228,6 @@
                 </div>
             </div>
 
-            <!-- Sinais de Entrada -->
             <div class="sidebar-section">
                 <div class="section-title">Sinais de Entrada (5 min)</div>
                 <div id="sinaisSection">
@@ -690,7 +1235,6 @@
                 </div>
             </div>
 
-            <!-- Suportes e Resistencias -->
             <div class="sidebar-section">
                 <div class="section-title">Suportes & Resistencias</div>
                 <div id="srSection">
@@ -699,783 +1243,297 @@
             </div>
         </div>
     </div>
+</div>
 
-    <script>
-    // =====================================================
-    // ESTADO DA APLICAÇÃO
-    // =====================================================
-    let state = {
-        ativo: 'WIN',
-        timeframe: '5m',
-        analise: null,
-        painel: null,
-        charts: {},
-        countdownSeconds: 300,
-        countdownInterval: null,
-    };
+<script>
+// =====================================================
+// ESTADO DA APLICACAO
+// =====================================================
+let state = {
+    ativo: 'WIN',
+    timeframe: '5m',
+    analise: null,
+    painel: null,
+    charts: {},
+    countdownSeconds: 300,
+    countdownInterval: null,
+    usuarioLogado: null,
+};
 
-    // =====================================================
-    // INICIALIZAÇÃO
-    // =====================================================
-    document.addEventListener('DOMContentLoaded', () => {
+// =====================================================
+// LOGIN PARTICLES
+// =====================================================
+(function createParticles() {
+    const container = document.getElementById('loginParticles');
+    if (!container) return;
+    for (let i = 0; i < 40; i++) {
+        const p = document.createElement('div');
+        p.className = 'login-particle';
+        p.style.left = Math.random() * 100 + '%';
+        p.style.animationDelay = Math.random() * 6 + 's';
+        p.style.animationDuration = (4 + Math.random() * 4) + 's';
+        const colors = ['var(--accent-blue)', 'var(--accent-green)', 'var(--accent-purple)'];
+        p.style.background = colors[Math.floor(Math.random() * colors.length)];
+        p.style.width = (1 + Math.random() * 3) + 'px';
+        p.style.height = p.style.width;
+        container.appendChild(p);
+    }
+})();
+
+// =====================================================
+// LOGIN + ENTER KEY
+// =====================================================
+document.getElementById('loginPass').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') fazerLogin();
+});
+document.getElementById('loginUser').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') document.getElementById('loginPass').focus();
+});
+
+async function fazerLogin() {
+    const usuario = document.getElementById('loginUser').value.trim();
+    const senha = document.getElementById('loginPass').value.trim();
+    const errorEl = document.getElementById('loginError');
+    const btn = document.getElementById('loginBtn');
+
+    if (!usuario || !senha) {
+        errorEl.textContent = 'Preencha usuario e senha';
+        return;
+    }
+
+    btn.textContent = 'ENTRANDO...';
+    btn.disabled = true;
+
+    try {
+        const res = await fetch('/api/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ usuario, senha })
+        });
+        const data = await res.json();
+
+        if (data.sucesso) {
+            state.usuarioLogado = data.usuario;
+            errorEl.textContent = '';
+            mostrarLanding(data.usuario);
+        } else {
+            errorEl.textContent = data.mensagem || 'Usuario ou senha invalidos';
+            btn.textContent = 'ENTRAR';
+            btn.disabled = false;
+        }
+    } catch (e) {
+        errorEl.textContent = 'Erro de conexao. Tente novamente.';
+        btn.textContent = 'ENTRAR';
+        btn.disabled = false;
+    }
+}
+
+function mostrarLanding(usuario) {
+    const loginScreen = document.getElementById('loginScreen');
+    loginScreen.classList.add('hidden');
+
+    setTimeout(() => {
+        loginScreen.style.display = 'none';
+        const landing = document.getElementById('landingScreen');
+        landing.classList.add('active');
+
+        // Format user name nicely
+        const nomeFormatado = usuario.replace(/domingues/i, ' Domingues').replace(/^./, c => c.toUpperCase());
+        document.getElementById('landingUserName').textContent = 'Bem-vindo, ' + nomeFormatado;
+    }, 600);
+}
+
+function entrarDashboard() {
+    const landing = document.getElementById('landingScreen');
+    landing.classList.add('exit');
+
+    setTimeout(() => {
+        landing.style.display = 'none';
+        landing.classList.remove('active', 'exit');
+
+        const dash = document.getElementById('dashboardWrapper');
+        dash.classList.add('active');
+
+        const nomeFormatado = (state.usuarioLogado || '').replace(/domingues/i, ' Domingues').replace(/^./, c => c.toUpperCase());
+        document.getElementById('headerUser').textContent = nomeFormatado;
+
         carregarDados();
         iniciarCountdown();
+    }, 1000);
+}
+
+function fazerLogout() {
+    state.usuarioLogado = null;
+    if (state.countdownInterval) clearInterval(state.countdownInterval);
+
+    const dash = document.getElementById('dashboardWrapper');
+    dash.classList.remove('active');
+    dash.style.display = 'none';
+
+    const loginScreen = document.getElementById('loginScreen');
+    loginScreen.style.display = 'flex';
+    loginScreen.classList.remove('hidden');
+
+    document.getElementById('loginUser').value = '';
+    document.getElementById('loginPass').value = '';
+    document.getElementById('loginError').textContent = '';
+    document.getElementById('loginBtn').textContent = 'ENTRAR';
+    document.getElementById('loginBtn').disabled = false;
+}
+
+// =====================================================
+// DEMO MODE
+// =====================================================
+function abrirDemo() {
+    document.getElementById('demoOverlay').classList.add('active');
+}
+
+function fecharDemo() {
+    document.getElementById('demoOverlay').classList.remove('active');
+}
+
+async function carregarDemo() {
+    const ativo = document.getElementById('demoAtivo').value;
+    const content = document.getElementById('demoContent');
+    content.innerHTML = '<div class="loading"><div class="spinner"></div> Simulando operacoes...</div>';
+
+    try {
+        const res = await fetch(`/api/demo?ativo=${ativo}`);
+        const data = await res.json();
+        renderizarDemo(data);
+    } catch (e) {
+        content.innerHTML = '<div style="text-align:center; color:var(--accent-red); padding:40px;">Erro ao carregar simulacao</div>';
+    }
+}
+
+function renderizarDemo(data) {
+    const content = document.getElementById('demoContent');
+    const r = data.resumo;
+    const saldoColor = r.saldo_pontos >= 0 ? 'var(--accent-green)' : 'var(--accent-red)';
+    const finColor = r.saldo_financeiro >= 0 ? 'var(--accent-green)' : 'var(--accent-red)';
+
+    let html = `
+        <div style="text-align:center; margin-bottom:16px; font-size:13px; color:var(--text-muted);">
+            ${data.ativo} - ${data.data} | Estrategia Institucional com VWAP + EMA 9/21
+        </div>
+        <div class="demo-summary">
+            <div class="demo-stat">
+                <div class="demo-stat-value">${r.total}</div>
+                <div class="demo-stat-label">Operacoes</div>
+            </div>
+            <div class="demo-stat">
+                <div class="demo-stat-value" style="color:var(--accent-green)">${r.wins}</div>
+                <div class="demo-stat-label">Wins</div>
+            </div>
+            <div class="demo-stat">
+                <div class="demo-stat-value" style="color:var(--accent-red)">${r.losses}</div>
+                <div class="demo-stat-label">Losses</div>
+            </div>
+            <div class="demo-stat">
+                <div class="demo-stat-value" style="color:${r.taxa_acerto >= 50 ? 'var(--accent-green)' : 'var(--accent-red)'}">${r.taxa_acerto}%</div>
+                <div class="demo-stat-label">Taxa Acerto</div>
+            </div>
+            <div class="demo-stat">
+                <div class="demo-stat-value" style="color:${saldoColor}">${r.saldo_pontos > 0 ? '+' : ''}${r.saldo_pontos}</div>
+                <div class="demo-stat-label">Pontos</div>
+            </div>
+            <div class="demo-stat">
+                <div class="demo-stat-value" style="color:${finColor}">R$ ${r.saldo_financeiro.toLocaleString('pt-BR')}</div>
+                <div class="demo-stat-label">Financeiro</div>
+            </div>
+        </div>
+        <div style="overflow-x:auto;">
+        <table class="demo-ops-table">
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>Horario</th>
+                    <th>Tipo</th>
+                    <th>Entrada</th>
+                    <th>Stop</th>
+                    <th>Alvo</th>
+                    <th>Saida</th>
+                    <th>R/R</th>
+                    <th>Resultado</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody>`;
+
+    data.operacoes.forEach(op => {
+        const isWin = op.resultado > 0;
+        const resColor = isWin ? 'var(--accent-green)' : 'var(--accent-red)';
+        html += `
+            <tr>
+                <td>${op.id}</td>
+                <td>${op.horario}</td>
+                <td><span class="tag ${op.tipo === 'COMPRA' ? 'tag-green' : 'tag-red'}">${op.tipo}</span></td>
+                <td style="font-family:monospace">${op.entrada.toLocaleString('pt-BR')}</td>
+                <td style="font-family:monospace; color:var(--accent-red)">${op.stop.toLocaleString('pt-BR')}</td>
+                <td style="font-family:monospace; color:var(--accent-green)">${op.alvo.toLocaleString('pt-BR')}</td>
+                <td style="font-family:monospace">${op.saida.toLocaleString('pt-BR')}</td>
+                <td>${op.rr}</td>
+                <td style="color:${resColor}; font-weight:700; font-family:monospace">${op.resultado > 0 ? '+' : ''}${op.resultado}</td>
+                <td><span class="tag ${isWin ? 'tag-green' : 'tag-red'}">${op.status}</span></td>
+            </tr>`;
     });
 
-    function iniciarCountdown() {
-        if (state.countdownInterval) clearInterval(state.countdownInterval);
-        state.countdownSeconds = 300;
+    html += `</tbody></table></div>`;
 
-        state.countdownInterval = setInterval(() => {
-            state.countdownSeconds--;
-            if (state.countdownSeconds <= 0) {
-                state.countdownSeconds = 300;
-                carregarDados();
-            }
-            const m = Math.floor(state.countdownSeconds / 60);
-            const s = state.countdownSeconds % 60;
-            document.getElementById('countdown').textContent =
-                `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-        }, 1000);
-    }
-
-    // =====================================================
-    // CONTROLES
-    // =====================================================
-    function trocarAtivo(ativo) {
-        state.ativo = ativo;
-        document.querySelectorAll('.ativo-tab').forEach(t => {
-            t.classList.toggle('active', t.dataset.ativo === ativo);
-        });
-        carregarDados();
-    }
-
-    function trocarTimeframe(tf) {
-        state.timeframe = tf;
-        document.querySelectorAll('.tf-btn').forEach(b => {
-            b.classList.toggle('active', b.dataset.tf === tf);
-        });
-        carregarDados();
-    }
-
-    async function forcarAtualizacao() {
-        try {
-            await fetch('/api/forcar-atualizacao', { method: 'POST' });
-            state.countdownSeconds = 300;
-            carregarDados();
-        } catch (e) {
-            console.error('Erro ao forcar atualizacao:', e);
-        }
-    }
-
-    // =====================================================
-    // CARREGAR DADOS
-    // =====================================================
-    async function carregarDados() {
-        try {
-            const [analiseRes, painelRes] = await Promise.all([
-                fetch(`/api/analise?ativo=${state.ativo}&timeframe=${state.timeframe}`),
-                fetch(`/api/painel?ativo=${state.ativo}`)
-            ]);
-
-            const analiseData = await analiseRes.json();
-            const painelData = await painelRes.json();
-
-            state.analise = analiseData.analise;
-            state.painel = painelData.painel;
-
-            const cacheBanner = document.getElementById('cacheBanner');
-            const cacheBannerText = document.getElementById('cacheBannerText');
-
-            if (analiseData.usando_cache) {
-                const dataPregao = analiseData.cache_data_pregao || '--';
-                document.getElementById('statusText').textContent =
-                    `Ultimo pregao (${dataPregao}) | ${analiseData.ultima_atualizacao || '--'}`;
-                document.getElementById('statusDot').style.background = 'var(--accent-orange)';
-                cacheBanner.style.display = 'block';
-                if (analiseData.mercado_aberto) {
-                    cacheBannerText.textContent = 'Aguardando dados do mercado...';
-                } else {
-                    cacheBannerText.textContent = `Mercado fechado - exibindo dados do pregao de ${dataPregao}. Atualiza automaticamente quando abrir.`;
-                }
-            } else {
-                document.getElementById('statusText').textContent =
-                    `Online | Atualizado: ${analiseData.ultima_atualizacao || '--'}`;
-                document.getElementById('statusDot').style.background = 'var(--accent-green)';
-                cacheBanner.style.display = 'none';
-            }
-
-            atualizarUI();
-        } catch (e) {
-            console.error('Erro ao carregar dados:', e);
-            document.getElementById('statusText').textContent = 'Erro de conexao - tentando reconectar...';
-            document.getElementById('statusDot').style.background = 'var(--accent-red)';
-        }
-    }
-
-    // =====================================================
-    // ATUALIZAR UI
-    // =====================================================
-    function atualizarUI() {
-        const a = state.analise;
-        if (!a || a.erro) {
-            document.getElementById('precoDisplay').textContent = 'Sem dados';
-            return;
-        }
-
-        // Preco
-        document.getElementById('precoDisplay').textContent = a.preco_atual.toLocaleString('pt-BR');
-        document.getElementById('vwapVal').textContent = a.vwap?.toLocaleString('pt-BR') || '--';
-        document.getElementById('ema9Val').textContent = a.ema_9?.toLocaleString('pt-BR') || '--';
-        document.getElementById('ema21Val').textContent = a.ema_21?.toLocaleString('pt-BR') || '--';
-        document.getElementById('atrVal').textContent = a.atr?.toLocaleString('pt-BR') || '--';
-
-        // Tendencia no preco
-        const changeEl = document.getElementById('precoChange');
-        if (a.tendencia === 'ALTA') {
-            changeEl.textContent = 'TENDENCIA DE ALTA';
-            changeEl.className = 'preco-change up';
-        } else if (a.tendencia === 'BAIXA') {
-            changeEl.textContent = 'TENDENCIA DE BAIXA';
-            changeEl.className = 'preco-change down';
-        } else {
-            changeEl.textContent = 'LATERAL';
-            changeEl.className = 'preco-change';
-            changeEl.style.color = 'var(--text-secondary)';
-        }
-
-        // Sinal Banner
-        atualizarBanner(a);
-
-        // Graficos
-        atualizarGraficos(a);
-
-        // Contexto Operacional
-        atualizarContexto(a);
-
-        // Fibonacci
-        atualizarFibonacci(a);
-
-        // Volume
-        atualizarVolume(a);
-
-        // Violinada
-        atualizarViolinada(a);
-
-        // Sinais
-        atualizarSinais(a);
-
-        // Suportes/Resistencias
-        atualizarSR(a);
-
-        // Multi-TF
-        atualizarMultiTF();
-    }
-
-    // =====================================================
-    // SINAL BANNER
-    // =====================================================
-    function atualizarBanner(a) {
-        const banner = document.getElementById('sinalBanner');
-        const badge = document.getElementById('sinalBadge');
-        const texto = document.getElementById('sinalTexto');
-        const fill = document.getElementById('confiancaFill');
-        const confTexto = document.getElementById('confiancaTexto');
-
-        if (a.sinais && a.sinais.length > 0) {
-            const sinal = a.sinais.reduce((best, s) => s.confianca > best.confianca ? s : best, a.sinais[0]);
-
-            const tipo = sinal.tipo.toLowerCase();
-            banner.className = `sinal-banner ${tipo === 'compra' ? 'compra' : 'venda'}`;
-            badge.className = `sinal-badge ${tipo === 'compra' ? 'compra' : 'venda'}`;
-            badge.textContent = sinal.tipo;
-
-            texto.textContent = sinal.motivos?.[0] || 'Sinal ativo';
-            fill.style.width = `${sinal.confianca}%`;
-            fill.style.background = tipo === 'compra' ? 'var(--accent-green)' : 'var(--accent-red)';
-            confTexto.textContent = `${sinal.confianca}% confianca`;
-        } else {
-            banner.className = 'sinal-banner neutro';
-            badge.className = 'sinal-badge neutro';
-            badge.textContent = 'NEUTRO';
-            texto.textContent = `RSI: ${a.rsi} | MACD: ${a.macd_status} | Vol: ${a.volume?.pressao}`;
-            fill.style.width = '0%';
-            confTexto.textContent = 'Sem sinal claro';
-        }
-    }
-
-    // =====================================================
-    // GRAFICOS
-    // =====================================================
-    function atualizarGraficos(a) {
-        if (!a.candles || a.candles.length === 0) return;
-
-        const labels = a.candles.map(c => c.time);
-        const closes = a.candles.map(c => c.close);
-        const opens = a.candles.map(c => c.open);
-        const highs = a.candles.map(c => c.high);
-        const lows = a.candles.map(c => c.low);
-        const volumes = a.candles.map(c => c.volume);
-        const rsiData = a.candles.map(c => c.rsi);
-        const macdData = a.candles.map(c => c.macd);
-        const macdSignal = a.candles.map(c => c.macd_signal);
-        const macdHist = a.candles.map(c => c.macd_hist);
-
-        // Cores dos candles
-        const candleColors = a.candles.map(c => c.close >= c.open ? 'rgba(0, 200, 83, 0.9)' : 'rgba(255, 23, 68, 0.9)');
-        const volColors = a.candles.map(c => c.close >= c.open ? 'rgba(0, 200, 83, 0.4)' : 'rgba(255, 23, 68, 0.4)');
-
-        // === PRICE CHART ===
-        renderPriceChart(labels, closes, highs, lows, a);
-
-        // === RSI CHART ===
-        renderRSIChart(labels, rsiData);
-
-        // === MACD CHART ===
-        renderMACDChart(labels, macdData, macdSignal, macdHist);
-
-        // === VOLUME CHART ===
-        renderVolumeChart(labels, volumes, volColors);
-    }
-
-    function renderPriceChart(labels, closes, highs, lows, a) {
-        const ctx = document.getElementById('priceChart');
-        if (state.charts.price) state.charts.price.destroy();
-
-        const fib = a.fibonacci;
-        const fibAnnotations = {};
-        if (fib) {
-            const fibLevels = [
-                { key: 'nivel_0', label: '0%', color: '#f44336' },
-                { key: 'nivel_236', label: '23.6%', color: '#ff9800' },
-                { key: 'nivel_382', label: '38.2%', color: '#ffc107' },
-                { key: 'nivel_500', label: '50%', color: '#4caf50' },
-                { key: 'nivel_618', label: '61.8%', color: '#2196f3' },
-                { key: 'nivel_786', label: '78.6%', color: '#9c27b0' },
-                { key: 'nivel_100', label: '100%', color: '#607d8b' },
-            ];
-
-            fibLevels.forEach((fl, i) => {
-                if (fib[fl.key]) {
-                    fibAnnotations[`fib${i}`] = {
-                        type: 'line',
-                        yMin: fib[fl.key],
-                        yMax: fib[fl.key],
-                        borderColor: fl.color + '80',
-                        borderWidth: 1,
-                        borderDash: [5, 3],
-                        label: {
-                            display: true,
-                            content: `${fl.label}: ${fib[fl.key].toLocaleString('pt-BR')}`,
-                            position: 'end',
-                            backgroundColor: fl.color + '40',
-                            color: fl.color,
-                            font: { size: 10 }
-                        }
-                    };
-                }
-            });
-        }
-
-        state.charts.price = new Chart(ctx, {
-            type: 'line',
-            data: {
-                labels: labels,
-                datasets: [
-                    {
-                        label: 'Close',
-                        data: closes,
-                        borderColor: '#2196f3',
-                        borderWidth: 1.5,
-                        pointRadius: 0,
-                        fill: false,
-                        tension: 0.1,
-                    },
-                    {
-                        label: 'High',
-                        data: highs,
-                        borderColor: 'rgba(0, 200, 83, 0.3)',
-                        borderWidth: 0.5,
-                        pointRadius: 0,
-                        fill: false,
-                    },
-                    {
-                        label: 'Low',
-                        data: lows,
-                        borderColor: 'rgba(255, 23, 68, 0.3)',
-                        borderWidth: 0.5,
-                        pointRadius: 0,
-                        fill: '-1',
-                        backgroundColor: 'rgba(33, 150, 243, 0.05)',
-                    }
-                ]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: { display: false },
-                    annotation: { annotations: fibAnnotations }
-                },
-                scales: {
-                    x: {
-                        ticks: { color: '#5e6673', maxTicksLimit: 10, font: { size: 10 } },
-                        grid: { color: '#1a1f2e' }
-                    },
-                    y: {
-                        position: 'right',
-                        ticks: { color: '#848e9c', font: { size: 10 } },
-                        grid: { color: '#1a1f2e' }
-                    }
-                },
-                interaction: { intersect: false, mode: 'index' }
-            }
-        });
-    }
-
-    function renderRSIChart(labels, rsiData) {
-        const ctx = document.getElementById('rsiChart');
-        if (state.charts.rsi) state.charts.rsi.destroy();
-
-        state.charts.rsi = new Chart(ctx, {
-            type: 'line',
-            data: {
-                labels: labels,
-                datasets: [{
-                    label: 'RSI',
-                    data: rsiData,
-                    borderColor: '#ab47bc',
-                    borderWidth: 1.5,
-                    pointRadius: 0,
-                    fill: false,
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: { display: false },
-                    annotation: {
-                        annotations: {
-                            overbought: {
-                                type: 'line', yMin: 70, yMax: 70,
-                                borderColor: 'rgba(255, 23, 68, 0.5)', borderWidth: 1, borderDash: [4, 4]
-                            },
-                            oversold: {
-                                type: 'line', yMin: 30, yMax: 30,
-                                borderColor: 'rgba(0, 200, 83, 0.5)', borderWidth: 1, borderDash: [4, 4]
-                            },
-                            middle: {
-                                type: 'line', yMin: 50, yMax: 50,
-                                borderColor: 'rgba(132, 142, 156, 0.3)', borderWidth: 1, borderDash: [2, 4]
-                            }
-                        }
-                    }
-                },
-                scales: {
-                    x: { ticks: { display: false }, grid: { color: '#1a1f2e' } },
-                    y: {
-                        min: 0, max: 100,
-                        position: 'right',
-                        ticks: { color: '#848e9c', stepSize: 20, font: { size: 10 } },
-                        grid: { color: '#1a1f2e' }
-                    }
-                }
-            }
-        });
-    }
-
-    function renderMACDChart(labels, macdData, macdSignal, macdHist) {
-        const ctx = document.getElementById('macdChart');
-        if (state.charts.macd) state.charts.macd.destroy();
-
-        state.charts.macd = new Chart(ctx, {
-            type: 'bar',
-            data: {
-                labels: labels,
-                datasets: [
-                    {
-                        label: 'Histograma',
-                        data: macdHist,
-                        backgroundColor: macdHist.map(v => v >= 0 ? 'rgba(0, 200, 83, 0.5)' : 'rgba(255, 23, 68, 0.5)'),
-                        borderWidth: 0,
-                        order: 2,
-                    },
-                    {
-                        label: 'MACD',
-                        data: macdData,
-                        type: 'line',
-                        borderColor: '#2196f3',
-                        borderWidth: 1.5,
-                        pointRadius: 0,
-                        fill: false,
-                        order: 1,
-                    },
-                    {
-                        label: 'Sinal',
-                        data: macdSignal,
-                        type: 'line',
-                        borderColor: '#ff9800',
-                        borderWidth: 1,
-                        pointRadius: 0,
-                        fill: false,
-                        order: 1,
-                    }
-                ]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: { legend: { display: false } },
-                scales: {
-                    x: { ticks: { display: false }, grid: { color: '#1a1f2e' } },
-                    y: {
-                        position: 'right',
-                        ticks: { color: '#848e9c', font: { size: 10 } },
-                        grid: { color: '#1a1f2e' }
-                    }
-                }
-            }
-        });
-    }
-
-    function renderVolumeChart(labels, volumes, colors) {
-        const ctx = document.getElementById('volumeChart');
-        if (state.charts.volume) state.charts.volume.destroy();
-
-        state.charts.volume = new Chart(ctx, {
-            type: 'bar',
-            data: {
-                labels: labels,
-                datasets: [{
-                    label: 'Volume',
-                    data: volumes,
-                    backgroundColor: colors,
-                    borderWidth: 0,
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: { legend: { display: false } },
-                scales: {
-                    x: { ticks: { display: false }, grid: { color: '#1a1f2e' } },
-                    y: {
-                        position: 'right',
-                        ticks: { color: '#848e9c', font: { size: 10 } },
-                        grid: { color: '#1a1f2e' }
-                    }
-                }
-            }
-        });
-    }
-
-    // =====================================================
-    // SIDEBAR SECTIONS
-    // =====================================================
-    function atualizarContexto(a) {
-        const container = document.getElementById('contextoSection');
-        const lat = a.lateralizacao || {};
-        const pb = a.pullback || {};
-        const horario = a.horario_operacional || {};
-        let latClass = lat.lateral ? 'tag-red' : 'tag-green';
-        let latLabel = lat.lateral ? 'LATERAL - BLOQUEADO' : 'TENDENCIAL';
-        let pbClass = pb.confirmado ? 'tag-green' : (pb.pullback ? 'tag-yellow' : 'tag-blue');
-        let pbLabel = pb.confirmado ? 'CONFIRMADO' : (pb.pullback ? 'AGUARDANDO' : 'SEM PULLBACK');
-        container.innerHTML = `
-            <div class="indicator-row">
-                <span class="indicator-label">VWAP</span>
-                <span class="indicator-value" style="color:var(--accent-yellow)">${a.vwap?.toLocaleString('pt-BR') || '--'}</span>
-            </div>
-            <div class="indicator-row">
-                <span class="indicator-label">EMA 9 / 21</span>
-                <span class="indicator-value">
-                    <span style="color:var(--accent-green)">${a.ema_9?.toLocaleString('pt-BR') || '--'}</span> /
-                    <span style="color:var(--accent-orange)">${a.ema_21?.toLocaleString('pt-BR') || '--'}</span>
-                </span>
-            </div>
-            <div class="indicator-row">
-                <span class="indicator-label">ATR (14)</span>
-                <span class="indicator-value" style="color:var(--accent-blue)">${a.atr?.toLocaleString('pt-BR') || '--'}</span>
-            </div>
-            <div class="indicator-row">
-                <span class="indicator-label">Mercado</span>
-                <span class="tag ${latClass}">${latLabel}</span>
-            </div>
-            <div class="indicator-row">
-                <span class="indicator-label">Lateralizacao</span>
-                <span class="indicator-value">${lat.score || 0}% (${lat.cruzamentos_ema || 0} cruzamentos)</span>
-            </div>
-            <div class="indicator-row">
-                <span class="indicator-label">Pullback</span>
-                <span class="tag ${pbClass}">${pbLabel}</span>
-            </div>
-            ${pb.pullback ? `<div class="indicator-row">
-                <span class="indicator-label">Zona</span>
-                <span class="indicator-value">${pb.zona || '--'}</span>
-            </div>
-            <div class="indicator-row">
-                <span class="indicator-label">Candle Reversao</span>
-                <span class="tag ${pb.candle_reversao ? 'tag-green' : 'tag-red'}">${pb.candle_reversao ? 'SIM' : 'NAO'}</span>
-            </div>` : ''}
-            <div style="margin-top:8px; padding-top:8px; border-top:1px solid var(--border); font-size:10px; color:var(--text-muted);">
-                Janelas: ${horario.janela_1 || '--'} | ${horario.janela_2 || '--'}
-            </div>
-        `;
-    }
-
-    function atualizarFibonacci(a) {
-        if (!a.fibonacci) return;
-        const f = a.fibonacci;
-        const container = document.getElementById('fibLevels');
-
-        const levels = [
-            { label: '0%', value: f.nivel_0, color: '#f44336' },
-            { label: '23.6%', value: f.nivel_236, color: '#ff9800' },
-            { label: '38.2%', value: f.nivel_382, color: '#ffc107' },
-            { label: '50.0%', value: f.nivel_500, color: '#4caf50' },
-            { label: '61.8%', value: f.nivel_618, color: '#2196f3' },
-            { label: '78.6%', value: f.nivel_786, color: '#9c27b0' },
-            { label: '100%', value: f.nivel_100, color: '#607d8b' },
-            { label: 'Ext 127.2%', value: f.extensao_1272, color: '#00bcd4' },
-            { label: 'Ext 161.8%', value: f.extensao_1618, color: '#009688' },
-        ];
-
-        let html = `<div style="font-size:11px; margin-bottom:8px; color:var(--text-muted);">
-            Tendencia Fib: <span class="tag ${f.tendencia === 'ALTA' ? 'tag-green' : 'tag-red'}">${f.tendencia}</span>
+    // Add motivos below table
+    html += `<div style="margin-top:20px;">
+        <div style="font-size:12px; color:var(--text-muted); text-transform:uppercase; margin-bottom:10px; font-weight:600;">Motivos das Entradas</div>`;
+    data.operacoes.forEach(op => {
+        const isWin = op.resultado > 0;
+        html += `<div style="font-size:12px; padding:6px 0; border-bottom:1px solid var(--border); display:flex; gap:8px; align-items:center;">
+            <span class="tag ${op.tipo === 'COMPRA' ? 'tag-green' : 'tag-red'}" style="min-width:60px; text-align:center;">#${op.id} ${op.tipo}</span>
+            <span style="color:var(--text-secondary)">${op.motivo}</span>
+            <span class="tag ${isWin ? 'tag-green' : 'tag-red'}" style="margin-left:auto">${op.status}</span>
         </div>`;
+    });
+    html += `</div>`;
+    content.innerHTML = html;
+}
 
-        levels.forEach(l => {
-            const isNear = Math.abs(a.preco_atual - l.value) / a.preco_atual < 0.003;
-            html += `
-                <div class="fib-level" style="${isNear ? 'background:rgba(33,150,243,0.1); border-radius:3px; padding:4px 6px;' : ''}">
-                    <div class="fib-label">
-                        <div class="fib-dot" style="background:${l.color}"></div>
-                        <span style="color:${l.color}">${l.label}</span>
-                        ${isNear ? '<span class="tag tag-blue" style="font-size:9px;">PROXIMO</span>' : ''}
-                    </div>
-                    <span style="color:var(--text-primary)">${l.value.toLocaleString('pt-BR')}</span>
-                </div>
-            `;
-        });
+function iniciarCountdown(){state.countdownSeconds=300;if(state.countdownInterval)clearInterval(state.countdownInterval);state.countdownInterval=setInterval(()=>{state.countdownSeconds--;if(state.countdownSeconds<=0){state.countdownSeconds=300;carregarDados();}const m=Math.floor(state.countdownSeconds/60);const s=state.countdownSeconds%60;document.getElementById('countdown').textContent=String(m).padStart(2,'0')+':'+String(s).padStart(2,'0');},1000);}
 
-        container.innerHTML = html;
-    }
+function trocarAtivo(ativo){state.ativo=ativo;document.querySelectorAll('.ativo-tab').forEach(t=>t.classList.toggle('active',t.dataset.ativo===ativo));carregarDados();}
 
-    function atualizarVolume(a) {
-        if (!a.volume) return;
-        const v = a.volume;
-        const container = document.getElementById('volumeAnalysis');
+function trocarTimeframe(tf){state.timeframe=tf;document.querySelectorAll('.tf-btn').forEach(b=>{b.classList.toggle('active',b.dataset.tf===tf);b.classList.toggle('op-principal',b.dataset.tf===tf);});carregarDados();}
 
-        const total = v.compra + v.venda;
-        const pctCompra = total > 0 ? ((v.compra / total) * 100).toFixed(1) : 50;
-        const pctVenda = total > 0 ? ((v.venda / total) * 100).toFixed(1) : 50;
+function forcarAtualizacao(){state.countdownSeconds=300;carregarDados();}
 
-        let pressaoClass = 'tag-yellow';
-        if (v.pressao === 'COMPRADORES') pressaoClass = 'tag-green';
-        else if (v.pressao === 'VENDEDORES') pressaoClass = 'tag-red';
+async function carregarDados(){const sd=document.getElementById('statusDot');const st=document.getElementById('statusText');sd.className='status-dot';st.textContent='Atualizando...';try{const[aR,pR]=await Promise.all([fetch('/api/analise?ativo='+state.ativo+'&timeframe='+state.timeframe),fetch('/api/painel?ativo='+state.ativo)]);state.analise=await aR.json();state.painel=await pR.json();const cb=document.getElementById('cacheBanner');if(state.analise.cache){cb.style.display='block';document.getElementById('cacheBannerText').textContent='Cache: '+(state.analise.cache_age||'dados salvos');}else{cb.style.display='none';}sd.classList.add('online');st.textContent='Conectado';atualizarUI();}catch(e){sd.classList.add('offline');st.textContent='Erro de conexao';}}
 
-        container.innerHTML = `
-            <div class="indicator-row">
-                <span class="indicator-label">Pressao</span>
-                <span class="tag ${pressaoClass}">${v.pressao}</span>
-            </div>
-            <div class="volume-bar-container">
-                <div class="volume-bar-buy" style="width:${pctCompra}%">${pctCompra}%</div>
-                <div class="volume-bar-sell" style="width:${pctVenda}%">${pctVenda}%</div>
-            </div>
-            <div class="indicator-row">
-                <span class="indicator-label">Vol. Compra</span>
-                <span class="indicator-value" style="color:var(--accent-green)">${Number(v.compra).toLocaleString('pt-BR')}</span>
-            </div>
-            <div class="indicator-row">
-                <span class="indicator-label">Vol. Venda</span>
-                <span class="indicator-value" style="color:var(--accent-red)">${Number(v.venda).toLocaleString('pt-BR')}</span>
-            </div>
-            <div class="indicator-row">
-                <span class="indicator-label">Ratio C/V</span>
-                <span class="indicator-value">${v.ratio}</span>
-            </div>
-            <div class="indicator-row">
-                <span class="indicator-label">Delta Acum.</span>
-                <span class="indicator-value" style="color:${v.delta_acumulado >= 0 ? 'var(--accent-green)' : 'var(--accent-red)'}">
-                    ${v.delta_acumulado >= 0 ? '+' : ''}${Number(v.delta_acumulado).toLocaleString('pt-BR')}
-                </span>
-            </div>
-            <div class="indicator-row">
-                <span class="indicator-label">Acima da Media</span>
-                <span class="tag ${v.acima_media ? 'tag-green' : 'tag-yellow'}">${v.acima_media ? 'SIM' : 'NAO'}</span>
-            </div>
-        `;
-    }
+function atualizarUI(){if(!state.analise)return;const a=state.analise,p=state.painel;const preco=a.preco_atual||(a.dados&&a.dados.length>0?a.dados[a.dados.length-1].close:0);document.getElementById('precoDisplay').textContent=preco?preco.toLocaleString('pt-BR'):'--';const vp=a.variacao_percentual||0;const pc=document.getElementById('precoChange');pc.textContent=(vp>=0?'+':'')+vp.toFixed(2)+'%';pc.className='preco-change '+(vp>=0?'up':'down');document.getElementById('vwapVal').textContent=a.vwap?a.vwap.toLocaleString('pt-BR'):'--';document.getElementById('ema9Val').textContent=a.ema9?a.ema9.toLocaleString('pt-BR'):'--';document.getElementById('ema21Val').textContent=a.ema21?a.ema21.toLocaleString('pt-BR'):'--';document.getElementById('atrVal').textContent=a.atr?a.atr.toFixed(1):'--';atualizarBanner(a);atualizarGraficos(a);if(p){atualizarContexto(p);atualizarFibonacci(p);atualizarVolume(p);atualizarViolinada(p);atualizarSinais(p);atualizarSR(p);atualizarMultiTF(p);}}
 
-    function atualizarViolinada(a) {
-        const container = document.getElementById('violinadaSection');
-        const score = a.violinada_score || 0;
+function atualizarBanner(a){const banner=document.getElementById('sinalBanner'),badge=document.getElementById('sinalBadge'),texto=document.getElementById('sinalTexto'),fill=document.getElementById('confiancaFill');const sinal=a.sinal||'NEUTRO',confianca=a.confianca||0,motivo=a.motivo||'Aguardando sinal...';banner.className='sinal-banner '+sinal.toLowerCase();badge.className='sinal-badge '+sinal.toLowerCase();badge.textContent=sinal;texto.textContent=motivo;let bc='var(--text-muted)';if(sinal==='COMPRA')bc='var(--accent-green)';else if(sinal==='VENDA')bc='var(--accent-red)';else if(sinal==='AGUARDAR')bc='var(--accent-yellow)';fill.style.width=confianca+'%';fill.style.background=bc;document.getElementById('confiancaTexto').textContent='Confianca: '+confianca+'%';}
 
-        let color, label;
-        if (score < 30) { color = 'var(--accent-green)'; label = 'BAIXO'; }
-        else if (score < 60) { color = 'var(--accent-orange)'; label = 'MEDIO'; }
-        else { color = 'var(--accent-red)'; label = 'ALTO'; }
+function atualizarGraficos(a){if(!a.dados||a.dados.length===0)return;renderPriceChart(a);renderRSIChart(a);renderMACDChart(a);renderVolumeChart(a);}
 
-        container.innerHTML = `
-            <div class="indicator-row">
-                <span class="indicator-label">Risco de Violinada</span>
-                <span class="tag" style="background:${color}20; color:${color}">${label} (${score}%)</span>
-            </div>
-            <div class="violinada-meter">
-                <div class="meter-track">
-                    <div class="meter-fill" style="width:${score}%; background:${color};" ></div>
-                </div>
-            </div>
-            <div style="margin-top:8px; font-size:11px; color:var(--text-muted);">
-                ${score >= 60 ? 'CUIDADO: Mercado com alta chance de violinada. Evite entradas ou use stop mais curto.' :
-                  score >= 30 ? 'Atencao: Risco moderado. Confirme com volume e outros timeframes.' :
-                  'Mercado com baixo risco de violinada. Condicoes favoraveis para entrada.'}
-            </div>
-        `;
-    }
+function renderPriceChart(a){const canvas=document.getElementById('priceChart'),ctx=canvas.getContext('2d');canvas.width=canvas.parentElement.clientWidth;canvas.height=canvas.parentElement.clientHeight;const W=canvas.width,H=canvas.height;ctx.clearRect(0,0,W,H);const dados=a.dados,closes=dados.map(d=>d.close);const mn=Math.min(...closes)*0.999,mx=Math.max(...closes)*1.001,rng=mx-mn||1,step=W/(closes.length-1||1);ctx.beginPath();ctx.strokeStyle='#60a5fa';ctx.lineWidth=2;closes.forEach((c,i)=>{const x=i*step,y=H-((c-mn)/rng)*H;i===0?ctx.moveTo(x,y):ctx.lineTo(x,y);});ctx.stroke();if(a.vwap){const vy=H-((a.vwap-mn)/rng)*H;ctx.beginPath();ctx.strokeStyle='#facc15';ctx.lineWidth=1;ctx.setLineDash([5,3]);ctx.moveTo(0,vy);ctx.lineTo(W,vy);ctx.stroke();ctx.setLineDash([]);}if(a.ema9){const ey=H-((a.ema9-mn)/rng)*H;ctx.beginPath();ctx.strokeStyle='#34d399';ctx.lineWidth=1;ctx.setLineDash([3,2]);ctx.moveTo(0,ey);ctx.lineTo(W,ey);ctx.stroke();ctx.setLineDash([]);}if(a.fibonacci){const fc={'0.0':'#888','0.236':'#60a5fa','0.382':'#a78bfa','0.5':'#facc15','0.618':'#f97316','0.786':'#ef4444','1.0':'#888'};Object.entries(a.fibonacci).forEach(([l,p])=>{if(p>=mn&&p<=mx){const fy=H-((p-mn)/rng)*H;ctx.beginPath();ctx.strokeStyle=fc[l]||'#555';ctx.lineWidth=0.5;ctx.setLineDash([2,4]);ctx.moveTo(0,fy);ctx.lineTo(W,fy);ctx.stroke();ctx.setLineDash([]);ctx.fillStyle=fc[l]||'#555';ctx.font='9px monospace';ctx.fillText(l+' ('+p.toLocaleString('pt-BR')+')',4,fy-3);}});}}
 
-    function atualizarSinais(a) {
-        const container = document.getElementById('sinaisSection');
+function renderRSIChart(a){const canvas=document.getElementById('rsiChart'),ctx=canvas.getContext('2d');canvas.width=canvas.parentElement.clientWidth;canvas.height=canvas.parentElement.clientHeight;const W=canvas.width,H=canvas.height;ctx.clearRect(0,0,W,H);ctx.fillStyle='rgba(239,68,68,0.08)';ctx.fillRect(0,0,W,H*0.3);ctx.fillStyle='rgba(52,211,153,0.08)';ctx.fillRect(0,H*0.7,W,H*0.3);[0.3,0.7].forEach(l=>{ctx.beginPath();ctx.strokeStyle='rgba(255,255,255,0.1)';ctx.setLineDash([3,3]);ctx.moveTo(0,H*(1-l));ctx.lineTo(W,H*(1-l));ctx.stroke();ctx.setLineDash([]);});const rv=a.rsi||50,y=H*(1-rv/100);ctx.beginPath();ctx.arc(W-10,y,4,0,Math.PI*2);ctx.fillStyle=rv>70?'#ef4444':rv<30?'#34d399':'#60a5fa';ctx.fill();ctx.font='11px monospace';ctx.fillText('RSI: '+rv.toFixed(1),8,14);}
 
-        if (!a.sinais || a.sinais.length === 0) {
-            container.innerHTML = `
-                <div style="text-align:center; padding:20px; color:var(--text-muted); font-size:13px;">
-                    Sem sinais claros no momento.<br>
-                    Aguardando confluencia de indicadores.
-                </div>
-            `;
-            return;
-        }
+function renderMACDChart(a){const canvas=document.getElementById('macdChart'),ctx=canvas.getContext('2d');canvas.width=canvas.parentElement.clientWidth;canvas.height=canvas.parentElement.clientHeight;const W=canvas.width,H=canvas.height;ctx.clearRect(0,0,W,H);ctx.beginPath();ctx.strokeStyle='rgba(255,255,255,0.1)';ctx.moveTo(0,H/2);ctx.lineTo(W,H/2);ctx.stroke();const macd=a.macd||0,signal=a.macd_signal||0,hist=a.macd_hist||0;ctx.fillStyle=hist>=0?'rgba(52,211,153,0.6)':'rgba(239,68,68,0.6)';const bH=Math.min(Math.abs(hist)*2,H/2-5);ctx.fillRect(W/2-20,hist>=0?H/2-bH:H/2,40,bH);ctx.fillStyle='#e2e8f0';ctx.font='10px monospace';ctx.fillText('MACD: '+macd.toFixed(2)+'  Signal: '+signal.toFixed(2)+'  Hist: '+hist.toFixed(2),8,14);}
 
-        let html = '';
-        a.sinais.forEach(s => {
-            const isBuy = s.tipo === 'COMPRA';
-            html += `
-                <div class="sinal-card ${isBuy ? 'compra' : 'venda'}">
-                    <div style="display:flex; justify-content:space-between; align-items:center;">
-                        <span class="sinal-badge ${isBuy ? 'compra' : 'venda'}">${s.tipo}</span>
-                        <span style="font-size:12px; color:var(--text-secondary)">
-                            Confianca: <strong style="color:${isBuy ? 'var(--accent-green)' : 'var(--accent-red)'}">${s.confianca}%</strong>
-                        </span>
-                    </div>
-                    <div class="sinal-detail">
-                        <div class="sinal-detail-item">
-                            <span style="color:var(--text-secondary)">Entrada</span>
-                            <span style="font-weight:600">${s.preco_entrada.toLocaleString('pt-BR')}</span>
-                        </div>
-                        <div class="sinal-detail-item">
-                            <span style="color:var(--text-secondary)">Stop Loss</span>
-                            <span style="color:var(--accent-red); font-weight:600">${s.stop_loss.toLocaleString('pt-BR')}</span>
-                        </div>
-                        <div class="sinal-detail-item">
-                            <span style="color:var(--text-secondary)">TP1</span>
-                            <span style="color:var(--accent-green)">${s.take_profit_1.toLocaleString('pt-BR')}</span>
-                        </div>
-                        <div class="sinal-detail-item">
-                            <span style="color:var(--text-secondary)">TP2</span>
-                            <span style="color:var(--accent-green)">${s.take_profit_2.toLocaleString('pt-BR')}</span>
-                        </div>
-                        <div class="sinal-detail-item">
-                            <span style="color:var(--text-secondary)">TP3</span>
-                            <span style="color:var(--accent-green)">${s.take_profit_3.toLocaleString('pt-BR')}</span>
-                        </div>
-                        <div class="sinal-detail-item">
-                            <span style="color:var(--text-secondary)">R/R</span>
-                            <span style="font-weight:600">${s.risco_retorno}:1</span>
-                        </div>
-                    </div>
-                    <div style="margin-top:8px; display:flex; gap:4px; flex-wrap:wrap;">
-                        <span class="tag tag-blue">${s.fibonacci_zona}</span>
-                        <span class="tag ${s.rsi_status === 'SOBREVENDIDO' ? 'tag-green' : s.rsi_status === 'SOBRECOMPRADO' ? 'tag-red' : 'tag-yellow'}">RSI ${s.rsi_status}</span>
-                        <span class="tag ${s.macd_status === 'ALTA' ? 'tag-green' : 'tag-red'}">MACD ${s.macd_status}</span>
-                        <span class="tag ${s.violinada_risco === 'BAIXO' ? 'tag-green' : s.violinada_risco === 'ALTO' ? 'tag-red' : 'tag-yellow'}">Violinada: ${s.violinada_risco}</span>
-                    </div>
-                    <div class="motivo-list">
-                        ${s.motivos.map(m => `<div class="motivo-item">${m}</div>`).join('')}
-                    </div>
-                </div>
-            `;
-        });
+function renderVolumeChart(a){const canvas=document.getElementById('volumeChart'),ctx=canvas.getContext('2d');canvas.width=canvas.parentElement.clientWidth;canvas.height=canvas.parentElement.clientHeight;const W=canvas.width,H=canvas.height;ctx.clearRect(0,0,W,H);const dados=a.dados;if(!dados||dados.length===0)return;const volumes=dados.map(d=>d.volume||0),maxV=Math.max(...volumes)||1,bW=Math.max(1,(W/volumes.length)-1);volumes.forEach((v,i)=>{const x=i*(bW+1),bH=(v/maxV)*H*0.9,cl=dados[i].close,pc=i>0?dados[i-1].close:cl;ctx.fillStyle=cl>=pc?'rgba(52,211,153,0.5)':'rgba(239,68,68,0.5)';ctx.fillRect(x,H-bH,bW,bH);});}
 
-        container.innerHTML = html;
-    }
+function atualizarContexto(p){const el=document.getElementById('contextoSection'),c=p.contexto||{};const lat=c.lateral,lc=lat?'var(--accent-red)':'var(--accent-green)';el.innerHTML='<div style="display:grid;gap:6px;font-size:12px;"><div style="display:flex;justify-content:space-between;"><span style="color:var(--text-muted)">Tendencia</span><span style="font-weight:600">'+(c.tendencia||'--')+'</span></div><div style="display:flex;justify-content:space-between;"><span style="color:var(--text-muted)">Fase</span><span>'+(c.fase||'--')+'</span></div><div style="display:flex;justify-content:space-between;"><span style="color:var(--text-muted)">Forca</span><span>'+(c.forca||0)+'%</span></div><div style="display:flex;justify-content:space-between;"><span style="color:var(--text-muted)">Lateral</span><span style="color:'+lc+';font-weight:600">'+(lat?'SIM':'NAO')+'</span></div></div>';}
 
-    function atualizarSR(a) {
-        const container = document.getElementById('srSection');
-        let html = '';
+function atualizarFibonacci(p){const el=document.getElementById('fibLevels'),fib=p.fibonacci||{};const fc={'0.0':'#888','0.236':'#60a5fa','0.382':'#a78bfa','0.5':'#facc15','0.618':'#f97316','0.786':'#ef4444','1.0':'#888'};let h='<div style="display:grid;gap:4px;font-size:11px;font-family:monospace;">';Object.entries(fib).forEach(([l,pr])=>{h+='<div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid var(--border);"><span style="color:'+(fc[l]||'#888')+';font-weight:600">'+l+'</span><span>'+(typeof pr==='number'?pr.toLocaleString('pt-BR'):pr)+'</span></div>';});h+='</div>';el.innerHTML=h;}
 
-        if (a.resistencias && a.resistencias.length > 0) {
-            html += '<div style="margin-bottom:6px; font-size:11px; color:var(--accent-red); font-weight:600;">RESISTENCIAS</div>';
-            [...a.resistencias].reverse().forEach(r => {
-                const isNear = Math.abs(a.preco_atual - r) / a.preco_atual < 0.003;
-                html += `<div class="indicator-row" style="${isNear ? 'background:rgba(255,23,68,0.1); padding:2px 6px; border-radius:3px;' : ''}">
-                    <span style="color:var(--accent-red)">R</span>
-                    <span class="indicator-value">${r.toLocaleString('pt-BR')} ${isNear ? '<span class="tag tag-red" style="font-size:9px;">PROXIMO</span>' : ''}</span>
-                </div>`;
-            });
-        }
+function atualizarVolume(p){const el=document.getElementById('volumeAnalysis'),v=p.volume||{};el.innerHTML='<div style="display:grid;gap:6px;font-size:12px;"><div style="display:flex;justify-content:space-between;"><span style="color:var(--text-muted)">Vol. Atual</span><span>'+(v.atual||0).toLocaleString('pt-BR')+'</span></div><div style="display:flex;justify-content:space-between;"><span style="color:var(--text-muted)">Media 20</span><span>'+(v.media20||0).toLocaleString('pt-BR')+'</span></div><div style="display:flex;justify-content:space-between;"><span style="color:var(--text-muted)">Ratio</span><span style="color:'+((v.ratio||0)>1.5?'var(--accent-green)':'var(--text-primary)')+'">'+(v.ratio||0).toFixed(2)+'x</span></div><div style="display:flex;justify-content:space-between;"><span style="color:var(--text-muted)">Classificacao</span><span>'+(v.classificacao||'--')+'</span></div></div>';}
 
-        html += `<div class="indicator-row" style="background:rgba(33,150,243,0.15); padding:4px 6px; border-radius:3px; margin:6px 0;">
-            <span style="color:var(--accent-blue); font-weight:600">PRECO ATUAL</span>
-            <span class="indicator-value" style="color:var(--accent-blue)">${a.preco_atual.toLocaleString('pt-BR')}</span>
-        </div>`;
+function atualizarViolinada(p){const el=document.getElementById('violinadaSection'),v=p.violinada||{},d=v.detectada||false;el.innerHTML='<div style="display:grid;gap:6px;font-size:12px;"><div style="display:flex;justify-content:space-between;"><span style="color:var(--text-muted)">Status</span><span class="tag '+(d?'tag-red':'tag-green')+'">'+(d?'DETECTADA':'LIMPO')+'</span></div>'+(v.tipo?'<div style="display:flex;justify-content:space-between;"><span style="color:var(--text-muted)">Tipo</span><span>'+v.tipo+'</span></div>':'')+(v.descricao?'<div style="font-size:11px;color:var(--text-secondary);margin-top:4px;">'+v.descricao+'</div>':'')+'</div>';}
 
-        if (a.suportes && a.suportes.length > 0) {
-            html += '<div style="margin-top:6px; margin-bottom:6px; font-size:11px; color:var(--accent-green); font-weight:600;">SUPORTES</div>';
-            [...a.suportes].reverse().forEach(s => {
-                const isNear = Math.abs(a.preco_atual - s) / a.preco_atual < 0.003;
-                html += `<div class="indicator-row" style="${isNear ? 'background:rgba(0,200,83,0.1); padding:2px 6px; border-radius:3px;' : ''}">
-                    <span style="color:var(--accent-green)">S</span>
-                    <span class="indicator-value">${s.toLocaleString('pt-BR')} ${isNear ? '<span class="tag tag-green" style="font-size:9px;">PROXIMO</span>' : ''}</span>
-                </div>`;
-            });
-        }
+function atualizarSinais(p){const el=document.getElementById('sinaisSection'),sinais=p.sinais||[];if(sinais.length===0){el.innerHTML='<div style="font-size:12px;color:var(--text-muted);text-align:center;padding:10px;">Nenhum sinal no momento</div>';return;}let h='';sinais.forEach(s=>{const t=s.tipo||'NEUTRO';h+='<div class="sinal-card '+t.toLowerCase()+'"><div style="display:flex;justify-content:space-between;align-items:center;"><span class="tag '+(t==='COMPRA'?'tag-green':'tag-red')+'">'+t+'</span><span style="font-size:11px;color:var(--text-muted)">'+(s.horario||'--')+'</span></div><div class="sinal-detail"><div class="sinal-detail-item"><span style="color:var(--text-muted)">Entrada</span><span>'+(s.entrada||'--')+'</span></div><div class="sinal-detail-item"><span style="color:var(--text-muted)">Stop</span><span style="color:var(--accent-red)">'+(s.stop||'--')+'</span></div><div class="sinal-detail-item"><span style="color:var(--text-muted)">Alvo</span><span style="color:var(--accent-green)">'+(s.alvo||'--')+'</span></div><div class="sinal-detail-item"><span style="color:var(--text-muted)">R/R</span><span>'+(s.rr||'--')+'</span></div></div>'+(s.motivos?'<div class="motivo-list">'+s.motivos.map(m=>'<div class="motivo-item">'+m+'</div>').join('')+'</div>':'')+'</div>';});el.innerHTML=h;}
 
-        container.innerHTML = html || '<div style="color:var(--text-muted); font-size:12px;">Sem niveis identificados</div>';
-    }
+function atualizarSR(p){const el=document.getElementById('srSection'),sr=p.suportes_resistencias||{};const sup=sr.suportes||[],res=sr.resistencias||[];let h='<div style="font-size:11px;"><div style="color:var(--accent-green);font-weight:600;margin-bottom:4px;">Suportes</div>';if(sup.length>0)sup.forEach(s=>{h+='<div style="display:flex;justify-content:space-between;padding:2px 0;font-family:monospace;"><span>'+(typeof s==='object'?s.preco:s)+'</span></div>';});else h+='<div style="color:var(--text-muted)">--</div>';h+='<div style="color:var(--accent-red);font-weight:600;margin:8px 0 4px;">Resistencias</div>';if(res.length>0)res.forEach(r=>{h+='<div style="display:flex;justify-content:space-between;padding:2px 0;font-family:monospace;"><span>'+(typeof r==='object'?r.preco:r)+'</span></div>';});else h+='<div style="color:var(--text-muted)">--</div>';h+='</div>';el.innerHTML=h;}
 
-    function atualizarMultiTF() {
-        const p = state.painel;
-        if (!p || !p.timeframes) return;
+function atualizarMultiTF(p){const grid=document.getElementById('multiTfGrid'),mtf=p.multi_timeframe||{};const tfs=['5m','15m','1h','4h','1d'],labels=['5M','15M','1H','4H','1D'];let h='';tfs.forEach((tf,i)=>{const info=mtf[tf]||{},tend=info.tendencia||'--';let c='var(--text-muted)';if(tend==='ALTA')c='var(--accent-green)';else if(tend==='BAIXA')c='var(--accent-red)';h+='<div class="tf-cell"><div class="tf-cell-header">'+labels[i]+'</div><div class="tf-cell-value" style="color:'+c+'">'+tend+'</div></div>';});grid.innerHTML=h;}
 
-        const container = document.getElementById('multiTfGrid');
-        const tfs = ['5m', '15m', '1h', '4h', '1d'];
-        const labels = ['5M', '15M', '1H', '4H', '1D'];
-
-        let html = '';
-        tfs.forEach((tf, i) => {
-            const data = p.timeframes[tf];
-            if (data) {
-                let trendIcon, trendColor;
-                if (data.tendencia === 'ALTA') { trendIcon = '&uarr;'; trendColor = 'var(--accent-green)'; }
-                else if (data.tendencia === 'BAIXA') { trendIcon = '&darr;'; trendColor = 'var(--accent-red)'; }
-                else { trendIcon = '&harr;'; trendColor = 'var(--text-muted)'; }
-
-                html += `
-                    <div class="tf-cell" style="cursor:pointer;" onclick="trocarTimeframe('${tf}')">
-                        <div class="tf-cell-header">${labels[i]}</div>
-                        <div class="tf-cell-value" style="color:${trendColor}">${trendIcon}</div>
-                        <div class="tf-cell-sub">RSI ${data.rsi?.toFixed(0) || '--'}</div>
-                        <div class="tf-cell-sub" style="font-size:9px; color:${
-                            data.violinada_score > 60 ? 'var(--accent-red)' :
-                            data.violinada_score > 30 ? 'var(--accent-orange)' : 'var(--accent-green)'
-                        }">VIO ${data.violinada_score?.toFixed(0) || '--'}%</div>
-                    </div>
-                `;
-            } else {
-                html += `
-                    <div class="tf-cell">
-                        <div class="tf-cell-header">${labels[i]}</div>
-                        <div class="tf-cell-value">--</div>
-                    </div>
-                `;
-            }
-        });
-
-        container.innerHTML = html;
-    }
-    </script>
+carregarDados();
+</script>
 </body>
 </html>
