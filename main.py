@@ -2812,7 +2812,7 @@ async def simulador_real(ativo: str = Query("WIN")):
                 if ativo == "WIN":
                     _slippage = _rnd.randint(5, 20)
                 else:
-                    _slippage = round(_rnd.uniform(0.001, 0.005), 4)  # WDO: 0.1-0.5 centavo
+                    _slippage = round(_rnd.uniform(0.0005, 0.002), 4)  # WDO: 0.5-2 pts em BRL
                 
                 # Slippage vai contra: compra mais caro, vende mais barato
                 if is_compra:
@@ -2824,7 +2824,7 @@ async def simulador_real(ativo: str = Query("WIN")):
                 if ativo == "WIN":
                     _custo_pts = 5  # ~R$1.00 por contrato (emolumentos B3)
                 else:
-                    _custo_pts = 0.001  # ~R$0.01 custo WDO
+                    _custo_pts = 1  # 1 ponto WDO = R$10 custo
                 
                 # Stop e alvo baseados no preco REAL de entrada (com slippage)
                 stop_price = round(preco_entrada_real - stop_pts, 2) if is_compra else round(preco_entrada_real + stop_pts, 2)
@@ -2920,7 +2920,12 @@ async def simulador_real(ativo: str = Query("WIN")):
                     pts_f = (preco_saida - c) if is_compra else (c - preco_saida)
                     resultado = "WIN" if pts_f > 0 else "LOSS"
                 
-                pts_bruto = round((preco_saida - c) if is_compra else (c - preco_saida), 4)
+                _raw_diff = (preco_saida - c) if is_compra else (c - preco_saida)
+                if ativo == "WDO":
+                    # Converter diferenca em reais para pontos WDO (1pt = 0.001 BRL)
+                    pts_bruto = round(_raw_diff * 1000, 1)  # ex: 0.01 BRL = 10 pts WDO
+                else:
+                    pts_bruto = round(_raw_diff, 1)
                 pts = round(pts_bruto - _custo_pts, 4)  # Desconta custo operacional
                 rs = round(pts * valor_ponto, 2)
                 
@@ -3097,8 +3102,8 @@ async def simulador_real(ativo: str = Query("WIN")):
                     "custo_pts": _custo_pts,
                     "stop_loss": stop_price,
                     "take_profit": alvo_price,
-                    "stop_pts": stop_pts,
-                    "alvo_pts": alvo_pts,
+                    "stop_pts": round(stop_pts * 1000, 1) if ativo == "WDO" else stop_pts,
+                    "alvo_pts": round(alvo_pts * 1000, 1) if ativo == "WDO" else alvo_pts,
                     "rr": f"1:{round(alvo_pts/stop_pts, 1)}",
                     "hora_saida": hora_saida,
                     "preco_saida": round(preco_saida, 2),
