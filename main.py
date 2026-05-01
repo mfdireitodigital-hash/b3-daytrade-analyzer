@@ -2778,7 +2778,7 @@ async def simulador_real(ativo: str = Query("WIN")):
                     stop_pts = min(stop_pts, 0.10)  # max 10 centavos
                 
                 # Alvo = 2x stop (R:R minimo 1:2 - Van Tharp: risco/retorno positivo)
-                alvo_pts = round(stop_pts * 2.0)
+                alvo_pts = round(stop_pts * 2.0, 4)  # 4 decimais para WDO
                 
                 is_compra = tipo_sinal == "COMPRA"
                 
@@ -2787,12 +2787,12 @@ async def simulador_real(ativo: str = Query("WIN")):
                     _structural_stop = round(c - suporte + atr_v * 0.3)
                     if _structural_stop > stop_pts * 0.5 and _structural_stop < stop_pts * 2:
                         stop_pts = max(round(_structural_stop / 5) * 5, 80)
-                        alvo_pts = round(stop_pts * 2.0)
+                        alvo_pts = round(stop_pts * 2.0, 4)  # 4 decimais para WDO
                 elif not is_compra and resistencia and abs(resistencia - c) < stop_pts:
                     _structural_stop = round(resistencia - c + atr_v * 0.3)
                     if _structural_stop > stop_pts * 0.5 and _structural_stop < stop_pts * 2:
                         stop_pts = max(round(_structural_stop / 5) * 5, 80)
-                        alvo_pts = round(stop_pts * 2.0)
+                        alvo_pts = round(stop_pts * 2.0, 4)  # 4 decimais para WDO
                 
                 # ===== ENTRADA REALISTA: proxima vela open + slippage =====
                 # Na vida real: sinal aparece no FECHAMENTO da vela, trader entra na ABERTURA da proxima
@@ -2920,8 +2920,8 @@ async def simulador_real(ativo: str = Query("WIN")):
                     pts_f = (preco_saida - c) if is_compra else (c - preco_saida)
                     resultado = "WIN" if pts_f > 0 else "LOSS"
                 
-                pts_bruto = round((preco_saida - c) if is_compra else (c - preco_saida), 1)
-                pts = round(pts_bruto - _custo_pts, 1)  # Desconta custo operacional
+                pts_bruto = round((preco_saida - c) if is_compra else (c - preco_saida), 4)
+                pts = round(pts_bruto - _custo_pts, 4)  # Desconta custo operacional
                 rs = round(pts * valor_ponto, 2)
                 
                 # Detalhes da perda quando LOSS - ANALISE COMPLETA DO PQ PERDEU
