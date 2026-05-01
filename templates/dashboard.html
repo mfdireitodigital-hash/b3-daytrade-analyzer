@@ -880,6 +880,8 @@
                     <button onclick="simChartToggle('vwap')" id="simChartBtnVwap" class="btn" style="font-size:9px;padding:2px 6px;background:rgba(168,85,247,0.2);color:#a855f7;border:1px solid #8b5cf6;">VWAP</button>
                     <button onclick="simChartToggle('sr')" id="simChartBtnSr" class="btn" style="font-size:9px;padding:2px 6px;background:rgba(239,68,68,0.2);color:#fca5a5;border:1px solid #ef4444;">S/R</button>
                     <button onclick="simChartToggle('fib')" id="simChartBtnFib" class="btn" style="font-size:9px;padding:2px 6px;background:rgba(245,158,11,0.2);color:#fbbf24;border:1px solid #f59e0b;">FIB</button>
+                    <button onclick="simChartToggle('vol')" id="simChartBtnVol" class="btn" style="font-size:9px;padding:2px 6px;background:rgba(6,182,212,0.2);color:#22d3ee;border:1px solid #06b6d4;">VOL</button>
+                    <button onclick="simChartToggle('pa')" id="simChartBtnPa" class="btn" style="font-size:9px;padding:2px 6px;background:rgba(236,72,153,0.2);color:#f472b6;border:1px solid #ec4899;">P.ACTION</button>
                     <button onclick="simChartToggle('ops')" id="simChartBtnOps" class="btn" style="font-size:9px;padding:2px 6px;background:rgba(34,197,94,0.2);color:#22c55e;border:1px solid #22c55e;">ENTRADAS</button>
                 </div>
             </div>
@@ -893,6 +895,10 @@
                 <span><span style="color:rgba(245,158,11,0.6);">╌╌</span> Fibonacci</span>
                 <span><span style="color:#22c55e;">▲</span> Compra</span>
                 <span><span style="color:#ef4444;">▼</span> Venda</span>
+                <span><span style="color:#22c55e;">▲BRK</span> Rompimento Topo</span>
+                <span><span style="color:#ef4444;">▼BRK</span> Rompimento Fundo</span>
+                <span><span style="color:#ec4899;">QE</span> Quebra Estrutura</span>
+                <span><span style="color:#22d3ee;">█</span> Volume</span>
             </div>
             <div style="margin-top:6px;">
                 <div style="font-size:9px;font-weight:700;color:var(--text-muted);margin-bottom:4px;">RSI</div>
@@ -3245,7 +3251,7 @@ function simRealSetAtivo(a) {
 // ===== CHART RENDERING =====
 let simChartData = [];
 let simChartOps = [];
-let simChartShow = {ema: true, vwap: true, sr: true, fib: true, ops: true};
+let simChartShow = {ema: true, vwap: true, sr: true, fib: true, vol: true, pa: true, ops: true};
 
 function simChartToggle(key) {
     simChartShow[key] = !simChartShow[key];
@@ -3447,6 +3453,112 @@ function simChartRender() {
             ctx.fillRect(x, pad.t, cW, H - pad.t - pad.b);
         }
     });
+    
+    // ===== VOLUME BARS (bottom of chart) =====
+    if (simChartShow.vol) {
+        // Get volumes from price_action data or estimate from candle range
+        const volumes = d.map(v => {
+            const pa = v.price_action || {};
+            if (pa.vol_ratio) return pa.vol_ratio;
+            // Estimate from candle range vs ATR
+            const range = v.high - v.low;
+            const atr = v.atr || range;
+            return atr > 0 ? range / atr : 0.5;
+        });
+        const maxVol = Math.max(...volumes, 0.01);
+        const volH = 40; // max height for volume bars
+        
+        d.forEach((v, i) => {
+            const x = pad.l + i * cW;
+            const bW = Math.max(cW * 0.5, 1);
+            const bx = x + (cW - bW) / 2;
+            const vh = (volumes[i] / maxVol) * volH;
+            const isUp = v.close >= v.open;
+            ctx.fillStyle = isUp ? 'rgba(34,197,94,0.15)' : 'rgba(239,68,68,0.15)';
+            ctx.fillRect(bx, H - pad.b - vh, bW, vh);
+        });
+    }
+    
+    // ===== PRICE ACTION MARKERS =====
+    if (simChartShow.pa) {
+        d.forEach((v, i) => {
+            const pa = v.price_action || {};
+            const x = pad.l + i * cW + cW / 2;
+            
+            // Rompimento de topo (breakout) - green arrow up
+            if (pa.rompimento_topo) {
+                ctx.fillStyle = '#22c55e';
+                ctx.font = 'bold 18px sans-serif';
+                ctx.fillText('▲BRK', x - 15, pY(v.high) - 8);
+            }
+            
+            // Rompimento de fundo (breakdown) - red arrow down
+            if (pa.rompimento_fundo) {
+                ctx.fillStyle = '#ef4444';
+                ctx.font = 'bold 18px sans-serif';
+                ctx.fillText('▼BRK', x - 15, pY(v.low) + 22);
+            }
+            
+            // Quebra de estrutura
+            if (pa.estrutura && (pa.estrutura === 'QUEBRA_ALTA' || pa.estrutura === 'QUEBRA_BAIXA')) {
+                ctx.fillStyle = '#ec4899';
+                ctx.font = 'bold 14px sans-serif';
+                const qy = pa.estrutura === 'QUEBRA_ALTA' ? pY(v.high) - 18 : pY(v.low) + 30;
+                ctx.fillText('QE', x - 6, qy);
+            }
+            
+            // Volume alto marker
+            if (pa.volume_alto) {
+                ctx.fillStyle = '#22d3ee';
+                ctx.font = 'bold 12px sans-serif';
+                ctx.fillText(pa.vol_ratio + 'x', x - 8, H - pad.b - 44);
+            }
+        });
+        
+        // LTA (linha de tendencia de alta) - connect ascending lows
+        const ltaPoints = [];
+        const ltdPoints = [];
+        d.forEach((v, i) => {
+            const pa = v.price_action || {};
+            if (pa.lta && pa.lta_pontos) {
+                ltaPoints.push({x: pad.l + i * cW + cW/2, y1: pY(pa.lta_pontos[0]), y2: pY(pa.lta_pontos[1])});
+            }
+            if (pa.ltd && pa.ltd_pontos) {
+                ltdPoints.push({x: pad.l + i * cW + cW/2, y1: pY(pa.ltd_pontos[0]), y2: pY(pa.ltd_pontos[1])});
+            }
+        });
+        
+        // Draw LTA line (green, solid)
+        if (ltaPoints.length > 0) {
+            const lp = ltaPoints[ltaPoints.length - 1]; // last LTA
+            // Draw a rising line across the chart
+            ctx.strokeStyle = '#22c55e';
+            ctx.lineWidth = 2;
+            ctx.setLineDash([]);
+            ctx.beginPath();
+            ctx.moveTo(pad.l, lp.y1);
+            ctx.lineTo(W - pad.r, lp.y2 - (lp.y1 - lp.y2) * 0.5);
+            ctx.stroke();
+            ctx.font = 'bold 14px sans-serif';
+            ctx.fillStyle = '#22c55e';
+            ctx.fillText('LTA', pad.l + 4, lp.y1 - 4);
+        }
+        
+        // Draw LTD line (red, solid)
+        if (ltdPoints.length > 0) {
+            const lp = ltdPoints[ltdPoints.length - 1];
+            ctx.strokeStyle = '#ef4444';
+            ctx.lineWidth = 2;
+            ctx.setLineDash([]);
+            ctx.beginPath();
+            ctx.moveTo(pad.l, lp.y1);
+            ctx.lineTo(W - pad.r, lp.y2 - (lp.y1 - lp.y2) * 0.5);
+            ctx.stroke();
+            ctx.font = 'bold 14px sans-serif';
+            ctx.fillStyle = '#ef4444';
+            ctx.fillText('LTD', pad.l + 4, lp.y1 - 4);
+        }
+    }
     
     // Entry/Exit markers
     if (simChartShow.ops && simChartOps.length) {

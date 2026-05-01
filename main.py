@@ -2584,7 +2584,92 @@ async def simulador_real(ativo: str = Query("WIN")):
             except Exception as _e:
                 pass  # Non-critical
             
-            # 12. SMC - Smart Money Concepts (FVG, Liquidity Sweep, Order Block, BOS/CHoCH)
+            # 12. PRICE ACTION COMPLETO
+            # LTA/LTD detection, rompimento, quebra de estrutura
+            price_action = {}
+            if len(w) >= 10:
+                try:
+                    # Swing highs e lows recentes (10 velas)
+                    _pa_highs = [float(w.iloc[j]['high']) for j in range(-10, 0)]
+                    _pa_lows = [float(w.iloc[j]['low']) for j in range(-10, 0)]
+                    _pa_closes = [float(w.iloc[j]['close']) for j in range(-10, 0)]
+                    
+                    # Topos e fundos locais (pivots)
+                    _topos = []
+                    _fundos = []
+                    for j in range(1, len(_pa_highs) - 1):
+                        if _pa_highs[j] > _pa_highs[j-1] and _pa_highs[j] > _pa_highs[j+1]:
+                            _topos.append((_pa_highs[j], j))
+                        if _pa_lows[j] < _pa_lows[j-1] and _pa_lows[j] < _pa_lows[j+1]:
+                            _fundos.append((_pa_lows[j], j))
+                    
+                    # LTA: fundos ascendentes
+                    if len(_fundos) >= 2:
+                        if _fundos[-1][0] > _fundos[-2][0]:
+                            price_action["lta"] = True
+                            price_action["lta_pontos"] = [_fundos[-2][0], _fundos[-1][0]]
+                            motivos_operar.append("LTA: Fundos ascendentes (linha de tendencia de alta)")
+                    
+                    # LTD: topos descendentes
+                    if len(_topos) >= 2:
+                        if _topos[-1][0] < _topos[-2][0]:
+                            price_action["ltd"] = True
+                            price_action["ltd_pontos"] = [_topos[-2][0], _topos[-1][0]]
+                            motivos_operar.append("LTD: Topos descendentes (linha de tendencia de baixa)")
+                    
+                    # Rompimento de topo
+                    if _topos and c > _topos[-1][0]:
+                        price_action["rompimento_topo"] = True
+                        price_action["topo_rompido"] = _topos[-1][0]
+                        score += 1
+                        motivos_operar.append(f"ROMPIMENTO DE TOPO em {round(_topos[-1][0], 2)} - breakout")
+                    
+                    # Rompimento de fundo
+                    if _fundos and c < _fundos[-1][0]:
+                        price_action["rompimento_fundo"] = True
+                        price_action["fundo_rompido"] = _fundos[-1][0]
+                        score += 1
+                        motivos_operar.append(f"ROMPIMENTO DE FUNDO em {round(_fundos[-1][0], 2)} - breakdown")
+                    
+                    # Quebra de estrutura (BOS simples)
+                    # Alta: topo mais alto que anterior
+                    # Baixa: fundo mais baixo que anterior
+                    if len(_topos) >= 2 and len(_fundos) >= 2:
+                        _topos_asc = _topos[-1][0] > _topos[-2][0]
+                        _fundos_asc = _fundos[-1][0] > _fundos[-2][0]
+                        if _topos_asc and _fundos_asc:
+                            price_action["estrutura"] = "ALTA"
+                            price_action["estrutura_label"] = "Topos e fundos ascendentes"
+                        elif not _topos_asc and not _fundos_asc:
+                            price_action["estrutura"] = "BAIXA"
+                            price_action["estrutura_label"] = "Topos e fundos descendentes"
+                        elif _topos_asc and not _fundos_asc:
+                            price_action["estrutura"] = "QUEBRA_ALTA"
+                            price_action["estrutura_label"] = "Quebra de estrutura: fundo rompeu em alta"
+                            motivos_operar.append("QUEBRA DE ESTRUTURA: mudanca de direcao possivel")
+                        elif not _topos_asc and _fundos_asc:
+                            price_action["estrutura"] = "QUEBRA_BAIXA"
+                            price_action["estrutura_label"] = "Quebra de estrutura: topo rompeu em baixa"
+                            motivos_operar.append("QUEBRA DE ESTRUTURA: mudanca de direcao possivel")
+                    
+                    # Volume check
+                    if vol > 0:
+                        _avg_vol = sum(float(w.iloc[j]['volume']) for j in range(-10, 0)) / 10
+                        if _avg_vol > 0:
+                            _vol_ratio = vol / _avg_vol
+                            if _vol_ratio > 1.5:
+                                price_action["volume_alto"] = True
+                                price_action["vol_ratio"] = round(_vol_ratio, 1)
+                                score += 1
+                                motivos_operar.append(f"VOLUME {round(_vol_ratio,1)}x acima da media - confirmacao")
+                            elif _vol_ratio < 0.5:
+                                price_action["volume_baixo"] = True
+                                motivos_nao_operar.append(f"Volume baixo ({round(_vol_ratio,1)}x) - sem participacao")
+                except: pass
+            
+            vela_info["price_action"] = price_action
+            
+            # 13. SMC - Smart Money Concepts (FVG, Liquidity Sweep, Order Block, BOS/CHoCH)
             smc_data = {}
             try:
                 _smc_score, _smc_motivos, smc_data = aplicar_smc_scoring(
@@ -2665,15 +2750,13 @@ async def simulador_real(ativo: str = Query("WIN")):
             # Re-entrada permitida - cada trade e independente (Douglas: cada momento e unico)
             _mesmo_nivel = False
             
-            # Filtro 3: RSI extremo (nao compra sobrecomprado, nao vende sobrevendido)
-            _rsi_pullback_ok = True
+            # RSI extremo: informativo, nao bloqueia (cada indicador e individual)
+            _rsi_pullback_ok = True  # Nunca bloqueia - RSI e um indicador entre varios
             if pode_operar:
-                if tipo_sinal == "COMPRA" and rsi_v > 75:
-                    _rsi_pullback_ok = False
-                    motivos_nao_operar.append(f"FILTRO RSI: RSI {rsi_v} sobrecomprado - espere pullback")
-                elif tipo_sinal == "VENDA" and rsi_v < 25:
-                    _rsi_pullback_ok = False
-                    motivos_nao_operar.append(f"FILTRO RSI: RSI {rsi_v} sobrevendido - espere bounce")
+                if tipo_sinal == "COMPRA" and rsi_v > 80:
+                    motivos_nao_operar.append(f"ATENCAO RSI: {rsi_v} muito sobrecomprado - risco de pullback")
+                elif tipo_sinal == "VENDA" and rsi_v < 15:
+                    motivos_nao_operar.append(f"ATENCAO RSI: {rsi_v} extremamente sobrevendido - risco de bounce")
             
             # Aplicar filtros: so entra se passar TODOS
             # Filtros sao informativos - cada indicador protege individualmente
@@ -3149,6 +3232,7 @@ async def simulador_real(ativo: str = Query("WIN")):
                 "tipo_sinal": v.get("tipo_sinal"),
                 "conf_label": v.get("conf_label", ""),
                 "motivos_operar": v.get("motivos_operar", [])[:3],
+                "price_action": v.get("price_action", {}),
             } for v in velas_analisadas],
             "timestamp": datetime.now(BRT_tz).strftime("%H:%M:%S"),
         })
