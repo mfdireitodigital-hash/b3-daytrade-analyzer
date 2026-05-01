@@ -878,10 +878,22 @@
                 <div style="display:flex;gap:4px;">
                     <button onclick="simChartToggle('ema')" id="simChartBtnEma" class="btn" style="font-size:9px;padding:2px 6px;background:rgba(59,130,246,0.2);color:#60a5fa;border:1px solid #3b82f6;">EMA</button>
                     <button onclick="simChartToggle('vwap')" id="simChartBtnVwap" class="btn" style="font-size:9px;padding:2px 6px;background:rgba(168,85,247,0.2);color:#a855f7;border:1px solid #8b5cf6;">VWAP</button>
+                    <button onclick="simChartToggle('sr')" id="simChartBtnSr" class="btn" style="font-size:9px;padding:2px 6px;background:rgba(239,68,68,0.2);color:#fca5a5;border:1px solid #ef4444;">S/R</button>
+                    <button onclick="simChartToggle('fib')" id="simChartBtnFib" class="btn" style="font-size:9px;padding:2px 6px;background:rgba(245,158,11,0.2);color:#fbbf24;border:1px solid #f59e0b;">FIB</button>
                     <button onclick="simChartToggle('ops')" id="simChartBtnOps" class="btn" style="font-size:9px;padding:2px 6px;background:rgba(34,197,94,0.2);color:#22c55e;border:1px solid #22c55e;">ENTRADAS</button>
                 </div>
             </div>
             <canvas id="simChartCanvas" width="900" height="320" style="width:100%;height:320px;border-radius:4px;background:#0a0a0a;"></canvas>
+            <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:6px;font-size:9px;color:var(--text-muted);">
+                <span><span style="color:#3b82f6;">━━</span> EMA9</span>
+                <span><span style="color:#f59e0b;">━━</span> EMA21</span>
+                <span><span style="color:#a855f7;">╌╌</span> VWAP</span>
+                <span><span style="color:#22c55e;">╌╌</span> Suporte</span>
+                <span><span style="color:#ef4444;">╌╌</span> Resistencia</span>
+                <span><span style="color:rgba(245,158,11,0.6);">╌╌</span> Fibonacci</span>
+                <span><span style="color:#22c55e;">▲</span> Compra</span>
+                <span><span style="color:#ef4444;">▼</span> Venda</span>
+            </div>
             <div style="margin-top:6px;">
                 <div style="font-size:9px;font-weight:700;color:var(--text-muted);margin-bottom:4px;">RSI</div>
                 <canvas id="simRsiCanvas" width="900" height="80" style="width:100%;height:80px;border-radius:4px;background:#0a0a0a;"></canvas>
@@ -3233,7 +3245,7 @@ function simRealSetAtivo(a) {
 // ===== CHART RENDERING =====
 let simChartData = [];
 let simChartOps = [];
-let simChartShow = {ema: true, vwap: true, ops: true};
+let simChartShow = {ema: true, vwap: true, sr: true, fib: true, ops: true};
 
 function simChartToggle(key) {
     simChartShow[key] = !simChartShow[key];
@@ -3334,6 +3346,70 @@ function simChartRender() {
             }
         });
         ctx.stroke();
+    }
+    
+    // ===== SUPORTE / RESISTENCIA =====
+    if (simChartShow.sr) {
+        // Find S/R from the data
+        let lastSuport = null, lastResist = null;
+        d.forEach(v => {
+            if (v.suporte && v.suporte > 0) lastSuport = v.suporte;
+            if (v.resistencia && v.resistencia > 0) lastResist = v.resistencia;
+        });
+        if (lastSuport && lastSuport >= minP && lastSuport <= maxP) {
+            const sy = pY(lastSuport);
+            ctx.strokeStyle = '#22c55e';
+            ctx.lineWidth = 1.5;
+            ctx.setLineDash([8, 4]);
+            ctx.beginPath(); ctx.moveTo(pad.l, sy); ctx.lineTo(W - pad.r, sy); ctx.stroke();
+            ctx.setLineDash([]);
+            ctx.font = 'bold 16px sans-serif';
+            ctx.fillStyle = '#22c55e';
+            ctx.fillText('S ' + lastSuport.toFixed(0), W - pad.r - 80, sy - 4);
+        }
+        if (lastResist && lastResist >= minP && lastResist <= maxP) {
+            const ry = pY(lastResist);
+            ctx.strokeStyle = '#ef4444';
+            ctx.lineWidth = 1.5;
+            ctx.setLineDash([8, 4]);
+            ctx.beginPath(); ctx.moveTo(pad.l, ry); ctx.lineTo(W - pad.r, ry); ctx.stroke();
+            ctx.setLineDash([]);
+            ctx.font = 'bold 16px sans-serif';
+            ctx.fillStyle = '#ef4444';
+            ctx.fillText('R ' + lastResist.toFixed(0), W - pad.r - 80, ry - 4);
+        }
+    }
+    
+    // ===== FIBONACCI =====
+    if (simChartShow.fib) {
+        const allHighs = d.map(v => v.high);
+        const allLows = d.map(v => v.low);
+        const swingHigh = Math.max(...allHighs);
+        const swingLow = Math.min(...allLows);
+        const fibRange = swingHigh - swingLow;
+        if (fibRange > 0) {
+            const fibLevels = [
+                {pct: 0.236, label: '23.6%'},
+                {pct: 0.382, label: '38.2%'},
+                {pct: 0.500, label: '50.0%'},
+                {pct: 0.618, label: '61.8%'},
+                {pct: 0.786, label: '78.6%'},
+            ];
+            fibLevels.forEach(f => {
+                const price = swingHigh - fibRange * f.pct;
+                if (price >= minP && price <= maxP) {
+                    const fy = pY(price);
+                    ctx.strokeStyle = 'rgba(245,158,11,0.35)';
+                    ctx.lineWidth = 1;
+                    ctx.setLineDash([3, 6]);
+                    ctx.beginPath(); ctx.moveTo(pad.l, fy); ctx.lineTo(W - pad.r, fy); ctx.stroke();
+                    ctx.setLineDash([]);
+                    ctx.font = '14px monospace';
+                    ctx.fillStyle = 'rgba(245,158,11,0.6)';
+                    ctx.fillText(f.label + ' ' + price.toFixed(0), pad.l + 4, fy - 3);
+                }
+            });
+        }
     }
     
     // Candlesticks

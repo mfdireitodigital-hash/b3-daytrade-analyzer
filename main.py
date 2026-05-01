@@ -2650,30 +2650,20 @@ async def simulador_real(ativo: str = Query("WIN")):
                 and not dia_bloqueado  # Limite de perda
             )
             
-            # ===== FILTROS PRO TRADER - PROTEGER CAPITAL =====
-            # Filtro 1: NAO entrar em topo/fundo local (exaustao)
+            # ===== ANALISE DE CONTEXTO (informativo, nao bloqueia) =====
             _exaustao = False
-            if pode_operar and len(w) >= 5:
+            if len(w) >= 5:
                 try:
                     _recent_5h = [float(w.iloc[j]['high']) for j in range(-5, 0)]
                     _recent_5l = [float(w.iloc[j]['low']) for j in range(-5, 0)]
                     if tipo_sinal == "COMPRA" and c >= max(_recent_5h):
-                        _exaustao = True  # comprando no topo das ultimas 5 velas
-                        motivos_nao_operar.append("FILTRO EXAUSTAO: preco no topo local (5 velas)")
+                        motivos_nao_operar.append("ATENCAO: preco no topo local (5 velas) - possivel exaustao")
                     elif tipo_sinal == "VENDA" and c <= min(_recent_5l):
-                        _exaustao = True  # vendendo no fundo das ultimas 5 velas
-                        motivos_nao_operar.append("FILTRO EXAUSTAO: preco no fundo local (5 velas)")
+                        motivos_nao_operar.append("ATENCAO: preco no fundo local (5 velas) - possivel exaustao")
                 except: pass
             
-            # Filtro 2: NAO re-entrar no mesmo nivel apos loss recente
+            # Re-entrada permitida - cada trade e independente (Douglas: cada momento e unico)
             _mesmo_nivel = False
-            if pode_operar and operacoes_recomendadas:
-                _last_op = operacoes_recomendadas[-1]
-                if _last_op["resultado"] == "LOSS":
-                    _dist_last = abs(c - _last_op["preco_entrada"])
-                    if _dist_last < atr_v * 0.5:
-                        _mesmo_nivel = True
-                        motivos_nao_operar.append(f"FILTRO RE-ENTRADA: muito proximo do loss anterior ({round(_dist_last,0)}pts)")
             
             # Filtro 3: RSI extremo (nao compra sobrecomprado, nao vende sobrevendido)
             _rsi_pullback_ok = True
@@ -2686,7 +2676,8 @@ async def simulador_real(ativo: str = Query("WIN")):
                     motivos_nao_operar.append(f"FILTRO RSI: RSI {rsi_v} sobrevendido - espere bounce")
             
             # Aplicar filtros: so entra se passar TODOS
-            pode_operar = pode_operar and not _exaustao and not _mesmo_nivel and _rsi_pullback_ok
+            # Filtros sao informativos - cada indicador protege individualmente
+            pode_operar = pode_operar and _rsi_pullback_ok  # So bloqueia RSI extremo (>75/<25)
             
             if pode_operar:
                 # ===== STOP E ALVO PRO (Williams + Bellafiore) =====
@@ -3152,8 +3143,12 @@ async def simulador_real(ativo: str = Query("WIN")):
                 "open": v["open"], "high": v["high"], "low": v["low"], "close": v["close"],
                 "rsi": v["rsi"], "ema9": v.get("ema9", 0), "ema21": v.get("ema21", 0),
                 "atr": v.get("atr", 0), "vwap": v.get("vwap"),
+                "suporte": v.get("suporte"), "resistencia": v.get("resistencia"),
+                "fib_level": v.get("fib_level"),
                 "score": v["score"], "decisao": v["decisao"],
                 "tipo_sinal": v.get("tipo_sinal"),
+                "conf_label": v.get("conf_label", ""),
+                "motivos_operar": v.get("motivos_operar", [])[:3],
             } for v in velas_analisadas],
             "timestamp": datetime.now(BRT_tz).strftime("%H:%M:%S"),
         })
