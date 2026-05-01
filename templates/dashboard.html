@@ -366,7 +366,7 @@
             <div class="pt-tab" onclick="ptMudarTab('historico')">HISTORICO</div>
             <div class="pt-tab" onclick="ptMudarTab('relatorio')">RELATORIO DO DIA</div>
             <div class="pt-tab" id="ptTabReplayBtn" onclick="ptMudarTab('replay')" style="background:#1e40af;">REPLAY PREGAO</div>
-            <div class="pt-tab" id="ptTabNoticiasBtn" onclick="ptMudarTab('noticias')" style="background:#7c3aed;">NOTICIAS</div>
+
         </div>
 
         <div class="pt-content">
@@ -573,6 +573,10 @@
                 <span class="contrato-valor" id="valorContrato">R$ 0.20/pt</span>
             </div>
             <button class="btn btn-demo" onclick="abrirPaperTrading()" style="border-color:var(--accent-green);color:var(--accent-green);font-weight:700;">TREINAMENTO</button>
+            <button class="btn" onclick="abrirNoticiasImpacto()" style="border-color:#7c3aed;color:#7c3aed;font-weight:700;position:relative;" id="btnNoticiasHeader">
+                NOTICIAS DE IMPACTO
+                <span id="notAlertDot" style="display:none;position:absolute;top:-3px;right:-3px;width:10px;height:10px;background:#ef4444;border-radius:50%;animation:pulse 1.5s infinite;"></span>
+            </button>
             <button class="btn btn-primary" onclick="forcarAtualizacao()">ATUALIZAR</button>
             <div class="user-badge">
                 <strong id="headerUser">--</strong>
@@ -717,6 +721,78 @@
             <div class="sidebar-section">
                 <div class="section-title">Tape Reading (Times & Trades)</div>
                 <div id="tapeSection"><div class="loading"><span class="spinner"></span> Carregando...</div></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- NOTICIAS DE IMPACTO - PAINEL EXTERNO (OPERACOES REAIS) -->
+<div class="pt-overlay" id="noticiasOverlay" style="display:none;">
+    <div class="pt-container" style="max-width:900px;">
+        <div class="pt-header" style="border-bottom:2px solid #7c3aed;">
+            <div>
+                <div class="pt-title" style="color:#7c3aed;">NOTICIAS DE IMPACTO</div>
+                <div class="pt-title-sub">Calendario Economico | Alto Impacto (3 Estrelas) | EUA & Brasil</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px;">
+                <div id="notAlertBadge2" style="display:none;background:#ef4444;color:#fff;padding:3px 10px;border-radius:10px;font-size:11px;font-weight:800;animation:pulse 1.5s infinite;">ALERTA ATIVO</div>
+                <button class="btn" onclick="carregarNoticias()" style="font-size:11px;padding:5px 14px;background:#7c3aed;border-color:#7c3aed;color:#fff;">ATUALIZAR</button>
+                <span id="notTimestamp2" style="font-size:11px;color:var(--text-muted);">--:--</span>
+                <button class="pt-close" onclick="fecharNoticiasImpacto()">FECHAR</button>
+            </div>
+        </div>
+
+        <!-- ALERTA ZONA DE IMPACTO -->
+        <div id="notAlertaZona" style="display:none;margin:10px 0;"></div>
+
+        <!-- STATUS BAR -->
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin:10px 0;">
+            <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:10px;text-align:center;">
+                <div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;">Eventos Hoje</div>
+                <div id="notCountHoje" style="font-size:22px;font-weight:800;color:#7c3aed;">0</div>
+            </div>
+            <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:10px;text-align:center;">
+                <div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;">Proximos</div>
+                <div id="notCountProximos" style="font-size:22px;font-weight:800;color:var(--accent-blue);">0</div>
+            </div>
+            <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:10px;text-align:center;">
+                <div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;">Alertas Ativos</div>
+                <div id="notCountAlertas" style="font-size:22px;font-weight:800;color:#ef4444;">0</div>
+            </div>
+        </div>
+
+        <!-- FILTER TABS -->
+        <div style="display:flex;gap:4px;margin:8px 0;flex-wrap:wrap;">
+            <button class="btn" id="notFilterAll" onclick="filtrarNoticias('all')" style="background:#7c3aed;border-color:#7c3aed;color:#fff;font-size:11px;padding:5px 12px;">TODOS</button>
+            <button class="btn" id="notFilterUSA" onclick="filtrarNoticias('USD')" style="font-size:11px;padding:5px 12px;">USD (EUA)</button>
+            <button class="btn" id="notFilterBRL" onclick="filtrarNoticias('BRL')" style="font-size:11px;padding:5px 12px;">BRL (Brasil)</button>
+            <button class="btn" id="notFilterProx" onclick="filtrarNoticias('proximos')" style="font-size:11px;padding:5px 12px;">PROXIMOS</button>
+            <button class="btn" id="notFilterPassados" onclick="filtrarNoticias('passados')" style="font-size:11px;padding:5px 12px;">JA OCORRIDOS</button>
+        </div>
+
+        <!-- REGRA DE OURO -->
+        <div style="background:rgba(124,58,237,0.08);border:1px solid #7c3aed;border-radius:8px;padding:10px 14px;margin:8px 0;font-size:11px;">
+            <span style="font-weight:800;color:#7c3aed;">REGRA DE OURO:</span> 
+            <span style="color:var(--text-secondary);">Evite abrir posicoes 15 minutos ANTES e 15 minutos DEPOIS de noticias de 3 estrelas. Aguarde o mercado digerir o dado. Opere o que VE, nao o que ACHA (Axioma de Zurique #4).</span>
+        </div>
+
+        <!-- PROXIMOS EVENTOS -->
+        <div style="margin:12px 0;">
+            <div style="font-size:13px;font-weight:800;color:var(--accent-blue);text-transform:uppercase;margin-bottom:8px;padding-bottom:4px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:6px;">
+                <span style="font-size:16px;">&#9203;</span> Proximos Eventos de Alto Impacto
+            </div>
+            <div id="notProximos" style="max-height:300px;overflow-y:auto;">
+                <div style="text-align:center;padding:20px;color:var(--text-muted);">Clique ATUALIZAR para carregar o calendario economico...</div>
+            </div>
+        </div>
+
+        <!-- EVENTOS JA OCORRIDOS -->
+        <div style="margin:12px 0;">
+            <div style="font-size:13px;font-weight:800;color:#ca8a04;text-transform:uppercase;margin-bottom:8px;padding-bottom:4px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:6px;">
+                <span style="font-size:16px;">&#9989;</span> Eventos Ocorridos | Resultado & Impacto
+            </div>
+            <div id="notPassados" style="max-height:400px;overflow-y:auto;">
+                <div style="text-align:center;padding:20px;color:var(--text-muted);">Carregando...</div>
             </div>
         </div>
     </div>
@@ -1008,7 +1084,7 @@ function ptMudarTab(tab) {
     if (tab === 'relatorio') ptRenderRelatorio();
     if (tab === 'trading') { carregarSinaisIA(); carregarHeatmap(); }
     if (tab === 'replay') { if(!window.simData) simInit(); }
-    if (tab === 'noticias') { carregarNoticias(); }
+
 }
 
 // ---- Market Status ----
@@ -2590,6 +2666,72 @@ async function carregarHeatmap() {
 
 
 // =====================================================
+
+// =====================================================
+// NOTICIAS DE IMPACTO - PAINEL EXTERNO
+// =====================================================
+function abrirNoticiasImpacto() {
+    document.getElementById('noticiasOverlay').style.display = 'flex';
+    carregarNoticias();
+}
+function fecharNoticiasImpacto() {
+    document.getElementById('noticiasOverlay').style.display = 'none';
+    if (notRefreshTimer) { clearInterval(notRefreshTimer); notRefreshTimer = null; }
+}
+
+let notCurrentFilter = 'all';
+let notAllData = null;
+
+function filtrarNoticias(filtro) {
+    notCurrentFilter = filtro;
+    // Update filter button styles
+    ['All','USA','BRL','Prox','Passados'].forEach(f => {
+        const btn = document.getElementById('notFilter' + f);
+        if (btn) {
+            btn.style.background = 'transparent';
+            btn.style.color = 'var(--text-primary)';
+            btn.style.borderColor = 'var(--border)';
+        }
+    });
+    const activeMap = {'all':'All','USD':'USA','BRL':'BRL','proximos':'Prox','passados':'Passados'};
+    const activeBtn = document.getElementById('notFilter' + (activeMap[filtro] || 'All'));
+    if (activeBtn) {
+        activeBtn.style.background = '#7c3aed';
+        activeBtn.style.borderColor = '#7c3aed';
+        activeBtn.style.color = '#fff';
+    }
+    
+    if (notAllData) applyNotFilter(notAllData);
+}
+
+function applyNotFilter(data) {
+    let proximos = data.proximos || [];
+    let passados = data.passados || [];
+    
+    if (notCurrentFilter === 'USD') {
+        proximos = proximos.filter(e => e.moeda === 'USD');
+        passados = passados.filter(e => e.moeda === 'USD');
+    } else if (notCurrentFilter === 'BRL') {
+        proximos = proximos.filter(e => e.moeda === 'BRL');
+        passados = passados.filter(e => e.moeda === 'BRL');
+    } else if (notCurrentFilter === 'proximos') {
+        passados = [];
+    } else if (notCurrentFilter === 'passados') {
+        proximos = [];
+    }
+    
+    renderNotEventos(proximos, 'notProximos', false);
+    renderNotEventos(passados, 'notPassados', true);
+    
+    // Update counters
+    var ch = document.getElementById('notCountHoje');
+    var cp = document.getElementById('notCountProximos');
+    var ca = document.getElementById('notCountAlertas');
+    if(ch) ch.textContent = data.proximos.length + data.passados.length;
+    if(cp) cp.textContent = data.proximos.length;
+    if(ca) ca.textContent = data.alertas || 0;
+}
+
 // NOTICIAS DE IMPACTO - Calendario Economico
 // =====================================================
 let notRefreshTimer = null;
@@ -2604,11 +2746,12 @@ async function carregarNoticias() {
             return;
         }
         
-        document.getElementById('notTimestamp').textContent = data.timestamp;
+        var _nts = document.getElementById('notTimestamp2'); if(_nts) _nts.textContent = data.timestamp;
         
         // ALERTAS
         if (data.alertas > 0) {
-            document.getElementById('notAlertBadge').style.display = 'inline-block';
+            var _nab = document.getElementById('notAlertBadge2'); if(_nab) _nab.style.display = 'inline-block';
+        var _nad = document.getElementById('notAlertDot'); if(_nad) _nad.style.display = 'block';
             let alertHtml = '';
             data.alerta_eventos.forEach(a => {
                 const isZona = a.zona === 'ZONA DE IMPACTO';
@@ -2633,15 +2776,14 @@ async function carregarNoticias() {
             document.getElementById('notAlertaZona').innerHTML = alertHtml;
             document.getElementById('notAlertaZona').style.display = 'block';
         } else {
-            document.getElementById('notAlertBadge').style.display = 'none';
+            var _nab2 = document.getElementById('notAlertBadge2'); if(_nab2) _nab2.style.display = 'none';
+        var _nad2 = document.getElementById('notAlertDot'); if(_nad2) _nad2.style.display = 'none';
             document.getElementById('notAlertaZona').style.display = 'none';
         }
         
-        // PROXIMOS EVENTOS
-        renderNotEventos(data.proximos, 'notProximos', false);
-        
-        // PASSADOS
-        renderNotEventos(data.passados, 'notPassados', true);
+        // Store data and apply filter
+        notAllData = data;
+        applyNotFilter(data);
         
         // Auto-refresh every 60s
         if (notRefreshTimer) clearInterval(notRefreshTimer);
