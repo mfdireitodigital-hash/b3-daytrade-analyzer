@@ -32,6 +32,9 @@ from learning_engine import (
     carregar_learning, registrar_sessao, obter_pesos_atuais,
     obter_score_minimo, obter_resumo_aprendizado, registrar_livro
 )
+from trading_books_knowledge import (
+    aplicar_scoring_avancado, obter_livros_lista, obter_todos_conceitos
+)
 
 load_dotenv()
 
@@ -2548,6 +2551,17 @@ async def simulador_real(ativo: str = Query("WIN")):
                             motivos_operar.append("Candlestick: Engolfo de Baixa")
                 except: pass
             
+            # 11. SCORING AVANÇADO (Al Brooks, Nison, Grimes, Williams, Taleb)
+            try:
+                _extra_score, _extra_motivos = aplicar_scoring_avancado(
+                    vela_info, tipo_sinal, tend, rsi_v, atr_v, macd_h,
+                    c, o, h, l, suporte, resistencia, ema9, ema21, w
+                )
+                score += _extra_score
+                motivos_operar.extend(_extra_motivos)
+            except Exception as _e:
+                pass  # Non-critical
+            
             # DECISAO FINAL - PRO TRADER: ULTRA SELETIVO + ADAPTATIVO
             # Score minimo adaptativo (começa 7, AI ajusta baseado em resultados)
             _score_min = obter_score_minimo()
@@ -2904,6 +2918,21 @@ async def simulador_real(ativo: str = Query("WIN")):
         logger.error(f"Erro simulador-real: {e}")
         import traceback; traceback.print_exc()
         return JSONResponse({"erro": str(e)}, status_code=500)
+
+@app.get("/api/livros")
+async def get_livros():
+    """Lista todos os livros estudados pela AI"""
+    try:
+        livros = obter_livros_lista()
+        conceitos = obter_todos_conceitos()
+        return JSONResponse({
+            "livros": livros,
+            "total_conceitos": len(conceitos),
+            "conceitos_amostra": conceitos[:20],  # Primeiros 20
+        })
+    except Exception as e:
+        return JSONResponse({"erro": str(e)}, status_code=500)
+
 
 @app.get("/api/learning")
 async def get_learning():

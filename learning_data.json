@@ -1,0 +1,186 @@
+{
+  "versao": 1,
+  "total_sessoes": 0,
+  "total_operacoes": 0,
+  "total_wins": 0,
+  "total_losses": 0,
+  "win_rate_global": 0,
+  "total_pts": 0,
+  "total_rs": 0,
+  "pesos": {
+    "horario": 1.0,
+    "rsi": 1.0,
+    "ema": 1.0,
+    "tendencia": 1.0,
+    "macd": 1.0,
+    "atr": 1.0,
+    "suporte_resistencia": 1.0,
+    "vwap": 1.0,
+    "fibonacci": 1.0,
+    "candlestick": 1.0
+  },
+  "score_minimo": 7,
+  "padroes_vitoria": {},
+  "padroes_derrota": {},
+  "horarios_win_rate": {},
+  "sessoes": [],
+  "insights": [],
+  "livros_estudados": [
+    {
+      "titulo": "Trading in the Zone",
+      "autor": "Mark Douglas",
+      "conceitos": [
+        "Pensamento probabilístico",
+        "5 verdades fundamentais",
+        "Mentalidade do cassino",
+        "A Zona"
+      ],
+      "data_estudo": "2026-05-01T19:30:19.676267-03:00"
+    },
+    {
+      "titulo": "Análise Técnica dos Mercados Financeiros",
+      "autor": "John J. Murphy",
+      "conceitos": [
+        "Teoria de Dow",
+        "Padrões gráficos",
+        "Inter-market analysis",
+        "S/R + Fibonacci"
+      ],
+      "data_estudo": "2026-05-01T19:30:19.676602-03:00"
+    },
+    {
+      "titulo": "One Good Trade / The Playbook",
+      "autor": "Mike Bellafiore",
+      "conceitos": [
+        "PlayBook pessoal",
+        "A+ B+ C+ setups",
+        "Processo > Resultado",
+        "In Play"
+      ],
+      "data_estudo": "2026-05-01T19:30:19.676813-03:00"
+    },
+    {
+      "titulo": "Come Into My Trading Room",
+      "autor": "Alexander Elder",
+      "conceitos": [
+        "Triple Screen",
+        "3 Ms (Method, Money, Mind)",
+        "Force Index",
+        "Diário de operações"
+      ],
+      "data_estudo": "2026-05-01T19:30:19.693788-03:00"
+    },
+    {
+      "titulo": "Axiomas de Zurique",
+      "autor": "Max Gunther",
+      "conceitos": [
+        "12 axiomas",
+        "Corte perdas rápido",
+        "Realize lucros cedo",
+        "Fuja do consenso"
+      ],
+      "data_estudo": "2026-05-01T19:30:19.694161-03:00"
+    },
+    {
+      "titulo": "The Mental Game of Trading",
+      "autor": "Jared Tendler",
+      "conceitos": [
+        "5 camadas de performance",
+        "4 tipos de Tilt",
+        "Injecting logic",
+        "Mental hand history"
+      ],
+      "data_estudo": "2026-05-01T19:30:19.694485-03:00"
+    },
+    {
+      "titulo": "Trading Price Action (Trilogy)",
+      "autor": "Al Brooks",
+      "conceitos": [
+        "Price action puro",
+        "Barras de sinal",
+        "Always In",
+        "Second Entry",
+        "Measured Move",
+        "Tight Channel"
+      ],
+      "data_estudo": "2026-05-01T19:30:19.694789-03:00"
+    },
+    {
+      "titulo": "How to Trade in Stocks",
+      "autor": "Jesse Livermore",
+      "conceitos": [
+        "Pivotal Points",
+        "Pyramiding",
+        "Regra da Paciência",
+        "Nunca preço médio"
+      ],
+      "data_estudo": "2026-05-01T19:30:19.695651-03:00"
+    },
+    {
+      "titulo": "Long-Term Secrets to Short-Term Trading",
+      "autor": "Larry Williams",
+      "conceitos": [
+        "Ciclos expansão/contração",
+        "Setup da Volatilidade",
+        "Inside Day",
+        "Money Management"
+      ],
+      "data_estudo": "2026-05-01T19:30:19.696272-03:00"
+    },
+    {
+      "titulo": "Trade Your Way to Financial Freedom",
+      "autor": "Van K. Tharp",
+      "conceitos": [
+        "Expectancy",
+        "Position Sizing",
+        "R-Multiple",
+        "SQN"
+      ],
+      "data_estudo": "2026-05-01T19:30:19.696917-03:00"
+    },
+    {
+      "titulo": "Mastering the Trade",
+      "autor": "John F. Carter",
+      "conceitos": [
+        "TTM Squeeze",
+        "TICK/TRIN",
+        "Melhores horários",
+        "Múltiplos timeframes"
+      ],
+      "data_estudo": "2026-05-01T19:30:19.697427-03:00"
+    },
+    {
+      "titulo": "Japanese Candlestick Charting Techniques",
+      "autor": "Steve Nison",
+      "conceitos": [
+        "Candles em S/R",
+        "Morning/Evening Star",
+        "Rejeição por sombras",
+        "Contexto > padrão isolado"
+      ],
+      "data_estudo": "2026-05-01T19:30:19.697813-03:00"
+    },
+    {
+      "titulo": "Fooled by Randomness / Antifragile",
+      "autor": "Nassim Taleb",
+      "conceitos": [
+        "Assimetria positiva",
+        "Survivorship bias",
+        "Antifragilidade",
+        "Fat-tail distribution"
+      ],
+      "data_estudo": "2026-05-01T19:30:19.698057-03:00"
+    },
+    {
+      "titulo": "The Art and Science of Technical Analysis",
+      "autor": "Adam Grimes",
+      "conceitos": [
+        "Pullback em tendência",
+        "Tendência vs Range",
+        "Confluência multiplica",
+        "Quantifique tudo"
+      ],
+      "data_estudo": "2026-05-01T19:30:19.698334-03:00"
+    }
+  ]
+}
