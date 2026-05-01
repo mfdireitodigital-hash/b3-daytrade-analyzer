@@ -589,7 +589,7 @@ async def get_status():
         "contratos_vigentes": contratos,
         "timeframes": TIMEFRAMES,
         "intervalo_refresh": "5 minutos",
-        "versao": "3.4.0",
+        "versao": "3.5.0",
         "fontes_dados": ["yfinance (candles OHLCV)",
             "Investing.com (preço futuro real)",
             "Book de Ofertas (simulado)",
