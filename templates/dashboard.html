@@ -819,6 +819,10 @@
             </div>
             <div style="display:flex;align-items:center;gap:10px;">
                 <div id="simRealMarket" style="display:flex;align-items:center;gap:4px;font-size:11px;"></div>
+                <div style="display:flex;gap:4px;">
+                    <button id="simBtnWIN" class="btn btn-primary" onclick="simRealSetAtivo('WIN')" style="font-size:10px;padding:4px 10px;">WIN</button>
+                    <button id="simBtnWDO" class="btn" onclick="simRealSetAtivo('WDO')" style="font-size:10px;padding:4px 10px;">WDO</button>
+                </div>
                 <button class="btn btn-primary" onclick="simRealAnalisar()" style="font-size:12px;padding:6px 16px;">ANALISAR AGORA</button>
                 <button class="pt-close" onclick="fecharSimuladorReal()">FECHAR</button>
             </div>
@@ -3201,6 +3205,14 @@ function simRealCheckMarket() {
     }
 }
 
+function simRealSetAtivo(a) {
+    state.ativo = a;
+    document.getElementById('simBtnWIN').className = a === 'WIN' ? 'btn btn-primary' : 'btn';
+    document.getElementById('simBtnWDO').className = a === 'WDO' ? 'btn btn-primary' : 'btn';
+    document.getElementById('simRealAtivo').textContent = a;
+    simRealAnalisar();
+}
+
 async function simRealAnalisar() {
     const veredEl = document.getElementById('simRealVeredictoText');
     const veredSub = document.getElementById('simRealVeredictoSub');
@@ -3222,6 +3234,19 @@ async function simRealAnalisar() {
             veredEl.textContent = 'ERRO'; veredEl.style.color = '#ef4444';
             veredSub.textContent = simRes.erro; return;
         }
+        
+        // Mostrar MODO (REPLAY ou REAL)
+        const _modo = simRes.modo || 'REPLAY';
+        const _modoLabel = document.getElementById('simRealModoLabel');
+        const _modoDot = document.getElementById('simRealDot');
+        if (_modo === 'REAL') {
+            _modoLabel.innerHTML = '<span style="color:#22c55e;">MODO REAL</span> - Mercado Aberto | Analise ao vivo';
+            _modoDot.style.background = '#22c55e';
+        } else {
+            _modoLabel.innerHTML = '<span style="color:#3b82f6;">MODO REPLAY</span> - Pregao ' + simRes.dia + ' | Replica do mercado para estudo';
+            _modoDot.style.background = '#3b82f6';
+        }
+        document.getElementById('simRealAtivo').textContent = simRes.ativo;
         
         const res = simRes.resumo;
         const perf = simRes.performance;
@@ -3333,7 +3358,26 @@ async function simRealAnalisar() {
         
         // OPERACOES primeiro
         if (ops.length > 0) {
-            oH += '<div style="font-size:12px;font-weight:800;color:var(--accent-blue);margin-bottom:8px;padding:6px 0;border-bottom:1px solid var(--border);">OPERACOES EXECUTADAS (' + ops.length + ') <span style="font-size:9px;font-weight:400;color:#ca8a04;background:rgba(202,138,4,0.1);padding:2px 8px;border-radius:10px;margin-left:6px;">SIMULACAO REALISTA: slippage + custo + entrada na proxima vela</span></div>';
+            // Duo mode header
+            oH += '<div style="background:linear-gradient(135deg, rgba(59,130,246,0.08), rgba(34,197,94,0.08));border:2px solid rgba(59,130,246,0.3);border-radius:10px;padding:14px;margin-bottom:10px;">';
+            oH += '<div style="font-size:14px;font-weight:900;color:var(--accent-blue);margin-bottom:6px;">NOSSA ANALISE - EU & VOCE</div>';
+            oH += '<div style="font-size:10px;color:var(--text-muted);margin-bottom:8px;">Replica do pregao ' + (simRes.dia||'') + ' | ' + (simRes.ativo||'WIN') + ' | Slippage + Custo + Entrada na proxima vela</div>';
+            if (ops.length === 0) {
+                oH += '<div style="font-size:12px;color:#ca8a04;font-weight:700;">Nenhuma entrada encontrada com confluencia suficiente. Dia sem setup valido = dia de PROTEGER capital (Livermore: o dinheiro grande esta no ESPERAR).</div>';
+            } else {
+                const _wins = ops.filter(o => o.resultado === 'WIN').length;
+                const _losses = ops.length - _wins;
+                const _total_pts = ops.reduce((s,o) => s + o.pts, 0);
+                oH += '<div style="display:flex;gap:16px;flex-wrap:wrap;font-size:12px;">';
+                oH += '<span><strong>' + ops.length + '</strong> operacoes</span>';
+                oH += '<span style="color:#22c55e;"><strong>' + _wins + '</strong> wins</span>';
+                oH += '<span style="color:#ef4444;"><strong>' + _losses + '</strong> losses</span>';
+                oH += '<span style="color:' + (_total_pts >= 0 ? '#22c55e' : '#ef4444') + ';font-weight:800;">' + (_total_pts >= 0 ? '+' : '') + _total_pts.toFixed(1) + 'pts</span>';
+                oH += '</div>';
+            }
+            oH += '</div>';
+            
+            oH += '<div style="font-size:12px;font-weight:800;color:var(--accent-blue);margin-bottom:8px;padding:6px 0;border-bottom:1px solid var(--border);">OPERACOES EXECUTADAS (' + ops.length + ')</div>';
             ops.forEach(op => {
                 const isW = op.resultado==='WIN';
                 const cOp = op.tipo==='COMPRA'?'#22c55e':'#ef4444';

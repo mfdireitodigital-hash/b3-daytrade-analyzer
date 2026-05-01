@@ -2324,7 +2324,7 @@ async def simulador_real(ativo: str = Query("WIN")):
         
         # ---- PRO TRADER CONTROLS ----
         # Regras de um operador profissional que PROTEGE capital:
-        MAX_OPS_DIA = 4          # Maximo 4 operacoes por dia (Bellafiore: poucos trades, bem executados)
+        MAX_OPS_DIA = 6          # Maximo 6 operacoes por dia (Bellafiore: foco nos bons setups)
         MAX_LOSSES_CONSECUTIVOS = 2  # Apos 2 losses seguidos, PARA (Tendler: evitar tilt/revenge)
         LOSS_LIMIT_PTS = -400    # Limite de perda diaria em pontos (gestao de risco)
         
@@ -2588,12 +2588,12 @@ async def simulador_real(ativo: str = Query("WIN")):
             # Score minimo 9 = A+ SETUP ONLY. Nao entra em BOM, OK, Duvidoso.
             # "Entre so no que for seguro" - Fabio
             # Livermore: "O dinheiro grande esta no ESPERAR, nao no trading"
-            _score_min = max(9, obter_score_minimo())  # NUNCA abaixo de 9
+            _score_min = max(7, obter_score_minimo())  # BOM setup minimo (Bellafiore: A+ e B+ = tamanho cheio)
             operar = score >= _score_min and tipo_sinal is not None and not horario_ruim and not contra_tendencia
             decisao = "OPERAR" if operar else "NAO OPERAR"
             
             # Confianca (Bellafiore) - PRO scoring
-            if score >= 9: confianca = 5; conf_label = "A+ SETUP"
+            if score >= 10: confianca = 5; conf_label = "A+ SETUP"
             elif score >= 7: confianca = 4; conf_label = "BOM"
             elif score >= 5: confianca = 3; conf_label = "OK"
             elif score >= 4: confianca = 2; conf_label = "DUVIDOSO"
@@ -2663,18 +2663,15 @@ async def simulador_real(ativo: str = Query("WIN")):
                         _mesmo_nivel = True
                         motivos_nao_operar.append(f"FILTRO RE-ENTRADA: muito proximo do loss anterior ({round(_dist_last,0)}pts)")
             
-            # Filtro 3: RSI pullback obrigatorio (Grimes: pullback in trend = melhor WR)
+            # Filtro 3: RSI extremo (nao compra sobrecomprado, nao vende sobrevendido)
             _rsi_pullback_ok = True
             if pode_operar:
-                if tipo_sinal == "COMPRA" and tend == "ALTA":
-                    # Em alta, melhor comprar com RSI entre 35-55 (pullback) do que >65 (esticado)
-                    if rsi_v > 65:
-                        _rsi_pullback_ok = False
-                        motivos_nao_operar.append(f"FILTRO RSI: RSI {rsi_v} esticado demais pra compra (ideal 35-55 em pullback)")
-                elif tipo_sinal == "VENDA" and tend == "BAIXA":
-                    if rsi_v < 35:
-                        _rsi_pullback_ok = False
-                        motivos_nao_operar.append(f"FILTRO RSI: RSI {rsi_v} esticado demais pra venda (ideal 45-65 em pullback)")
+                if tipo_sinal == "COMPRA" and rsi_v > 75:
+                    _rsi_pullback_ok = False
+                    motivos_nao_operar.append(f"FILTRO RSI: RSI {rsi_v} sobrecomprado - espere pullback")
+                elif tipo_sinal == "VENDA" and rsi_v < 25:
+                    _rsi_pullback_ok = False
+                    motivos_nao_operar.append(f"FILTRO RSI: RSI {rsi_v} sobrevendido - espere bounce")
             
             # Aplicar filtros: so entra se passar TODOS
             pode_operar = pode_operar and not _exaustao and not _mesmo_nivel and _rsi_pullback_ok
@@ -3092,11 +3089,20 @@ async def simulador_real(ativo: str = Query("WIN")):
         # Dados de aprendizado para exibição
         aprendizado = obter_resumo_aprendizado()
         
+        # Detectar se mercado esta aberto ou fechado
+        _agora = datetime.now(BRT_tz)
+        _hora_atual = _agora.hour
+        _dia_semana = _agora.weekday()  # 0=seg, 6=dom
+        _mercado_aberto = (_dia_semana < 5 and 9 <= _hora_atual < 18)
+        _modo = "REAL" if _mercado_aberto else "REPLAY"
+        
         return JSONResponse({
             "dia": dia_anterior.strftime("%d/%m/%Y"),
             "ativo": ativo,
             "contrato": contrato_nome,
             "valor_ponto": valor_ponto,
+            "modo": _modo,
+            "mercado_aberto": _mercado_aberto,
             "aprendizado": aprendizado,
             "resumo": {
                 "abertura": abertura,
