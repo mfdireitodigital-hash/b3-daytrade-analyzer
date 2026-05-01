@@ -907,6 +907,325 @@ async def get_demo(ativo: str = Query("WIN"), contratos: int = Query(1)):
 
 
 
+
+@app.get("/api/replay")
+async def get_replay(ativo: str = Query("WIN"), contratos: int = Query(1)):
+    """
+    Replay automatico do pregao anterior com analise multi-timeframe.
+    Cruza 5m (execucao) + 15m (confirmacao) + 1h (tendencia macro).
+    """
+    from analysis_engine import (
+        calcular_rsi, calcular_macd, calcular_vwap, calcular_atr_series,
+        detectar_lateralizacao, detectar_pullback, calcular_fibonacci,
+        analisar_volume, detectar_violinada, gerar_sinais
+    )
+    import traceback
+
+    ativo_upper = ativo.upper()
+    valor_ponto = 0.20 if ativo_upper == "WIN" else 10.00
+
+    try:
+        # Pegar velas em 3 timeframes
+        dados_5m = await data_provider.obter_dados(ativo_upper, "5m")
+        dados_15m = await data_provider.obter_dados(ativo_upper, "15m")
+        dados_1h = await data_provider.obter_dados(ativo_upper, "1h")
+
+        if dados_5m is None or len(dados_5m) < 50:
+            return JSONResponse({"erro": "Dados insuficientes para replay (5m)"})
+
+        brt = timezone(timedelta(hours=-3))
+
+        def to_brt(idx):
+            if hasattr(idx, 'tz') and idx.tz is not None:
+                return idx.tz_convert(brt)
+            try:
+                return idx.tz_localize('UTC').tz_convert(brt)
+            except:
+                return idx
+
+        idx_brt = to_brt(dados_5m.index)
+        datas_unicas = sorted(set(idx_brt.date))
+        if len(datas_unicas) < 2:
+            return JSONResponse({"erro": "Precisa de pelo menos 2 dias de dados"})
+
+        dia_anterior = datas_unicas[-2]
+        dia_str = dia_anterior.strftime("%d/%m/%Y")
+
+        # Helper: analisa um timeframe numa janela
+        def analisar_tf(window):
+            if len(window) < 20:
+                return None
+            try:
+                rsi_s = calcular_rsi(window)
+                rsi_v = float(rsi_s.iloc[-1])
+                ml, ms, mh = calcular_macd(window)
+                mv = float(ml.iloc[-1])
+                msv = float(ms.iloc[-1])
+                mhv = float(mh.iloc[-1])
+                fib = calcular_fibonacci(window)
+                vol = analisar_volume(window)
+                viol = detectar_violinada(window)
+                vwap_s = calcular_vwap(window)
+                vwap_v = float(vwap_s.iloc[-1])
+                lat = detectar_lateralizacao(window)
+                preco = float(window['close'].iloc[-1])
+                ema9 = float(window['close'].ewm(span=9, adjust=False).mean().iloc[-1])
+                ema21 = float(window['close'].ewm(span=21, adjust=False).mean().iloc[-1])
+                if preco > vwap_v and ema9 > ema21:
+                    tend = "ALTA"
+                elif preco < vwap_v and ema9 < ema21:
+                    tend = "BAIXA"
+                else:
+                    tend = "LATERAL"
+                if lat.get("lateral"):
+                    tend = "LATERAL"
+                pb = detectar_pullback(window, tend)
+                sinais = gerar_sinais(window, fib, rsi_v, mv, msv, mhv,
+                    vol, viol, tendencia=tend, pullback_info=pb,
+                    lateralizacao=lat, vwap_atual=vwap_v)
+                return {
+                    "tendencia": tend,
+                    "rsi": round(rsi_v, 1),
+                    "macd_hist": round(mhv, 2),
+                    "volume_pressao": vol.pressao,
+                    "sinais": sinais,
+                    "preco": preco,
+                }
+            except:
+                return None
+
+        # Helper: get window of data up to a timestamp for a given timeframe
+        def get_window(dados_tf, ts_limit, max_bars=100):
+            if dados_tf is None or len(dados_tf) == 0:
+                return None
+            tf_brt = to_brt(dados_tf.index)
+            mask = tf_brt <= ts_limit
+            window = dados_tf[mask].tail(max_bars)
+            return window if len(window) >= 20 else None
+
+        # ========================================
+        # REPLAY: vela a vela no 5m
+        # ========================================
+        operacoes = []
+        posicao_aberta = None
+        sinais_gerados = []
+        velas_info = []
+        dia_indices = [i for i, d in enumerate(idx_brt.date) if d == dia_anterior]
+
+        for pos_idx in dia_indices:
+            ts = idx_brt[pos_idx]
+            hora_str = ts.strftime("%H:%M")
+            vela = dados_5m.iloc[pos_idx]
+            preco_close = float(vela['close'])
+            preco_high = float(vela['high'])
+            preco_low = float(vela['low'])
+
+            vela_data = {
+                "hora": hora_str,
+                "open": round(float(vela['open']), 2),
+                "high": round(preco_high, 2),
+                "low": round(preco_low, 2),
+                "close": round(preco_close, 2),
+                "volume": int(vela.get('volume', 0)),
+            }
+
+            # === Check stop/alvo da posicao aberta ===
+            if posicao_aberta:
+                op = posicao_aberta
+                hit = None
+                if op["tipo"] == "COMPRA":
+                    if preco_low <= op["stop_loss"]:
+                        hit = ("LOSS", op["stop_loss"], op["stop_loss"] - op["entrada"])
+                    elif preco_high >= op["alvo"]:
+                        hit = ("WIN", op["alvo"], op["alvo"] - op["entrada"])
+                else:
+                    if preco_high >= op["stop_loss"]:
+                        hit = ("LOSS", op["stop_loss"], op["entrada"] - op["stop_loss"])
+                    elif preco_low <= op["alvo"]:
+                        hit = ("WIN", op["alvo"], op["entrada"] - op["alvo"])
+                if hit:
+                    status, saida, pts = hit
+                    op["saida"] = saida
+                    op["hora_saida"] = hora_str
+                    op["pts"] = round(pts, 1)
+                    op["resultado"] = round(pts * valor_ponto * contratos, 2)
+                    op["status"] = status
+                    operacoes.append(op)
+                    posicao_aberta = None
+
+            # === Multi-timeframe analysis ===
+            sinal_aqui = None
+            if not posicao_aberta:
+                # Window for 5m
+                w5 = dados_5m.iloc[max(0, pos_idx - 100):pos_idx + 1]
+                a5 = analisar_tf(w5) if len(w5) >= 30 else None
+
+                if a5 and a5["sinais"]:
+                    # Confirm with 15m and 1h
+                    w15 = get_window(dados_15m, ts)
+                    w1h = get_window(dados_1h, ts)
+                    a15 = analisar_tf(w15) if w15 is not None else None
+                    a1h = analisar_tf(w1h) if w1h is not None else None
+
+                    s5 = a5["sinais"][0]
+                    tipo_5m = s5.tipo
+
+                    # Confluencia: 15m e 1h devem ter mesma tendencia
+                    conf_15m = False
+                    conf_1h = False
+                    motivo_conf = []
+
+                    if a15:
+                        if tipo_5m == "COMPRA" and a15["tendencia"] in ("ALTA",):
+                            conf_15m = True
+                            motivo_conf.append(f"15m: Tendencia {a15['tendencia']} | RSI {a15['rsi']}")
+                        elif tipo_5m == "VENDA" and a15["tendencia"] in ("BAIXA",):
+                            conf_15m = True
+                            motivo_conf.append(f"15m: Tendencia {a15['tendencia']} | RSI {a15['rsi']}")
+                        elif a15["tendencia"] == "LATERAL":
+                            conf_15m = True  # Lateral nao contradiz
+                            motivo_conf.append(f"15m: Lateral (nao contradiz)")
+                    else:
+                        conf_15m = True  # Sem dados = nao bloqueia
+                        motivo_conf.append("15m: Sem dados suficientes")
+
+                    if a1h:
+                        if tipo_5m == "COMPRA" and a1h["tendencia"] in ("ALTA", "LATERAL"):
+                            conf_1h = True
+                            motivo_conf.append(f"1h: Tendencia {a1h['tendencia']} | RSI {a1h['rsi']}")
+                        elif tipo_5m == "VENDA" and a1h["tendencia"] in ("BAIXA", "LATERAL"):
+                            conf_1h = True
+                            motivo_conf.append(f"1h: Tendencia {a1h['tendencia']} | RSI {a1h['rsi']}")
+                    else:
+                        conf_1h = True
+                        motivo_conf.append("1h: Sem dados suficientes")
+
+                    # So entra se ambos confirmam
+                    if conf_15m and conf_1h:
+                        sinal_aqui = {
+                            "hora": hora_str,
+                            "tipo": tipo_5m,
+                            "preco": s5.preco_entrada,
+                            "stop": s5.stop_loss,
+                            "alvo": s5.take_profit_1,
+                            "confianca": s5.confianca,
+                            "rsi": a5["rsi"],
+                            "tendencia_5m": a5["tendencia"],
+                            "tendencia_15m": a15["tendencia"] if a15 else "N/A",
+                            "tendencia_1h": a1h["tendencia"] if a1h else "N/A",
+                            "confluencia": motivo_conf,
+                            "motivos": s5.motivos[:3],
+                        }
+                        sinais_gerados.append(sinal_aqui)
+
+                        posicao_aberta = {
+                            "tipo": tipo_5m,
+                            "entrada": s5.preco_entrada,
+                            "stop_loss": s5.stop_loss,
+                            "alvo": s5.take_profit_1,
+                            "hora_entrada": hora_str,
+                            "confianca": s5.confianca,
+                            "motivos": s5.motivos[:3] + motivo_conf,
+                        }
+
+            vela_data["sinal"] = sinal_aqui
+            vela_data["posicao_aberta"] = bool(posicao_aberta)
+            velas_info.append(vela_data)
+
+        # Fechar posicao aberta no fim do dia
+        if posicao_aberta and velas_info:
+            op = posicao_aberta
+            preco_fech = velas_info[-1]["close"]
+            pts = (preco_fech - op["entrada"]) if op["tipo"] == "COMPRA" else (op["entrada"] - preco_fech)
+            op["saida"] = preco_fech
+            op["hora_saida"] = velas_info[-1]["hora"]
+            op["pts"] = round(pts, 1)
+            op["resultado"] = round(pts * valor_ponto * contratos, 2)
+            op["status"] = "WIN" if pts > 0 else "LOSS"
+            op["fechamento_forcado"] = True
+            operacoes.append(op)
+
+        # ========================================
+        # RELATORIO
+        # ========================================
+        total_ops = len(operacoes)
+        wins = [op for op in operacoes if op["status"] == "WIN"]
+        losses = [op for op in operacoes if op["status"] == "LOSS"]
+        resultado_bruto = sum(op["resultado"] for op in operacoes)
+        resultado_pts = sum(op["pts"] for op in operacoes)
+
+        equity = []
+        running = 0
+        peak = 0
+        max_dd = 0
+        for op in operacoes:
+            running += op["resultado"]
+            equity.append(round(running, 2))
+            peak = max(peak, running)
+            max_dd = max(max_dd, peak - running)
+
+        max_seq_w = max_seq_l = seq_w = seq_l = 0
+        for op in operacoes:
+            if op["status"] == "WIN":
+                seq_w += 1; seq_l = 0; max_seq_w = max(max_seq_w, seq_w)
+            else:
+                seq_l += 1; seq_w = 0; max_seq_l = max(max_seq_l, seq_l)
+
+        taxa = round(len(wins) / total_ops * 100, 1) if total_ops > 0 else 0
+        media_w = round(sum(o["resultado"] for o in wins) / len(wins), 2) if wins else 0
+        media_l = round(sum(o["resultado"] for o in losses) / len(losses), 2) if losses else 0
+        sum_losses = abs(sum(o["resultado"] for o in losses))
+        fl = round(sum(o["resultado"] for o in wins) / sum_losses, 2) if sum_losses > 0 else 999
+
+        dados_dia = dados_5m.iloc[[i for i, d in enumerate(idx_brt.date) if d == dia_anterior]]
+        abertura = round(float(dados_dia.iloc[0]['open']), 2)
+        fechamento = round(float(dados_dia.iloc[-1]['close']), 2)
+        high_dia = round(float(dados_dia['high'].max()), 2)
+        low_dia = round(float(dados_dia['low'].min()), 2)
+        amp = round(high_dia - low_dia, 0)
+        var_dia = round(fechamento - abertura, 2)
+        var_pct = round(var_dia / abertura * 100, 2) if abertura > 0 else 0
+
+        return JSONResponse({
+            "dia": dia_str,
+            "ativo": ativo_upper,
+            "contrato": data_provider.get_contrato_info(ativo_upper).get("ticker_b3", ativo_upper),
+            "contratos": contratos,
+            "valor_ponto": valor_ponto,
+            "mercado": {
+                "abertura": abertura, "fechamento": fechamento,
+                "high": high_dia, "low": low_dia,
+                "amplitude_pts": amp, "variacao": var_dia, "variacao_pct": var_pct,
+                "total_velas": len(dados_dia),
+            },
+            "resumo": {
+                "total_operacoes": total_ops,
+                "wins": len(wins), "losses": len(losses),
+                "taxa_acerto": taxa,
+                "resultado_bruto": round(resultado_bruto, 2),
+                "resultado_pts": round(resultado_pts, 1),
+                "maior_win": round(max((o["resultado"] for o in wins), default=0), 2),
+                "maior_loss": round(min((o["resultado"] for o in losses), default=0), 2),
+                "maior_win_pts": round(max((o["pts"] for o in wins), default=0), 1),
+                "maior_loss_pts": round(min((o["pts"] for o in losses), default=0), 1),
+                "media_win": media_w, "media_loss": media_l,
+                "fator_lucro": fl,
+                "max_drawdown": round(max_dd, 2),
+                "max_sequencia_win": max_seq_w,
+                "max_sequencia_loss": max_seq_l,
+                "equity_curve": equity,
+            },
+            "operacoes": operacoes,
+            "sinais_gerados": sinais_gerados,
+            "total_sinais": len(sinais_gerados),
+            "velas": velas_info,
+        })
+
+    except Exception as e:
+        logger.error(f"Erro replay: {e}\n{traceback.format_exc()}")
+        return JSONResponse({"erro": f"Erro no replay: {str(e)}"}, status_code=500)
+
+
 @app.get("/api/preco-realtime")
 async def get_preco_realtime():
     """Retorna preço em tempo real dos futuros B3 (Investing.com + HG Brasil fallback)"""
