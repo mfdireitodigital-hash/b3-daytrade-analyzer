@@ -20,6 +20,7 @@ import json
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 import logging
+import re
 
 logger = logging.getLogger(__name__)
 
@@ -95,6 +96,17 @@ TIMEFRAME_MAP = {
     "1d": {"interval": "1d", "period": "6mo"},
 }
 
+# URLs Investing.com para preço real dos futuros B3
+INVESTING_URLS = {
+    "WIN": "https://br.investing.com/indices/bovespa-win-futures",
+    "WDO": "https://br.investing.com/currencies/usd-brl-mini-futures",
+}
+INVESTING_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
+}
+
 
 class DataProvider:
     """Provedor de dados multi-source para B3"""
@@ -115,38 +127,99 @@ class DataProvider:
         return self.contratos.get(ativo, obter_contrato_vigente(ativo))
 
     async def obter_preco_realtime(self) -> dict:
-        """Obtém preço em tempo real via HG Brasil API (gratuita, sem delay)"""
+        """
+        Obtém preço em tempo real dos FUTUROS B3 (WIN/WDO).
+        Estratégia multi-source:
+        1. Investing.com (scraping) - preço real do contrato futuro
+        2. HG Brasil API (fallback) - IBOVESPA à vista / USD spot
+        """
+        precos = {}
+
+        # === SOURCE 1: Investing.com (preço real do futuro) ===
         try:
-            async with httpx.AsyncClient(timeout=8) as client:
-                resp = await client.get(
-                    f"https://api.hgbrasil.com/finance",
-                    params={"format": "json", "key": self.hg_api_key}
-                )
-                if resp.status_code == 200:
-                    data = resp.json()
-                    results = data.get("results", {})
-                    precos = {}
-                    # IBOVESPA -> WIN
-                    ibov = results.get("stocks", {}).get("IBOVESPA", {})
-                    if ibov and ibov.get("points"):
-                        precos["WIN"] = {
-                            "preco": float(ibov["points"]),
-                            "variacao": float(ibov.get("variation", 0)),
-                            "fonte": "HG Brasil (tempo real)",
-                        }
-                    # USD/BRL -> WDO
-                    usd = results.get("currencies", {}).get("USD", {})
-                    if usd and usd.get("buy"):
-                        precos["WDO"] = {
-                            "preco": round(float(usd["buy"]) * 1000, 1),
-                            "variacao": float(usd.get("variation", 0)),
-                            "fonte": "HG Brasil (tempo real)",
-                        }
-                    self.preco_realtime = precos
-                    logger.info(f"Preço realtime: WIN={precos.get('WIN',{}).get('preco','N/A')} WDO={precos.get('WDO',{}).get('preco','N/A')}")
-                    return precos
+            async with httpx.AsyncClient(timeout=10, follow_redirects=True) as client:
+                for ativo, url in INVESTING_URLS.items():
+                    try:
+                        resp = await client.get(url, headers=INVESTING_HEADERS)
+                        if resp.status_code == 200:
+                            html = resp.text
+                            # Extract price from data-test="instrument-price-last"
+                            price_match = re.search(
+                                r'data-test="instrument-price-last">([\d.,]+)',
+                                html
+                            )
+                            if price_match:
+                                price_str = price_match.group(1)
+                                # Handle both formats: "190.628" and "4.989,00"
+                                if ',' in price_str and '.' in price_str:
+                                    # Format: 4.989,00 (BR format)
+                                    price_str = price_str.replace('.', '').replace(',', '.')
+                                elif '.' in price_str:
+                                    # Format: 190.628 (could be thousands separator)
+                                    parts = price_str.split('.')
+                                    if len(parts) == 2 and len(parts[1]) == 3:
+                                        # 190.628 = 190628 (thousands separator)
+                                        price_str = price_str.replace('.', '')
+                                    # else: decimal point, keep as is
+                                preco = float(price_str)
+
+                                # Extract variation
+                                var_match = re.search(
+                                    r'data-test="instrument-price-change-percent">\(?([+-]?[\d.,]+)%?\)?',
+                                    html
+                                )
+                                variacao = 0.0
+                                if var_match:
+                                    var_str = var_match.group(1).replace(',', '.')
+                                    variacao = float(var_str)
+
+                                precos[ativo] = {
+                                    "preco": preco,
+                                    "variacao": variacao,
+                                    "fonte": "Investing.com (futuro real)",
+                                }
+                                logger.info(f"Investing.com {ativo}: {preco} ({variacao:+.2f}%)")
+                    except Exception as e:
+                        logger.warning(f"Erro Investing.com {ativo}: {e}")
         except Exception as e:
-            logger.error(f"Erro HG Brasil API: {e}")
+            logger.warning(f"Erro geral Investing.com: {e}")
+
+        # === SOURCE 2: HG Brasil (fallback para ativos não encontrados) ===
+        ativos_faltando = [a for a in ["WIN", "WDO"] if a not in precos]
+        if ativos_faltando:
+            try:
+                async with httpx.AsyncClient(timeout=8) as client:
+                    resp = await client.get(
+                        "https://api.hgbrasil.com/finance",
+                        params={"format": "json", "key": self.hg_api_key}
+                    )
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        results = data.get("results", {})
+                        if "WIN" in ativos_faltando:
+                            ibov = results.get("stocks", {}).get("IBOVESPA", {})
+                            if ibov and ibov.get("points"):
+                                precos["WIN"] = {
+                                    "preco": float(ibov["points"]),
+                                    "variacao": float(ibov.get("variation", 0)),
+                                    "fonte": "HG Brasil (IBOVESPA spot - fallback)",
+                                }
+                        if "WDO" in ativos_faltando:
+                            usd = results.get("currencies", {}).get("USD", {})
+                            if usd and usd.get("buy"):
+                                precos["WDO"] = {
+                                    "preco": round(float(usd["buy"]) * 1000, 1),
+                                    "variacao": float(usd.get("variation", 0)),
+                                    "fonte": "HG Brasil (USD spot - fallback)",
+                                }
+            except Exception as e:
+                logger.error(f"Erro HG Brasil fallback: {e}")
+
+        if precos:
+            self.preco_realtime = precos
+            for ativo, info in precos.items():
+                logger.info(f"Preço {ativo}: {info['preco']} via {info['fonte']}")
+
         return self.preco_realtime
 
     async def obter_candles_json(self, ativo: str, timeframe: str) -> list:
