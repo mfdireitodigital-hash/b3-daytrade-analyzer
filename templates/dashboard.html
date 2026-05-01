@@ -7,7 +7,6 @@
     <script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
-
         :root {
             --bg-primary: #0d1117;
             --bg-secondary: #161b22;
@@ -23,7 +22,6 @@
             --accent-yellow: #eab308;
             --border: #30363d;
         }
-
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             background: var(--bg-primary);
@@ -31,106 +29,27 @@
             min-height: 100vh;
             overflow-x: hidden;
         }
-
-        /* ============================================= */
-        /* LOGIN SCREEN - Clean, professional            */
-        /* ============================================= */
+        /* LOGIN SCREEN - ONLY LOGIN, NO PREVIEW */
         .login-screen {
             position: fixed;
             top: 0; left: 0; right: 0; bottom: 0;
             background: var(--bg-primary);
             display: flex;
-            flex-direction: column;
-            z-index: 9999;
-            transition: opacity 0.4s ease;
-        }
-        .login-screen.hidden {
-            opacity: 0;
-            pointer-events: none;
-        }
-
-        /* Top bar with login */
-        .login-topbar {
-            background: var(--bg-secondary);
-            border-bottom: 1px solid var(--border);
-            padding: 12px 20px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            flex-wrap: wrap;
-            gap: 10px;
-        }
-        .login-topbar-logo {
-            font-size: 18px;
-            font-weight: 700;
-            color: var(--text-primary);
-            letter-spacing: 1px;
-        }
-        .login-topbar-form {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            flex-wrap: wrap;
-        }
-        .login-topbar-form input {
-            padding: 8px 12px;
-            background: var(--bg-card);
-            border: 1px solid var(--border);
-            border-radius: 6px;
-            color: var(--text-primary);
-            font-size: 13px;
-            outline: none;
-            width: 150px;
-        }
-        .login-topbar-form input:focus {
-            border-color: var(--accent-green);
-        }
-        .login-topbar-btn {
-            padding: 8px 20px;
-            background: var(--accent-green);
-            border: none;
-            border-radius: 6px;
-            color: #000;
-            font-size: 13px;
-            font-weight: 700;
-            cursor: pointer;
-            letter-spacing: 0.5px;
-        }
-        .login-topbar-btn:hover { background: #16a34a; }
-        /* Centered login */
-        .login-center {
-            flex: 1;
-            display: flex;
             align-items: center;
             justify-content: center;
+            z-index: 9999;
         }
+        .login-screen.hidden { display: none; }
+        .login-center { text-align: center; width: 100%; max-width: 380px; padding: 20px; }
         .login-box {
             background: var(--bg-secondary);
             border: 1px solid var(--border);
             border-radius: 12px;
-            padding: 40px 36px 32px;
-            text-align: center;
-            width: 380px;
-            max-width: 95vw;
+            padding: 40px 30px;
         }
-        .login-logo {
-            font-size: 26px;
-            font-weight: 800;
-            color: var(--text-primary);
-            letter-spacing: 2px;
-            margin-bottom: 4px;
-        }
-        .login-subtitle {
-            font-size: 12px;
-            color: var(--text-secondary);
-            letter-spacing: 3px;
-            margin-bottom: 28px;
-        }
-        .login-form {
-            display: flex;
-            flex-direction: column;
-            gap: 12px;
-        }
+        .login-logo { font-size: 22px; font-weight: 700; color: var(--text-primary); letter-spacing: 2px; margin-bottom: 4px; }
+        .login-subtitle { font-size: 12px; color: var(--text-muted); letter-spacing: 1px; margin-bottom: 30px; }
+        .login-form { display: flex; flex-direction: column; gap: 12px; }
         .login-form input {
             padding: 12px 14px;
             background: var(--bg-card);
@@ -139,66 +58,27 @@
             color: var(--text-primary);
             font-size: 14px;
             outline: none;
-            width: 100%;
         }
-        .login-form input:focus {
-            border-color: var(--accent-green);
-        }
-        .login-form .login-topbar-btn {
-            width: 100%;
-            padding: 12px;
-            font-size: 15px;
+        .login-form input:focus { border-color: var(--accent-green); }
+        .login-topbar-btn {
+            padding: 12px 20px;
+            background: var(--accent-green);
+            border: none;
             border-radius: 8px;
-            margin-top: 4px;
-        }
-        .login-footer-text {
-            margin-top: 20px;
-            font-size: 11px;
-            color: var(--text-muted);
+            color: #000;
+            font-size: 14px;
+            font-weight: 700;
+            cursor: pointer;
             letter-spacing: 1px;
         }
+        .login-topbar-btn:hover { background: #16a34a; }
+        .login-error { color: var(--accent-red); font-size: 12px; min-height: 18px; }
+        .login-footer-text { font-size: 11px; color: var(--text-muted); margin-top: 20px; }
 
-        .login-error {
-            color: var(--accent-red);
-            font-size: 12px;
-            min-height: 18px;
-        }
+        /* DASHBOARD */
+        .dashboard-wrapper { display: none; }
+        .dashboard-wrapper.active { display: block; }
 
-        /* Preview area - last market data */
-        .stat-row {
-            display: flex;
-            justify-content: space-between;
-            padding: 4px 0;
-            font-size: 12px;
-        }
-        .stat-label { color: var(--text-secondary); }
-        .stat-value { font-weight: 600; font-family: monospace; }
-        .sim-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
-            gap: 6px;
-        }
-        .sim-card {
-            background: var(--bg-card);
-            border: 1px solid var(--border);
-            border-radius: 6px;
-            padding: 8px;
-            text-align: center;
-        }
-        .sim-card-label { font-size: 10px; color: var(--text-muted); }
-        .sim-card-value { font-size: 14px; font-weight: 700; font-family: monospace; margin-top: 2px; }
-        .sim-card-pts { font-size: 9px; color: var(--text-muted); }
-        /* ============================================= */
-        /* DASHBOARD                                     */
-        /* ============================================= */
-        .dashboard-wrapper {
-            display: none;
-        }
-        .dashboard-wrapper.active {
-            display: block;
-        }
-
-        /* HEADER */
         .header {
             background: var(--bg-secondary);
             border-bottom: 1px solid var(--border);
@@ -212,310 +92,97 @@
             flex-wrap: wrap;
             gap: 8px;
         }
-        .header-left {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            flex-wrap: wrap;
-        }
-        .logo {
-            font-size: 16px;
-            font-weight: 700;
-            color: var(--text-primary);
-            letter-spacing: 1px;
-        }
-        .header-status {
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            font-size: 11px;
-            color: var(--text-secondary);
-        }
-        .status-dot {
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            background: var(--accent-green);
-            flex-shrink: 0;
-        }
+        .header-left { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+        .logo { font-size: 16px; font-weight: 700; color: var(--text-primary); letter-spacing: 1px; }
+        .header-status { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text-secondary); }
+        .status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent-green); flex-shrink: 0; }
         .status-dot.offline { background: var(--accent-red); }
         .status-dot.online { background: var(--accent-green); }
-
-        .header-controls {
-            display: flex;
-            gap: 6px;
-            align-items: center;
-            flex-wrap: wrap;
-        }
-        .user-badge {
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            background: var(--bg-card);
-            border: 1px solid var(--border);
-            border-radius: 6px;
-            padding: 6px 10px;
-            font-size: 12px;
-            color: var(--text-secondary);
-        }
+        .header-controls { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+        .user-badge { display: flex; align-items: center; gap: 6px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 6px; padding: 6px 10px; font-size: 12px; color: var(--text-secondary); }
         .user-badge strong { color: var(--accent-green); }
-        .btn-logout {
-            padding: 6px 12px;
-            background: transparent;
-            border: 1px solid var(--accent-red);
-            color: var(--accent-red);
-            border-radius: 6px;
-            cursor: pointer;
-            font-size: 11px;
-            transition: all 0.2s;
-        }
+        .btn-logout { padding: 6px 12px; background: transparent; border: 1px solid var(--accent-red); color: var(--accent-red); border-radius: 6px; cursor: pointer; font-size: 11px; }
         .btn-logout:hover { background: var(--accent-red); color: #fff; }
 
-        /* TABS */
-        .ativo-tabs {
-            display: flex;
-            background: var(--bg-secondary);
-            border-bottom: 1px solid var(--border);
-            padding: 0 16px;
-            overflow-x: auto;
-        }
-        .ativo-tab {
-            padding: 10px 20px;
-            cursor: pointer;
-            border-bottom: 2px solid transparent;
-            color: var(--text-secondary);
-            font-weight: 500;
-            font-size: 14px;
-            transition: all 0.2s;
-            white-space: nowrap;
-        }
+        .ativo-tabs { display: flex; background: var(--bg-secondary); border-bottom: 1px solid var(--border); padding: 0 16px; overflow-x: auto; }
+        .ativo-tab { padding: 10px 20px; cursor: pointer; border-bottom: 2px solid transparent; color: var(--text-secondary); font-weight: 500; font-size: 14px; white-space: nowrap; }
         .ativo-tab:hover { color: var(--text-primary); }
-        .ativo-tab.active {
-            color: var(--accent-green);
-            border-bottom-color: var(--accent-green);
-        }
+        .ativo-tab.active { color: var(--accent-green); border-bottom-color: var(--accent-green); }
 
-        /* TIMEFRAME */
-        .tf-bar {
-            display: flex;
-            padding: 8px 16px;
-            gap: 4px;
-            background: var(--bg-secondary);
-            border-bottom: 1px solid var(--border);
-            overflow-x: auto;
-        }
-        .tf-btn {
-            padding: 6px 14px;
-            border: 1px solid var(--border);
-            background: transparent;
-            color: var(--text-secondary);
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 13px;
-            font-weight: 500;
-            transition: all 0.2s;
-            white-space: nowrap;
-        }
+        .tf-bar { display: flex; padding: 8px 16px; gap: 4px; background: var(--bg-secondary); border-bottom: 1px solid var(--border); overflow-x: auto; align-items: center; flex-wrap: wrap; }
+        .tf-btn { padding: 6px 14px; border: 1px solid var(--border); background: transparent; color: var(--text-secondary); border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 500; white-space: nowrap; }
         .tf-btn:hover { border-color: var(--accent-green); color: var(--text-primary); }
-        .tf-btn.active {
-            background: var(--accent-green);
-            border-color: var(--accent-green);
-            color: #000;
-        }
+        .tf-btn.active { background: var(--accent-green); border-color: var(--accent-green); color: #000; }
 
-        /* BTN */
-        .btn {
-            padding: 6px 14px;
-            border: 1px solid var(--border);
-            background: var(--bg-card);
-            color: var(--text-primary);
-            border-radius: 6px;
-            cursor: pointer;
-            font-size: 12px;
-            transition: all 0.2s;
-            white-space: nowrap;
-        }
+        .btn { padding: 6px 14px; border: 1px solid var(--border); background: var(--bg-card); color: var(--text-primary); border-radius: 6px; cursor: pointer; font-size: 12px; white-space: nowrap; }
         .btn:hover { border-color: var(--accent-green); }
         .btn-primary { background: var(--accent-green); border-color: var(--accent-green); color: #000; font-weight: 600; }
         .btn-primary:hover { background: #16a34a; }
-        .btn-demo {
-            background: var(--bg-card);
-            border-color: var(--accent-blue);
-            color: var(--accent-blue);
-        }
+        .btn-demo { background: var(--bg-card); border-color: var(--accent-blue); color: var(--accent-blue); }
         .btn-demo:hover { background: var(--accent-blue); color: #fff; }
 
-        /* SINAL BANNER */
-        .sinal-banner {
-            padding: 10px 16px;
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            font-size: 13px;
-            flex-wrap: wrap;
+        /* CONTRACT SELECTOR */
+        .contrato-selector {
+            display: flex; align-items: center; gap: 6px;
+            background: var(--bg-card); border: 1px solid var(--border);
+            border-radius: 6px; padding: 4px 10px; font-size: 12px;
         }
+        .contrato-selector label { color: var(--text-muted); font-size: 11px; white-space: nowrap; }
+        .contrato-selector input {
+            width: 50px; padding: 4px 6px; background: var(--bg-primary);
+            border: 1px solid var(--border); border-radius: 4px;
+            color: var(--accent-green); font-size: 13px; font-weight: 700;
+            text-align: center; font-family: monospace; outline: none;
+        }
+        .contrato-selector input:focus { border-color: var(--accent-green); }
+        .contrato-valor { color: var(--accent-green); font-weight: 600; font-family: monospace; font-size: 11px; white-space: nowrap; }
+
+        .sinal-banner { padding: 10px 16px; display: flex; align-items: center; gap: 12px; font-size: 13px; flex-wrap: wrap; }
         .sinal-banner.compra { background: rgba(34,197,94,0.1); border-bottom: 2px solid var(--accent-green); }
         .sinal-banner.venda { background: rgba(239,68,68,0.1); border-bottom: 2px solid var(--accent-red); }
         .sinal-banner.neutro { background: rgba(132,142,156,0.05); border-bottom: 1px solid var(--border); }
-        .sinal-badge {
-            padding: 4px 12px;
-            border-radius: 4px;
-            font-weight: 700;
-            font-size: 12px;
-            text-transform: uppercase;
-        }
+        .sinal-badge { padding: 4px 12px; border-radius: 4px; font-weight: 700; font-size: 12px; text-transform: uppercase; }
         .sinal-badge.compra { background: var(--accent-green); color: #000; }
         .sinal-badge.venda { background: var(--accent-red); color: #fff; }
         .sinal-badge.neutro { background: var(--text-muted); color: #fff; }
-        .confianca-bar {
-            width: 80px; height: 6px;
-            background: var(--bg-hover);
-            border-radius: 3px;
-            overflow: hidden;
-        }
-        .confianca-fill { height: 100%; border-radius: 3px; transition: width 0.5s; }
+        .confianca-bar { width: 80px; height: 6px; background: var(--bg-hover); border-radius: 3px; overflow: hidden; }
+        .confianca-fill { height: 100%; border-radius: 3px; }
 
-        /* MAIN GRID */
-        .main-grid {
-            display: grid;
-            grid-template-columns: 1fr 320px;
-            gap: 1px;
-            background: var(--border);
-            min-height: calc(100vh - 160px);
-        }
-        .chart-area {
-            background: var(--bg-primary);
-            padding: 12px;
-        }
-        .sidebar {
-            background: var(--bg-secondary);
-            overflow-y: auto;
-            max-height: calc(100vh - 160px);
-        }
+        .main-grid { display: grid; grid-template-columns: 1fr 320px; gap: 1px; background: var(--border); min-height: calc(100vh - 160px); }
+        .chart-area { background: var(--bg-primary); padding: 12px; }
+        .sidebar { background: var(--bg-secondary); overflow-y: auto; max-height: calc(100vh - 160px); }
 
-        /* CARDS */
-        .card {
-            background: var(--bg-card);
-            border: 1px solid var(--border);
-            border-radius: 8px;
-            margin-bottom: 12px;
-        }
-        .card-header {
-            padding: 10px 14px;
-            border-bottom: 1px solid var(--border);
-            font-size: 12px;
-            font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            color: var(--text-secondary);
-        }
-        .card-body { padding: 12px 14px; }
+        .sidebar-section { padding: 12px 14px; border-bottom: 1px solid var(--border); }
+        .section-title { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.8px; color: var(--text-muted); margin-bottom: 10px; }
 
-        /* SIDEBAR SECTIONS */
-        .sidebar-section {
-            padding: 12px 14px;
-            border-bottom: 1px solid var(--border);
-        }
-        .section-title {
-            font-size: 11px;
-            font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 0.8px;
-            color: var(--text-muted);
-            margin-bottom: 10px;
-        }
-
-        /* INDICATORS */
-        .indicator-row {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 5px 0;
-            font-size: 12px;
-        }
+        .indicator-row { display: flex; justify-content: space-between; align-items: center; padding: 5px 0; font-size: 12px; }
         .indicator-label { color: var(--text-secondary); }
         .indicator-value { font-weight: 600; font-family: monospace; font-size: 12px; }
 
-        .tag {
-            display: inline-block;
-            padding: 2px 8px;
-            border-radius: 3px;
-            font-size: 10px;
-            font-weight: 600;
-        }
+        .tag { display: inline-block; padding: 2px 8px; border-radius: 3px; font-size: 10px; font-weight: 600; }
         .tag-green { background: rgba(34,197,94,0.15); color: var(--accent-green); }
         .tag-red { background: rgba(239,68,68,0.15); color: var(--accent-red); }
         .tag-yellow { background: rgba(234,179,8,0.15); color: var(--accent-yellow); }
         .tag-blue { background: rgba(59,130,246,0.15); color: var(--accent-blue); }
 
-        /* CHART */
-        .chart-container {
-            background: var(--bg-secondary);
-            border: 1px solid var(--border);
-            border-radius: 8px;
-            margin-bottom: 8px;
-            height: 350px;
-            position: relative;
-            overflow: hidden;
-        }
-        .chart-label {
-            position: absolute;
-            top: 8px; left: 12px;
-            font-size: 10px;
-            color: var(--text-muted);
-            z-index: 2;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
-        .chart-sub-container {
-            background: var(--bg-secondary);
-            border: 1px solid var(--border);
-            border-radius: 8px;
-            margin-bottom: 8px;
-            height: 80px;
-            position: relative;
-            overflow: hidden;
-        }
+        .chart-container { background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 8px; margin-bottom: 8px; height: 350px; position: relative; overflow: hidden; }
+        .chart-label { position: absolute; top: 8px; left: 12px; font-size: 10px; color: var(--text-muted); z-index: 2; text-transform: uppercase; letter-spacing: 0.5px; }
+        .chart-sub-container { background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 8px; margin-bottom: 8px; height: 80px; position: relative; overflow: hidden; }
         .chart-sub-container .chart-label { font-size: 9px; }
-        .chart-sub-container canvas { display: block; }
 
-        .preco-display {
-            font-size: 28px;
-            font-weight: 700;
-            font-family: monospace;
-            color: var(--text-primary);
-        }
+        .preco-display { font-size: 28px; font-weight: 700; font-family: monospace; color: var(--text-primary); }
         .preco-change { font-size: 13px; font-family: monospace; }
         .preco-change.up { color: var(--accent-green); }
         .preco-change.down { color: var(--accent-red); }
-
         .countdown { font-size: 11px; color: var(--text-secondary); display: flex; align-items: center; gap: 4px; }
         .countdown-time { font-family: monospace; color: var(--accent-green); font-weight: 600; }
 
-        /* MULTI-TF GRID */
-        .multi-tf-grid {
-            display: grid;
-            grid-template-columns: repeat(5, 1fr);
-            gap: 4px;
-        }
-        .tf-cell {
-            background: var(--bg-card);
-            border: 1px solid var(--border);
-            border-radius: 4px;
-            padding: 6px;
-            text-align: center;
-        }
+        .multi-tf-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; }
+        .tf-cell { background: var(--bg-card); border: 1px solid var(--border); border-radius: 4px; padding: 6px; text-align: center; }
         .tf-cell-header { font-size: 10px; color: var(--text-muted); }
         .tf-cell-value { font-size: 11px; font-weight: 600; margin-top: 2px; }
 
-        /* SINAL CARD */
-        .sinal-card {
-            background: var(--bg-card);
-            border: 1px solid var(--border);
-            border-radius: 6px;
-            padding: 10px;
-            margin-bottom: 8px;
-        }
+        .sinal-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 6px; padding: 10px; margin-bottom: 8px; }
         .sinal-card.compra { border-left: 3px solid var(--accent-green); }
         .sinal-card.venda { border-left: 3px solid var(--accent-red); }
         .sinal-detail { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin-top: 8px; font-size: 11px; }
@@ -523,133 +190,38 @@
         .motivo-list { margin-top: 8px; font-size: 11px; }
         .motivo-item { padding: 2px 0; color: var(--text-secondary); border-bottom: 1px solid var(--border); }
 
+        .stat-row { display: flex; justify-content: space-between; padding: 4px 0; font-size: 12px; }
+        .stat-label { color: var(--text-secondary); }
+        .stat-value { font-weight: 600; font-family: monospace; }
+
         /* DEMO */
-        .demo-overlay {
-            position: fixed;
-            top: 0; left: 0; right: 0; bottom: 0;
-            background: rgba(0,0,0,0.8);
-            z-index: 5000;
-            display: none;
-            overflow-y: auto;
-        }
+        .demo-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.8); z-index: 5000; display: none; overflow-y: auto; }
         .demo-overlay.active { display: block; }
-        .demo-container {
-            max-width: 900px;
-            margin: 40px auto;
-            background: var(--bg-secondary);
-            border: 1px solid var(--border);
-            border-radius: 12px;
-            overflow: hidden;
-        }
-        .demo-header {
-            padding: 16px 20px;
-            background: var(--bg-card);
-            border-bottom: 1px solid var(--border);
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            flex-wrap: wrap;
-            gap: 8px;
-        }
+        .demo-container { max-width: 900px; margin: 40px auto; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+        .demo-header { padding: 16px 20px; background: var(--bg-card); border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; }
         .demo-title { font-size: 16px; font-weight: 700; }
-        .demo-close {
-            padding: 6px 16px;
-            background: var(--accent-red);
-            border: none;
-            border-radius: 6px;
-            color: #fff;
-            cursor: pointer;
-            font-size: 12px;
-        }
+        .demo-close { padding: 6px 16px; background: var(--accent-red); border: none; border-radius: 6px; color: #fff; cursor: pointer; font-size: 12px; }
         #demoContent { padding: 20px; }
-        .demo-summary {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
-            gap: 12px;
-            margin-bottom: 24px;
-        }
-        .demo-stat {
-            background: var(--bg-card);
-            border: 1px solid var(--border);
-            border-radius: 8px;
-            padding: 14px;
-            text-align: center;
-        }
+        .demo-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); gap: 12px; margin-bottom: 24px; }
+        .demo-stat { background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; padding: 14px; text-align: center; }
         .demo-stat-value { font-size: 22px; font-weight: 700; font-family: monospace; }
         .demo-stat-label { font-size: 11px; color: var(--text-muted); margin-top: 4px; text-transform: uppercase; }
-        .demo-ops-table {
-            width: 100%;
-            border-collapse: collapse;
-            font-size: 12px;
-        }
-        .demo-ops-table th {
-            background: var(--bg-card);
-            padding: 8px;
-            text-align: left;
-            font-size: 11px;
-            color: var(--text-muted);
-            text-transform: uppercase;
-            border-bottom: 1px solid var(--border);
-        }
-        .demo-ops-table td {
-            padding: 8px;
-            border-bottom: 1px solid var(--border);
-        }
+        .demo-ops-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+        .demo-ops-table th { background: var(--bg-card); padding: 8px; text-align: left; font-size: 11px; color: var(--text-muted); text-transform: uppercase; border-bottom: 1px solid var(--border); }
+        .demo-ops-table td { padding: 8px; border-bottom: 1px solid var(--border); }
 
         /* USER MANAGEMENT */
-        .user-overlay {
-            position: fixed;
-            top: 0; left: 0; right: 0; bottom: 0;
-            background: rgba(0,0,0,0.8);
-            z-index: 5000;
-            display: none;
-            overflow-y: auto;
-        }
+        .user-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.8); z-index: 5000; display: none; overflow-y: auto; }
         .user-overlay.active { display: flex; align-items: center; justify-content: center; }
-        .user-container {
-            background: var(--bg-secondary);
-            border: 1px solid var(--border);
-            border-radius: 12px;
-            padding: 24px;
-            width: 90%;
-            max-width: 450px;
-        }
-        .user-container h3 {
-            font-size: 16px;
-            margin-bottom: 16px;
-            color: var(--text-primary);
-        }
-        .user-container label {
-            display: block;
-            font-size: 12px;
-            color: var(--text-secondary);
-            margin-bottom: 4px;
-            margin-top: 10px;
-        }
-        .user-container input {
-            width: 100%;
-            padding: 10px 12px;
-            background: var(--bg-card);
-            border: 1px solid var(--border);
-            border-radius: 6px;
-            color: var(--text-primary);
-            font-size: 13px;
-            outline: none;
-        }
+        .user-container { background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 12px; padding: 24px; width: 90%; max-width: 450px; }
+        .user-container h3 { font-size: 16px; margin-bottom: 16px; color: var(--text-primary); }
+        .user-container label { display: block; font-size: 12px; color: var(--text-secondary); margin-bottom: 4px; margin-top: 10px; }
+        .user-container input { width: 100%; padding: 10px 12px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 6px; color: var(--text-primary); font-size: 13px; outline: none; }
         .user-container input:focus { border-color: var(--accent-green); }
         .user-container .btn { margin-top: 12px; width: 100%; padding: 10px; text-align: center; }
 
         .loading { text-align: center; padding: 20px; color: var(--text-muted); font-size: 13px; }
-        .spinner {
-            display: inline-block;
-            width: 16px; height: 16px;
-            border: 2px solid var(--border);
-            border-top-color: var(--accent-green);
-            border-radius: 50%;
-            animation: spin 0.8s linear infinite;
-            vertical-align: middle;
-            margin-right: 8px;
-        }
+        .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid var(--border); border-top-color: var(--accent-green); border-radius: 50%; animation: spin 0.8s linear infinite; vertical-align: middle; margin-right: 8px; }
         @keyframes spin { to { transform: rotate(360deg); } }
 
         @media (max-width: 768px) {
@@ -658,14 +230,13 @@
             .header { padding: 8px 12px; }
             .logo { font-size: 14px; }
             .chart-container { height: 280px; }
+            .contrato-selector { flex-wrap: wrap; }
         }
     </style>
 </head>
 <body>
 
-<!-- ============================================= -->
-<!-- LOGIN SCREEN + PREVIEW OF LAST MARKET         -->
-<!-- ============================================= -->
+<!-- LOGIN SCREEN - ONLY LOGIN BOX, NO DATA PREVIEW -->
 <div class="login-screen" id="loginScreen">
     <div class="login-center">
         <div class="login-box">
@@ -682,14 +253,12 @@
     </div>
 </div>
 
-<!-- ============================================= -->
-<!-- DEMO OVERLAY                                  -->
-<!-- ============================================= -->
+<!-- DEMO OVERLAY -->
 <div class="demo-overlay" id="demoOverlay">
     <div class="demo-container">
         <div class="demo-header">
             <div class="demo-title">MODO DEMO - Simulacao do Dia</div>
-            <div style="display:flex; gap:8px; align-items:center;">
+            <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
                 <select id="demoAtivo" style="padding:8px 12px; background:var(--bg-card); border:1px solid var(--border); color:var(--text-primary); border-radius:6px; font-size:13px;">
                     <option value="WIN">Mini-Indice (WIN)</option>
                     <option value="WDO">Mini-Dolar (WDO)</option>
@@ -704,9 +273,7 @@
     </div>
 </div>
 
-<!-- ============================================= -->
-<!-- USER MANAGEMENT OVERLAY                       -->
-<!-- ============================================= -->
+<!-- USER MANAGEMENT OVERLAY -->
 <div class="user-overlay" id="userOverlay">
     <div class="user-container">
         <h3>GERENCIAMENTO DE USUARIOS</h3>
@@ -732,9 +299,7 @@
     </div>
 </div>
 
-<!-- ============================================= -->
-<!-- MAIN DASHBOARD                                -->
-<!-- ============================================= -->
+<!-- DASHBOARD -->
 <div class="dashboard-wrapper" id="dashboardWrapper">
     <div class="header">
         <div class="header-left">
@@ -743,57 +308,68 @@
                 <div class="status-dot" id="statusDot"></div>
                 <span id="statusText">Conectando...</span>
             </div>
-            <div id="cacheBanner" style="display:none; background:rgba(245,158,11,0.15); border:1px solid rgba(245,158,11,0.3); padding:3px 8px; border-radius:4px; font-size:10px; color:var(--accent-orange);">
-                <span id="cacheBannerText"></span>
+            <div class="countdown">
+                Atualiza em <span class="countdown-time" id="countdown">05:00</span>
             </div>
         </div>
         <div class="header-controls">
-            <div class="user-badge">
-                <span>&#128100;</span> <strong id="headerUser">--</strong>
-            </div>
-            <div class="countdown">
-                <span>Atualiza:</span> <span class="countdown-time" id="countdown">05:00</span>
+            <!-- CONTRACT QUANTITY SELECTOR -->
+            <div class="contrato-selector">
+                <label>CONTRATOS:</label>
+                <input type="number" id="numContratos" min="1" max="999" value="1" onchange="atualizarContratos()">
+                <span class="contrato-valor" id="valorContrato">R$ 0.20/pt</span>
             </div>
             <button class="btn btn-demo" onclick="abrirDemo()">DEMO</button>
-            <button class="btn btn-demo" onclick="abrirUserMgmt()">USUARIOS</button>
-            <button class="btn btn-primary" onclick="forcarAtualizacao()">Atualizar</button>
+            <button class="btn btn-primary" onclick="forcarAtualizacao()">ATUALIZAR</button>
+            <div class="user-badge">
+                <strong id="headerUser">--</strong>
+                <button class="btn" onclick="abrirUserMgmt()" style="padding:3px 8px;font-size:10px;">Config</button>
+            </div>
             <button class="btn-logout" onclick="fazerLogout()">Sair</button>
         </div>
     </div>
 
+    <div id="cacheBanner" style="display:none; padding:6px 16px; background:rgba(234,179,8,0.1); border-bottom:1px solid var(--accent-yellow); font-size:11px; color:var(--accent-yellow); text-align:center;">
+        <span id="cacheBannerText"></span>
+    </div>
+
     <div class="ativo-tabs">
-        <div class="ativo-tab active" data-ativo="WIN" onclick="trocarAtivo('WIN')">Mini-Indice (WIN)</div>
-        <div class="ativo-tab" data-ativo="WDO" onclick="trocarAtivo('WDO')">Mini-Dolar (WDO)</div>
+        <div class="ativo-tab active" data-ativo="WIN" onclick="trocarAtivo('WIN')">MINI-INDICE (<span id="winContrato">WIN</span>)</div>
+        <div class="ativo-tab" data-ativo="WDO" onclick="trocarAtivo('WDO')">MINI-DOLAR (<span id="wdoContrato">WDO</span>)</div>
     </div>
 
     <div class="tf-bar">
-        <button class="tf-btn active" data-tf="5m" onclick="trocarTimeframe('5m')">5 min</button>
-        <button class="tf-btn" data-tf="15m" onclick="trocarTimeframe('15m')">15 min</button>
-        <button class="tf-btn" data-tf="1h" onclick="trocarTimeframe('1h')">1 hora</button>
-        <button class="tf-btn" data-tf="4h" onclick="trocarTimeframe('4h')">4 horas</button>
-        <button class="tf-btn" data-tf="1d" onclick="trocarTimeframe('1d')">Diario</button>
+        <button class="tf-btn active" data-tf="5m" onclick="trocarTimeframe('5m')">5M</button>
+        <button class="tf-btn" data-tf="15m" onclick="trocarTimeframe('15m')">15M</button>
+        <button class="tf-btn" data-tf="1h" onclick="trocarTimeframe('1h')">1H</button>
+        <button class="tf-btn" data-tf="4h" onclick="trocarTimeframe('4h')">4H</button>
+        <button class="tf-btn" data-tf="1d" onclick="trocarTimeframe('1d')">1D</button>
     </div>
 
+    <!-- Signal Banner -->
     <div class="sinal-banner neutro" id="sinalBanner">
         <span class="sinal-badge neutro" id="sinalBadge">AGUARDANDO</span>
-        <span id="sinalTexto">Carregando analise...</span>
-        <div class="confianca-bar">
-            <div class="confianca-fill" id="confiancaFill" style="width: 0%; background: var(--text-muted);"></div>
+        <span id="sinalTexto" style="flex:1">Aguardando cruzamento de indicadores...</span>
+        <div>
+            <div class="confianca-bar"><div class="confianca-fill" id="confiancaFill" style="width:0"></div></div>
+            <span style="font-size:10px;color:var(--text-muted)" id="confiancaTexto">Confianca: 0%</span>
         </div>
-        <span id="confiancaTexto" style="font-size: 11px; color: var(--text-secondary);">--</span>
     </div>
 
     <div class="main-grid">
         <div class="chart-area">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; flex-wrap: wrap; gap: 8px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:8px;">
                 <div>
-                    <div class="preco-display" id="precoDisplay">--</div>
-                    <div class="preco-change" id="precoChange">--</div>
+                    <span class="preco-display" id="precoDisplay">--</span>
+                    <span class="preco-change" id="precoChange"></span>
                 </div>
-                <div style="text-align: right; font-size: 11px; color: var(--text-secondary);">
-                    <div>VWAP: <span id="vwapVal" style="color: var(--accent-yellow);">--</span></div>
-                    <div>EMA 9: <span id="ema9Val" style="color: var(--accent-green);">--</span> | EMA 21: <span id="ema21Val" style="color: var(--accent-orange);">--</span></div>
-                    <div>ATR: <span id="atrVal" style="color: var(--accent-blue);">--</span></div>
+                <div style="text-align:right;">
+                    <div style="font-size:11px;color:var(--text-muted);">
+                        VWAP: <span class="indicator-value" id="vwapVal">--</span> |
+                        EMA9: <span class="indicator-value" id="ema9Val">--</span> |
+                        EMA21: <span class="indicator-value" id="ema21Val">--</span> |
+                        ATR: <span class="indicator-value" id="atrVal">--</span>
+                    </div>
                 </div>
             </div>
 
@@ -814,7 +390,7 @@
                 <canvas id="volumeChart"></canvas>
             </div>
 
-            <!-- Capital Simulation in dashboard -->
+            <!-- Capital Simulation -->
             <div id="simulacaoCapital" style="margin-top: 12px;"></div>
         </div>
 
@@ -870,43 +446,108 @@ let state = {
     countdownSeconds: 300,
     countdownInterval: null,
     usuarioLogado: null,
+    numContratos: 1,
 };
-
 let currentUserAdmin = false;
 let currentUserName = '';
 
 // =====================================================
+// SESSION PERSISTENCE (localStorage)
+// =====================================================
+function salvarSessao(usuario, admin) {
+    try {
+        const sessao = { usuario: usuario, admin: admin, timestamp: Date.now() };
+        localStorage.setItem('b3_sessao', JSON.stringify(sessao));
+    } catch(e) {}
+}
+
+function carregarSessao() {
+    try {
+        const raw = localStorage.getItem('b3_sessao');
+        if (!raw) return null;
+        const sessao = JSON.parse(raw);
+        // Sessão expira em 24h
+        if (Date.now() - sessao.timestamp > 24 * 60 * 60 * 1000) {
+            localStorage.removeItem('b3_sessao');
+            return null;
+        }
+        return sessao;
+    } catch(e) { return null; }
+}
+
+function limparSessao() {
+    try { localStorage.removeItem('b3_sessao'); } catch(e) {}
+}
+
+function salvarContratos(n) {
+    try { localStorage.setItem('b3_contratos', String(n)); } catch(e) {}
+}
+
+function carregarContratos() {
+    try {
+        const v = localStorage.getItem('b3_contratos');
+        return v ? parseInt(v) || 1 : 1;
+    } catch(e) { return 1; }
+}
+
+// =====================================================
+// AUTO-LOGIN ON PAGE LOAD
+// =====================================================
+window.addEventListener('DOMContentLoaded', function() {
+    // Load saved contracts
+    state.numContratos = carregarContratos();
+    const numInput = document.getElementById('numContratos');
+    if (numInput) numInput.value = state.numContratos;
+
+    // Check for saved session
+    const sessao = carregarSessao();
+    if (sessao && sessao.usuario) {
+        state.usuarioLogado = sessao.usuario;
+        currentUserName = sessao.usuario;
+        currentUserAdmin = sessao.admin || false;
+        entrarDashboard();
+    }
+
+    // Load contract names
+    carregarContratos_b3();
+});
+
+async function carregarContratos_b3() {
+    try {
+        const [rWin, rWdo] = await Promise.all([
+            fetch('/api/contrato?ativo=WIN'),
+            fetch('/api/contrato?ativo=WDO')
+        ]);
+        const win = await rWin.json();
+        const wdo = await rWdo.json();
+        document.getElementById('winContrato').textContent = win.ticker_b3 || 'WIN';
+        document.getElementById('wdoContrato').textContent = wdo.ticker_b3 || 'WDO';
+    } catch(e) {}
+}
+
+// =====================================================
 // LOGIN
 // =====================================================
-document.getElementById('loginPass').addEventListener('keydown', function(e) {
-    if (e.key === 'Enter') fazerLogin();
-});
-document.getElementById('loginUser').addEventListener('keydown', function(e) {
-    if (e.key === 'Enter') document.getElementById('loginPass').focus();
-});
+document.getElementById('loginPass').addEventListener('keydown', function(e) { if (e.key === 'Enter') fazerLogin(); });
+document.getElementById('loginUser').addEventListener('keydown', function(e) { if (e.key === 'Enter') document.getElementById('loginPass').focus(); });
 
 async function fazerLogin() {
     const usuario = document.getElementById('loginUser').value.trim();
     const senha = document.getElementById('loginPass').value.trim();
     const errorEl = document.getElementById('loginError');
     const btn = document.getElementById('loginBtn');
-
     if (!usuario || !senha) { errorEl.textContent = 'Preencha usuario e senha'; return; }
     btn.textContent = 'ENTRANDO...';
     btn.disabled = true;
-
     try {
-        const res = await fetch('/api/login', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ usuario, senha })
-        });
+        const res = await fetch('/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ usuario, senha }) });
         const data = await res.json();
         if (data.sucesso) {
             state.usuarioLogado = data.usuario;
             currentUserName = data.usuario;
             currentUserAdmin = data.admin || false;
             errorEl.textContent = '';
+            salvarSessao(data.usuario, data.admin);
             entrarDashboard();
         } else {
             errorEl.textContent = data.mensagem || 'Usuario ou senha invalidos';
@@ -921,17 +562,13 @@ async function fazerLogin() {
 }
 
 function entrarDashboard() {
-    document.getElementById('loginScreen').style.display = 'none';
+    document.getElementById('loginScreen').classList.add('hidden');
     const dash = document.getElementById('dashboardWrapper');
     dash.classList.add('active');
-
     const nome = (state.usuarioLogado || '').replace(/domingues/i, ' Domingues').replace(/^./, c => c.toUpperCase());
     document.getElementById('headerUser').textContent = nome;
-
-    if (!currentUserAdmin) {
-        document.getElementById('criarUserBox').style.display = 'none';
-    }
-
+    if (!currentUserAdmin) { document.getElementById('criarUserBox').style.display = 'none'; }
+    atualizarContratos();
     carregarDados();
     iniciarCountdown();
     carregarSimulacao();
@@ -939,13 +576,11 @@ function entrarDashboard() {
 
 function fazerLogout() {
     state.usuarioLogado = null;
+    limparSessao();
     if (state.countdownInterval) clearInterval(state.countdownInterval);
     const dash = document.getElementById('dashboardWrapper');
     dash.classList.remove('active');
-    dash.style.display = 'none';
-
     const loginScreen = document.getElementById('loginScreen');
-    loginScreen.style.display = 'flex';
     loginScreen.classList.remove('hidden');
     document.getElementById('loginUser').value = '';
     document.getElementById('loginPass').value = '';
@@ -955,9 +590,24 @@ function fazerLogout() {
 }
 
 // =====================================================
-// PREVIEW - LAST MARKET DATA ON LANDING PAGE
+// CONTRACT QUANTITY
 // =====================================================
+function atualizarContratos() {
+    const input = document.getElementById('numContratos');
+    const n = Math.max(1, parseInt(input.value) || 1);
+    state.numContratos = n;
+    input.value = n;
+    salvarContratos(n);
 
+    // Update valor/pt display
+    const valorEl = document.getElementById('valorContrato');
+    if (state.ativo === 'WIN') {
+        valorEl.textContent = 'R$ ' + (0.20 * n).toFixed(2) + '/pt';
+    } else {
+        valorEl.textContent = 'R$ ' + (10.00 * n).toFixed(2) + '/pt';
+    }
+    carregarSimulacao();
+}
 
 // =====================================================
 // DEMO MODE
@@ -970,7 +620,7 @@ async function carregarDemo() {
     const content = document.getElementById('demoContent');
     content.innerHTML = '<div class="loading"><span class="spinner"></span> Simulando operacoes...</div>';
     try {
-        const res = await fetch('/api/demo?ativo=' + ativo);
+        const res = await fetch('/api/demo?ativo=' + ativo + '&contratos=' + state.numContratos);
         const data = await res.json();
         renderizarDemo(data);
     } catch (e) {
@@ -984,7 +634,11 @@ function renderizarDemo(data) {
     const saldoColor = r.saldo_pontos >= 0 ? 'var(--accent-green)' : 'var(--accent-red)';
     const finColor = r.saldo_financeiro >= 0 ? 'var(--accent-green)' : 'var(--accent-red)';
 
-    let html = '<div style="text-align:center; margin-bottom:16px; font-size:13px; color:var(--text-muted);">' + data.ativo + ' - ' + data.data + '</div>';
+    let html = '<div style="text-align:center; margin-bottom:16px;">';
+    html += '<div style="font-size:14px;font-weight:700;">' + (data.contrato||data.ativo) + '</div>';
+    html += '<div style="font-size:12px;color:var(--text-muted);">' + data.data + ' | ' + r.contratos + ' contrato(s) | R$ ' + r.valor_ponto + '/pt</div>';
+    html += '</div>';
+
     html += '<div class="demo-summary">';
     html += '<div class="demo-stat"><div class="demo-stat-value">' + r.total + '</div><div class="demo-stat-label">Operacoes</div></div>';
     html += '<div class="demo-stat"><div class="demo-stat-value" style="color:var(--accent-green)">' + r.wins + '</div><div class="demo-stat-label">Wins</div></div>';
@@ -994,18 +648,38 @@ function renderizarDemo(data) {
     html += '<div class="demo-stat"><div class="demo-stat-value" style="color:' + finColor + '">R$ ' + r.saldo_financeiro.toLocaleString('pt-BR') + '</div><div class="demo-stat-label">Financeiro</div></div>';
     html += '</div>';
 
-    html += '<div style="overflow-x:auto;"><table class="demo-ops-table"><thead><tr><th>#</th><th>Horario</th><th>Tipo</th><th>Entrada</th><th>Stop</th><th>Alvo</th><th>Saida</th><th>R/R</th><th>Resultado</th><th>Status</th></tr></thead><tbody>';
+    // RELATÓRIO DE ENTRADAS E SAÍDAS
+    html += '<div style="font-size:13px;font-weight:700;margin-bottom:10px;color:var(--text-primary);border-bottom:1px solid var(--border);padding-bottom:6px;">RELATORIO DE ENTRADAS E SAIDAS</div>';
+    html += '<div style="overflow-x:auto;"><table class="demo-ops-table"><thead><tr><th>#</th><th>Horario</th><th>Ativo</th><th>Tipo</th><th>Entrada</th><th>Stop</th><th>Alvo</th><th>Saida</th><th>Pts</th><th>R/R</th><th>CTs</th><th>Resultado</th><th>Status</th></tr></thead><tbody>';
     data.operacoes.forEach(op => {
         const isWin = op.resultado > 0;
         const resColor = isWin ? 'var(--accent-green)' : 'var(--accent-red)';
-        html += '<tr><td>' + op.id + '</td><td>' + op.horario + '</td><td><span class="tag ' + (op.tipo==='COMPRA'?'tag-green':'tag-red') + '">' + op.tipo + '</span></td><td style="font-family:monospace">' + op.entrada.toLocaleString('pt-BR') + '</td><td style="font-family:monospace;color:var(--accent-red)">' + op.stop.toLocaleString('pt-BR') + '</td><td style="font-family:monospace;color:var(--accent-green)">' + op.alvo.toLocaleString('pt-BR') + '</td><td style="font-family:monospace">' + op.saida.toLocaleString('pt-BR') + '</td><td>' + op.rr + '</td><td style="color:' + resColor + ';font-weight:700;font-family:monospace">' + (op.resultado>0?'+':'') + op.resultado + '</td><td><span class="tag ' + (isWin?'tag-green':'tag-red') + '">' + op.status + '</span></td></tr>';
+        html += '<tr>';
+        html += '<td>' + op.id + '</td>';
+        html += '<td style="white-space:nowrap">' + op.horario + '</td>';
+        html += '<td>' + op.ativo + '</td>';
+        html += '<td><span class="tag ' + (op.tipo==='COMPRA'?'tag-green':'tag-red') + '">' + op.tipo + '</span></td>';
+        html += '<td style="font-family:monospace">' + op.entrada.toLocaleString('pt-BR') + '</td>';
+        html += '<td style="font-family:monospace;color:var(--accent-red)">' + op.stop.toLocaleString('pt-BR') + '</td>';
+        html += '<td style="font-family:monospace;color:var(--accent-green)">' + op.alvo.toLocaleString('pt-BR') + '</td>';
+        html += '<td style="font-family:monospace">' + op.saida.toLocaleString('pt-BR') + '</td>';
+        html += '<td style="font-family:monospace;color:' + resColor + '">' + (op.pts>0?'+':'') + op.pts + '</td>';
+        html += '<td>' + op.rr + '</td>';
+        html += '<td>' + op.contratos + '</td>';
+        html += '<td style="color:' + resColor + ';font-weight:700;font-family:monospace">' + (op.resultado>0?'+R$ ':'-R$ ') + Math.abs(op.resultado).toLocaleString('pt-BR') + '</td>';
+        html += '<td><span class="tag ' + (isWin?'tag-green':'tag-red') + '">' + op.status + '</span></td>';
+        html += '</tr>';
     });
     html += '</tbody></table></div>';
 
-    html += '<div style="margin-top:20px;"><div style="font-size:12px;color:var(--text-muted);text-transform:uppercase;margin-bottom:10px;font-weight:600;">Motivos das Entradas</div>';
+    // MOTIVOS (indicadores cruzados)
+    html += '<div style="margin-top:20px;"><div style="font-size:12px;color:var(--text-muted);text-transform:uppercase;margin-bottom:10px;font-weight:600;">Indicadores Cruzados por Operacao</div>';
     data.operacoes.forEach(op => {
-        const isWin = op.resultado > 0;
-        html += '<div style="font-size:12px;padding:6px 0;border-bottom:1px solid var(--border);display:flex;gap:8px;align-items:center;"><span class="tag ' + (op.tipo==='COMPRA'?'tag-green':'tag-red') + '" style="min-width:60px;text-align:center;">#' + op.id + ' ' + op.tipo + '</span><span style="color:var(--text-secondary)">' + op.motivo + '</span><span class="tag ' + (isWin?'tag-green':'tag-red') + '" style="margin-left:auto">' + op.status + '</span></div>';
+        html += '<div style="font-size:11px;padding:6px 0;border-bottom:1px solid var(--border);display:flex;gap:8px;align-items:flex-start;">';
+        html += '<span class="tag ' + (op.tipo==='COMPRA'?'tag-green':'tag-red') + '" style="min-width:60px;text-align:center;flex-shrink:0;">#' + op.id + ' ' + op.tipo + '</span>';
+        html += '<span style="color:var(--text-secondary);flex:1">' + op.motivo + '</span>';
+        html += '<span class="tag ' + (op.win?'tag-green':'tag-red') + '" style="flex-shrink:0">' + op.status + '</span>';
+        html += '</div>';
     });
     html += '</div>';
     content.innerHTML = html;
@@ -1060,6 +734,7 @@ function iniciarCountdown() {
 function trocarAtivo(ativo) {
     state.ativo = ativo;
     document.querySelectorAll('.ativo-tab').forEach(t => t.classList.toggle('active', t.dataset.ativo === ativo));
+    atualizarContratos();
     carregarDados();
     carregarSimulacao();
 }
@@ -1077,7 +752,6 @@ async function carregarDados() {
     const st = document.getElementById('statusText');
     sd.className = 'status-dot';
     st.textContent = 'Atualizando...';
-
     try {
         const [aR, pR] = await Promise.all([
             fetch('/api/analise?ativo=' + state.ativo + '&timeframe=' + state.timeframe),
@@ -1085,13 +759,11 @@ async function carregarDados() {
         ]);
         state.analise = await aR.json();
         state.painel = await pR.json();
-
         const cb = document.getElementById('cacheBanner');
-        if (state.analise.cache) {
+        if (state.analise.usando_cache) {
             cb.style.display = 'block';
-            document.getElementById('cacheBannerText').textContent = 'Cache: ' + (state.analise.cache_age || 'dados salvos');
+            document.getElementById('cacheBannerText').textContent = 'Exibindo dados do pregao de ' + (state.analise.cache_data_pregao || '');
         } else { cb.style.display = 'none'; }
-
         sd.classList.add('online');
         st.textContent = 'Conectado';
         atualizarUI();
@@ -1104,49 +776,61 @@ async function carregarDados() {
 function atualizarUI() {
     if (!state.analise) return;
     const a = state.analise.analise || state.analise;
-    const p = state.painel;
-
     const preco = a.preco_atual || 0;
     document.getElementById('precoDisplay').textContent = preco ? preco.toLocaleString('pt-BR') : '--';
-
     const vp = a.variacao_percentual || 0;
     const pc = document.getElementById('precoChange');
     pc.textContent = (vp >= 0 ? '+' : '') + vp.toFixed(2) + '%';
     pc.className = 'preco-change ' + (vp >= 0 ? 'up' : 'down');
-
     document.getElementById('vwapVal').textContent = a.vwap ? a.vwap.toLocaleString('pt-BR') : '--';
     document.getElementById('ema9Val').textContent = (a.ema_9||a.ema9) ? (a.ema_9||a.ema9).toLocaleString('pt-BR') : '--';
     document.getElementById('ema21Val').textContent = (a.ema_21||a.ema21) ? (a.ema_21||a.ema21).toLocaleString('pt-BR') : '--';
     document.getElementById('atrVal').textContent = a.atr ? a.atr.toFixed(1) : '--';
-
     atualizarBanner(a);
     atualizarGraficos(a);
-    if (p) { atualizarContexto(p); atualizarFibonacci(p); atualizarVolume(p); atualizarViolinada(p); atualizarSinais(p); atualizarSR(p); atualizarMultiTF(p); }
+    const p = state.painel;
+    if (p && p.painel) {
+        const pan = p.painel;
+        atualizarMultiTF(pan);
+        atualizarContexto(a);
+        atualizarFibonacci(a);
+        atualizarVolume(a);
+        atualizarViolinada(a);
+        atualizarSinais(a);
+        atualizarSR(a);
+    }
 }
 
 function atualizarBanner(a) {
     const banner = document.getElementById('sinalBanner'), badge = document.getElementById('sinalBadge'), texto = document.getElementById('sinalTexto'), fill = document.getElementById('confiancaFill');
-    const sinal = a.sinal || 'NEUTRO', confianca = a.confianca || 0, motivo = a.motivo || 'Aguardando sinal...';
-    banner.className = 'sinal-banner ' + sinal.toLowerCase();
-    badge.className = 'sinal-badge ' + sinal.toLowerCase();
+    const sinais = a.sinais || [];
+    let sinal = 'NEUTRO', confianca = 0, motivo = 'Aguardando cruzamento de TODOS indicadores...';
+    if (sinais.length > 0) {
+        const s = sinais[0];
+        sinal = s.tipo || 'NEUTRO';
+        confianca = s.confianca || 0;
+        motivo = (s.motivos && s.motivos.length > 0) ? s.motivos[0] : 'Sinal ativo';
+    }
+    const cls = sinal.includes('COMPRA') ? 'compra' : sinal.includes('VENDA') ? 'venda' : 'neutro';
+    banner.className = 'sinal-banner ' + cls;
+    badge.className = 'sinal-badge ' + cls;
     badge.textContent = sinal;
     texto.textContent = motivo;
     let bc = 'var(--text-muted)';
-    if (sinal === 'COMPRA') bc = 'var(--accent-green)';
-    else if (sinal === 'VENDA') bc = 'var(--accent-red)';
-    else if (sinal === 'AGUARDAR') bc = 'var(--accent-yellow)';
+    if (cls === 'compra') bc = 'var(--accent-green)';
+    else if (cls === 'venda') bc = 'var(--accent-red)';
     fill.style.width = confianca + '%';
     fill.style.background = bc;
     document.getElementById('confiancaTexto').textContent = 'Confianca: ' + confianca + '%';
 }
 
 function atualizarGraficos(a) {
-    if (!a.candles && (!a.dados || a.dados.length === 0)) return;
     const dados = a.candles || a.dados;
-    renderPriceChart({dados: dados, vwap: a.vwap, ema9: a.ema_9||a.ema9, ema21: a.ema_21||a.ema21, fibonacci: a.fibonacci});
+    if (!dados || dados.length === 0) return;
+    renderPriceChart({dados, vwap: a.vwap, ema9: a.ema_9||a.ema9, ema21: a.ema_21||a.ema21, fibonacci: a.fibonacci});
     renderRSIChart(a);
     renderMACDChart(a);
-    renderVolumeChart({dados: dados});
+    renderVolumeChart({dados});
 }
 
 function renderPriceChart(a) {
@@ -1155,7 +839,6 @@ function renderPriceChart(a) {
     const W = container.clientWidth;
     const H = container.clientHeight || 300;
     if (!a.dados || a.dados.length === 0) return;
-
     const chart = LightweightCharts.createChart(container, {
         width: W, height: H,
         layout: { background: { type: 'solid', color: 'transparent' }, textColor: '#8b949e', fontSize: 10 },
@@ -1164,18 +847,15 @@ function renderPriceChart(a) {
         rightPriceScale: { borderColor: 'rgba(255,255,255,0.1)' },
         timeScale: { borderColor: 'rgba(255,255,255,0.1)', timeVisible: true, secondsVisible: false },
     });
-
     const candleSeries = chart.addCandlestickSeries({
         upColor: '#22c55e', downColor: '#ef4444',
         borderUpColor: '#22c55e', borderDownColor: '#ef4444',
         wickUpColor: '#22c55e', wickDownColor: '#ef4444',
     });
-
     const candles = a.dados.map(d => ({
         time: Math.floor(new Date((d.time || d.date || '') + ((d.time || d.date || '').includes('Z') || (d.time || d.date || '').includes('+') ? '' : 'Z')).getTime() / 1000),
         open: d.open, high: d.high, low: d.low, close: d.close,
     })).filter(c => !isNaN(c.time) && c.open > 0);
-
     if (candles.length > 0) {
         candles.sort((x,y) => x.time - y.time);
         const unique = [candles[0]];
@@ -1183,7 +863,6 @@ function renderPriceChart(a) {
             if (candles[i].time > unique[unique.length-1].time) unique.push(candles[i]);
         }
         candleSeries.setData(unique);
-
         if (a.vwap) {
             const vwapLine = chart.addLineSeries({ color: '#eab308', lineWidth: 1, lineStyle: 2, title: 'VWAP' });
             vwapLine.setData(unique.map(c => ({ time: c.time, value: a.vwap })));
@@ -1197,7 +876,6 @@ function renderPriceChart(a) {
             ema21Line.setData(unique.map(c => ({ time: c.time, value: a.ema21 })));
         }
     }
-
     chart.timeScale().fitContent();
     window._priceChart = chart;
 }
@@ -1208,13 +886,8 @@ function renderRSIChart(a) {
     canvas.height = canvas.parentElement.clientHeight;
     const W = canvas.width, H = canvas.height;
     ctx.clearRect(0, 0, W, H);
-    // Overbought zone (80+)
-    ctx.fillStyle = 'rgba(239,68,68,0.08)';
-    ctx.fillRect(0, 0, W, H * 0.2);
-    // Oversold zone (20-)
-    ctx.fillStyle = 'rgba(34,197,94,0.08)';
-    ctx.fillRect(0, H * 0.8, W, H * 0.2);
-    // Lines at 20 and 80
+    ctx.fillStyle = 'rgba(239,68,68,0.08)'; ctx.fillRect(0, 0, W, H * 0.2);
+    ctx.fillStyle = 'rgba(34,197,94,0.08)'; ctx.fillRect(0, H * 0.8, W, H * 0.2);
     [0.2, 0.8].forEach(l => {
         ctx.beginPath(); ctx.strokeStyle = 'rgba(255,255,255,0.1)'; ctx.setLineDash([3,3]);
         ctx.moveTo(0, H*(1-l)); ctx.lineTo(W, H*(1-l)); ctx.stroke(); ctx.setLineDash([]);
@@ -1229,8 +902,7 @@ function renderRSIChart(a) {
 
 function renderMACDChart(a) {
     const canvas = document.getElementById('macdChart'), ctx = canvas.getContext('2d');
-    canvas.width = canvas.parentElement.clientWidth;
-    canvas.height = canvas.parentElement.clientHeight;
+    canvas.width = canvas.parentElement.clientWidth; canvas.height = canvas.parentElement.clientHeight;
     const W = canvas.width, H = canvas.height;
     ctx.clearRect(0, 0, W, H);
     ctx.beginPath(); ctx.strokeStyle = 'rgba(255,255,255,0.1)'; ctx.moveTo(0,H/2); ctx.lineTo(W,H/2); ctx.stroke();
@@ -1244,8 +916,7 @@ function renderMACDChart(a) {
 
 function renderVolumeChart(a) {
     const canvas = document.getElementById('volumeChart'), ctx = canvas.getContext('2d');
-    canvas.width = canvas.parentElement.clientWidth;
-    canvas.height = canvas.parentElement.clientHeight;
+    canvas.width = canvas.parentElement.clientWidth; canvas.height = canvas.parentElement.clientHeight;
     const W = canvas.width, H = canvas.height;
     ctx.clearRect(0, 0, W, H);
     const dados = a.dados;
@@ -1253,95 +924,136 @@ function renderVolumeChart(a) {
     const volumes = dados.map(d => d.volume || 0), maxV = Math.max(...volumes) || 1;
     const bW = Math.max(1, (W / volumes.length) - 1);
     volumes.forEach((v, i) => {
-        const x = i * (bW + 1), bH = (v / maxV) * H * 0.9;
-        const cl = dados[i].close, pc = i > 0 ? dados[i-1].close : cl;
-        ctx.fillStyle = cl >= pc ? 'rgba(34,197,94,0.5)' : 'rgba(239,68,68,0.5)';
-        ctx.fillRect(x, H - bH, bW, bH);
+        const x = i * (bW + 1), bH2 = (v / maxV) * H * 0.9;
+        const cl = dados[i].close, pc2 = i > 0 ? dados[i-1].close : cl;
+        ctx.fillStyle = cl >= pc2 ? 'rgba(34,197,94,0.5)' : 'rgba(239,68,68,0.5)';
+        ctx.fillRect(x, H - bH2, bW, bH2);
     });
 }
 
-// Sidebar update functions
-function atualizarContexto(p) {
-    const el = document.getElementById('contextoSection'), c = p.contexto || {};
-    const lat = c.lateral, lc = lat ? 'var(--accent-red)' : 'var(--accent-green)';
-    el.innerHTML = '<div style="display:grid;gap:6px;font-size:12px;"><div class="stat-row"><span class="stat-label">Tendencia</span><span style="font-weight:600">' + (c.tendencia||'--') + '</span></div><div class="stat-row"><span class="stat-label">Fase</span><span>' + (c.fase||'--') + '</span></div><div class="stat-row"><span class="stat-label">Forca</span><span>' + (c.forca||0) + '%</span></div><div class="stat-row"><span class="stat-label">Lateral</span><span style="color:'+lc+';font-weight:600">' + (lat?'SIM':'NAO') + '</span></div></div>';
+// Sidebar updates
+function atualizarContexto(a) {
+    const el = document.getElementById('contextoSection');
+    const tend = a.tendencia || '--';
+    const lat = a.lateralizacao || {};
+    const isLat = lat.lateral || false;
+    el.innerHTML = '<div style="display:grid;gap:6px;font-size:12px;">' +
+        '<div class="stat-row"><span class="stat-label">Tendencia</span><span style="font-weight:600;color:' + (tend==='ALTA'?'var(--accent-green)':tend==='BAIXA'?'var(--accent-red)':'var(--text-muted)') + '">' + tend + '</span></div>' +
+        '<div class="stat-row"><span class="stat-label">Lateral</span><span class="tag ' + (isLat?'tag-red':'tag-green') + '">' + (isLat?'SIM':'NAO') + '</span></div>' +
+        '<div class="stat-row"><span class="stat-label">Pullback</span><span>' + ((a.pullback&&a.pullback.tipo)||'NENHUM') + '</span></div>' +
+        '</div>';
 }
 
-function atualizarFibonacci(p) {
-    const el = document.getElementById('fibLevels'), fib = p.fibonacci || {};
-    const fc = {'0.0':'#6e7681','0.236':'#3b82f6','0.382':'#8b5cf6','0.5':'#eab308','0.618':'#f59e0b','0.786':'#ef4444','1.0':'#6e7681'};
-    let h = '<div style="display:grid;gap:4px;font-size:11px;font-family:monospace;">';
-    Object.entries(fib).forEach(([l,pr]) => {
-        h += '<div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid var(--border);"><span style="color:' + (fc[l]||'#6e7681') + ';font-weight:600">' + l + '</span><span>' + (typeof pr==='number'?pr.toLocaleString('pt-BR'):pr) + '</span></div>';
-    });
+function atualizarFibonacci(a) {
+    const el = document.getElementById('fibLevels'), fib = a.fibonacci || {};
+    const labels = {'nivel_0':'0.0%','nivel_236':'23.6%','nivel_382':'38.2%','nivel_500':'50.0%','nivel_618':'61.8%','nivel_786':'78.6%','nivel_100':'100%'};
+    const colors = {'nivel_0':'#6e7681','nivel_236':'#3b82f6','nivel_382':'#8b5cf6','nivel_500':'#eab308','nivel_618':'#f59e0b','nivel_786':'#ef4444','nivel_100':'#6e7681'};
+    let h = '<div style="display:grid;gap:3px;font-size:11px;font-family:monospace;">';
+    for (const [k,label] of Object.entries(labels)) {
+        const v = fib[k];
+        if (v !== undefined) {
+            h += '<div style="display:flex;justify-content:space-between;padding:2px 0;border-bottom:1px solid var(--border);"><span style="color:' + (colors[k]||'#6e7681') + ';font-weight:600">' + label + '</span><span>' + (typeof v==='number'?v.toLocaleString('pt-BR'):v) + '</span></div>';
+        }
+    }
     h += '</div>';
     el.innerHTML = h;
 }
 
-function atualizarVolume(p) {
-    const el = document.getElementById('volumeAnalysis'), v = p.volume || {};
-    el.innerHTML = '<div style="display:grid;gap:6px;font-size:12px;"><div class="stat-row"><span class="stat-label">Vol. Atual</span><span>' + (v.atual||0).toLocaleString('pt-BR') + '</span></div><div class="stat-row"><span class="stat-label">Media 20</span><span>' + (v.media20||0).toLocaleString('pt-BR') + '</span></div><div class="stat-row"><span class="stat-label">Ratio</span><span style="color:' + ((v.ratio||0)>1.5?'var(--accent-green)':'var(--text-primary)') + '">' + (v.ratio||0).toFixed(2) + 'x</span></div><div class="stat-row"><span class="stat-label">Classificacao</span><span>' + (v.classificacao||'--') + '</span></div></div>';
+function atualizarVolume(a) {
+    const el = document.getElementById('volumeAnalysis'), v = a.volume || {};
+    el.innerHTML = '<div style="display:grid;gap:6px;font-size:12px;">' +
+        '<div class="stat-row"><span class="stat-label">Pressao</span><span class="tag ' + (v.pressao==='COMPRADORES'?'tag-green':v.pressao==='VENDEDORES'?'tag-red':'tag-yellow') + '">' + (v.pressao||'--') + '</span></div>' +
+        '<div class="stat-row"><span class="stat-label">Vol. Medio</span><span>' + (v.volume_medio||0).toLocaleString('pt-BR') + '</span></div>' +
+        '<div class="stat-row"><span class="stat-label">Acima Media</span><span class="tag ' + (v.acima_media?'tag-green':'tag-red') + '">' + (v.acima_media?'SIM':'NAO') + '</span></div>' +
+        '<div class="stat-row"><span class="stat-label">Delta</span><span style="color:' + ((v.delta_acumulado||0)>=0?'var(--accent-green)':'var(--accent-red)') + '">' + (v.delta_acumulado||0).toLocaleString('pt-BR') + '</span></div>' +
+        '</div>';
 }
 
-function atualizarViolinada(p) {
-    const el = document.getElementById('violinadaSection'), v = p.violinada || {}, d = v.detectada || false;
-    el.innerHTML = '<div style="display:grid;gap:6px;font-size:12px;"><div class="stat-row"><span class="stat-label">Status</span><span class="tag ' + (d?'tag-red':'tag-green') + '">' + (d?'DETECTADA':'LIMPO') + '</span></div>' + (v.tipo?'<div class="stat-row"><span class="stat-label">Tipo</span><span>' + v.tipo + '</span></div>':'') + (v.descricao?'<div style="font-size:11px;color:var(--text-secondary);margin-top:4px;">' + v.descricao + '</div>':'') + '</div>';
+function atualizarViolinada(a) {
+    const el = document.getElementById('violinadaSection'), vs = a.violinada_score || 0;
+    const risco = vs > 60 ? 'ALTO' : vs > 30 ? 'MEDIO' : 'BAIXO';
+    const tag = vs > 60 ? 'tag-red' : vs > 30 ? 'tag-yellow' : 'tag-green';
+    el.innerHTML = '<div style="display:grid;gap:6px;font-size:12px;">' +
+        '<div class="stat-row"><span class="stat-label">Score</span><span style="font-weight:700;font-family:monospace">' + vs.toFixed(0) + '%</span></div>' +
+        '<div class="stat-row"><span class="stat-label">Risco</span><span class="tag ' + tag + '">' + risco + '</span></div>' +
+        '</div>';
 }
 
-function atualizarSinais(p) {
-    const el = document.getElementById('sinaisSection'), sinais = p.sinais || [];
-    if (sinais.length === 0) { el.innerHTML = '<div style="font-size:12px;color:var(--text-muted);text-align:center;padding:10px;">Nenhum sinal no momento</div>'; return; }
+function atualizarSinais(a) {
+    const el = document.getElementById('sinaisSection'), sinais = a.sinais || [];
+    if (sinais.length === 0) { el.innerHTML = '<div style="font-size:12px;color:var(--text-muted);text-align:center;padding:10px;">Aguardando cruzamento de todos indicadores</div>'; return; }
     let h = '';
     sinais.forEach(s => {
         const t = s.tipo || 'NEUTRO';
-        h += '<div class="sinal-card ' + t.toLowerCase() + '"><div style="display:flex;justify-content:space-between;align-items:center;"><span class="tag ' + (t==='COMPRA'?'tag-green':'tag-red') + '">' + t + '</span><span style="font-size:11px;color:var(--text-muted)">' + (s.horario||'--') + '</span></div><div class="sinal-detail"><div class="sinal-detail-item"><span style="color:var(--text-muted)">Entrada</span><span>' + (s.entrada||'--') + '</span></div><div class="sinal-detail-item"><span style="color:var(--text-muted)">Stop</span><span style="color:var(--accent-red)">' + (s.stop||'--') + '</span></div><div class="sinal-detail-item"><span style="color:var(--text-muted)">Alvo</span><span style="color:var(--accent-green)">' + (s.alvo||'--') + '</span></div><div class="sinal-detail-item"><span style="color:var(--text-muted)">R/R</span><span>' + (s.rr||'--') + '</span></div></div>' + (s.motivos ? '<div class="motivo-list">' + s.motivos.map(m=>'<div class="motivo-item">' + m + '</div>').join('') + '</div>' : '') + '</div>';
+        const cls = t.includes('COMPRA') ? 'compra' : 'venda';
+        h += '<div class="sinal-card ' + cls + '">';
+        h += '<div style="display:flex;justify-content:space-between;align-items:center;"><span class="tag ' + (cls==='compra'?'tag-green':'tag-red') + '">' + t + '</span><span style="font-size:11px;color:var(--text-muted)">Conf: ' + (s.confianca||0) + '%</span></div>';
+        h += '<div class="sinal-detail">';
+        h += '<div class="sinal-detail-item"><span style="color:var(--text-muted)">Entrada</span><span style="font-family:monospace">' + (s.preco_entrada||'--').toLocaleString('pt-BR') + '</span></div>';
+        h += '<div class="sinal-detail-item"><span style="color:var(--text-muted)">Stop</span><span style="color:var(--accent-red);font-family:monospace">' + (s.stop_loss||'--').toLocaleString('pt-BR') + '</span></div>';
+        h += '<div class="sinal-detail-item"><span style="color:var(--text-muted)">Alvo 1</span><span style="color:var(--accent-green);font-family:monospace">' + (s.take_profit_1||'--').toLocaleString('pt-BR') + '</span></div>';
+        h += '<div class="sinal-detail-item"><span style="color:var(--text-muted)">R/R</span><span>' + (s.risco_retorno||'--') + ':1</span></div>';
+        h += '</div>';
+        if (s.motivos && s.motivos.length > 0) {
+            h += '<div class="motivo-list">';
+            s.motivos.forEach(m => { h += '<div class="motivo-item">' + m + '</div>'; });
+            h += '</div>';
+        }
+        h += '</div>';
     });
     el.innerHTML = h;
 }
 
-function atualizarSR(p) {
-    const el = document.getElementById('srSection'), sr = p.suportes_resistencias || {};
-    const sup = sr.suportes || [], res = sr.resistencias || [];
-    let h = '<div style="font-size:11px;"><div style="color:var(--accent-green);font-weight:600;margin-bottom:4px;">Suportes</div>';
-    if (sup.length > 0) sup.forEach(s => { h += '<div style="display:flex;justify-content:space-between;padding:2px 0;font-family:monospace;"><span>' + (typeof s==='object'?s.preco:s) + '</span></div>'; });
+function atualizarSR(a) {
+    const el = document.getElementById('srSection');
+    const sup = a.suportes || [], res = a.resistencias || [];
+    let h = '<div style="font-size:11px;">';
+    h += '<div style="color:var(--accent-green);font-weight:600;margin-bottom:4px;">Suportes</div>';
+    if (sup.length > 0) sup.slice(0,5).forEach(s => { h += '<div style="padding:2px 0;font-family:monospace;border-bottom:1px solid var(--border);">' + (typeof s==='object'?s.preco||s.nivel||JSON.stringify(s):s).toLocaleString('pt-BR') + '</div>'; });
     else h += '<div style="color:var(--text-muted)">--</div>';
     h += '<div style="color:var(--accent-red);font-weight:600;margin:8px 0 4px;">Resistencias</div>';
-    if (res.length > 0) res.forEach(r => { h += '<div style="display:flex;justify-content:space-between;padding:2px 0;font-family:monospace;"><span>' + (typeof r==='object'?r.preco:r) + '</span></div>'; });
+    if (res.length > 0) res.slice(0,5).forEach(r => { h += '<div style="padding:2px 0;font-family:monospace;border-bottom:1px solid var(--border);">' + (typeof r==='object'?r.preco||r.nivel||JSON.stringify(r):r).toLocaleString('pt-BR') + '</div>'; });
     else h += '<div style="color:var(--text-muted)">--</div>';
     h += '</div>';
     el.innerHTML = h;
 }
 
-function atualizarMultiTF(p) {
-    const grid = document.getElementById('multiTfGrid'), mtf = p.multi_timeframe || {};
-    const tfs = ['5m','15m','1h','4h','1d'], labels = ['5M','15M','1H','4H','1D'];
+function atualizarMultiTF(pan) {
+    const grid = document.getElementById('multiTfGrid');
+    const tfs = pan.timeframes || {};
+    const labels = {
+        '5m':'5M','15m':'15M','1h':'1H','4h':'4H','1d':'1D'
+    };
     let h = '';
-    tfs.forEach((tf, i) => {
-        const info = mtf[tf] || {}, tend = info.tendencia || '--';
+    for (const [tf, label] of Object.entries(labels)) {
+        const info = tfs[tf] || {};
+        const tend = info.tendencia || '--';
         let c = 'var(--text-muted)';
         if (tend === 'ALTA') c = 'var(--accent-green)';
         else if (tend === 'BAIXA') c = 'var(--accent-red)';
-        h += '<div class="tf-cell"><div class="tf-cell-header">' + labels[i] + '</div><div class="tf-cell-value" style="color:' + c + '">' + tend + '</div></div>';
-    });
+        h += '<div class="tf-cell"><div class="tf-cell-header">' + label + '</div><div class="tf-cell-value" style="color:' + c + '">' + tend + '</div></div>';
+    }
     grid.innerHTML = h;
 }
 
 // Capital Simulation
 async function carregarSimulacao() {
     try {
-        const res = await fetch('/api/simulacao-capital?ativo=' + state.ativo);
+        const res = await fetch('/api/simulacao-capital?ativo=' + state.ativo + '&contratos=' + state.numContratos);
         const data = await res.json();
-        if (data.simulacoes) {
-            let html = '<div style="background:var(--bg-secondary);border:1px solid var(--border);border-radius:8px;padding:14px;"><div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.8px;color:var(--text-muted);margin-bottom:10px;border-bottom:1px solid var(--border);padding-bottom:6px;">Simulacao de Capital - ' + (data.contrato||state.ativo) + '</div>';
-            html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(100px,1fr));gap:8px;">';
-            data.simulacoes.forEach(s => {
-                const color = s.resultado >= 0 ? 'var(--accent-green)' : 'var(--accent-red)';
-                html += '<div class="sim-card"><div class="sim-card-label">' + s.contratos + ' CT' + (s.contratos>1?'S':'') + '</div><div class="sim-card-value" style="color:' + color + '">R$ ' + s.resultado.toLocaleString('pt-BR') + '</div><div class="sim-card-pts">' + s.pontos + ' pts</div></div>';
-            });
-            html += '</div></div>';
-            const el = document.getElementById('simulacaoCapital');
-            if (el) el.innerHTML = html;
-        }
+        const el = document.getElementById('simulacaoCapital');
+        if (!el) return;
+        const color = data.resultado_financeiro >= 0 ? 'var(--accent-green)' : 'var(--accent-red)';
+        let html = '<div style="background:var(--bg-secondary);border:1px solid var(--border);border-radius:8px;padding:14px;">';
+        html += '<div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.8px;color:var(--text-muted);margin-bottom:10px;border-bottom:1px solid var(--border);padding-bottom:6px;">Simulacao - ' + (data.contrato||state.ativo) + ' | ' + data.contratos + ' contrato(s)</div>';
+        html += '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;text-align:center;">';
+        html += '<div><div style="font-size:10px;color:var(--text-muted)">PONTOS EST.</div><div style="font-size:18px;font-weight:700;font-family:monospace;color:' + color + '">' + (data.pontos_estimados>0?'+':'') + data.pontos_estimados + '</div></div>';
+        html += '<div><div style="font-size:10px;color:var(--text-muted)">RESULTADO</div><div style="font-size:18px;font-weight:700;font-family:monospace;color:' + color + '">R$ ' + data.resultado_financeiro.toLocaleString('pt-BR') + '</div></div>';
+        html += '<div><div style="font-size:10px;color:var(--text-muted)">OPERACOES</div><div style="font-size:18px;font-weight:700;font-family:monospace">' + data.operacoes_estimadas + '</div></div>';
+        html += '</div>';
+        html += '<div style="font-size:10px;color:var(--text-muted);margin-top:8px;text-align:center;">' + data.info_contrato.explicacao + '</div>';
+        html += '</div>';
+        el.innerHTML = html;
     } catch(e) { console.log('Simulacao error:', e); }
 }
 </script>
