@@ -363,6 +363,7 @@
             <div class="pt-tab active" onclick="ptMudarTab('trading')">OPERAR</div>
             <div class="pt-tab" onclick="ptMudarTab('historico')">HISTORICO</div>
             <div class="pt-tab" onclick="ptMudarTab('relatorio')">RELATORIO DO DIA</div>
+            <div class="pt-tab" onclick="ptMudarTab('replay')" style="background:#1e40af;">REPLAY PREGAO</div>
         </div>
 
         <div class="pt-content">
@@ -470,6 +471,21 @@
                 <div style="font-size:14px;font-weight:600;margin-bottom:12px;">Relatorio do Dia</div>
                 <div id="ptReportContent">
                     <div class="pt-empty">Opere durante o dia para gerar o relatorio.</div>
+                </div>
+            </div>
+            <!-- TAB: REPLAY DO PREGAO ANTERIOR -->
+            <div class="pt-tab-content" id="ptTabReplay">
+                <div style="text-align:center;padding:10px;">
+                    <div style="font-size:14px;font-weight:700;color:var(--accent-green);margin-bottom:8px;">REPLAY AUTOMATICO DO PREGAO ANTERIOR</div>
+                    <div style="font-size:11px;color:var(--text-muted);margin-bottom:12px;">Analise multi-timeframe (5m + 15m + 1h) com confluencias</div>
+                    <button class="pt-trade-btn buy" onclick="executarReplay()" id="btnReplay" style="width:100%;max-width:300px;padding:10px;font-size:13px;">
+                        EXECUTAR REPLAY
+                    </button>
+                </div>
+                <div id="replayResultado" style="display:none;"></div>
+                <div id="replayLoading" style="display:none;text-align:center;padding:30px;">
+                    <div style="font-size:13px;color:var(--accent-green);">Analisando pregao anterior vela a vela...</div>
+                    <div style="font-size:11px;color:var(--text-muted);margin-top:6px;">Multi-timeframe: 5min + 15min + 1h</div>
                 </div>
             </div>
         </div>
@@ -819,6 +835,7 @@ function entrarDashboard() {
     if (!currentUserAdmin) { document.getElementById('criarUserBox').style.display = 'none'; }
     atualizarContratos();
     carregarDados();
+    atualizarPrecoRealtime();
     iniciarCountdown();
     carregarSimulacao();
 }
@@ -946,6 +963,7 @@ function ptMudarTab(tab) {
     document.getElementById('ptTab' + tab.charAt(0).toUpperCase() + tab.slice(1)).classList.add('active');
     if (tab === 'historico') ptRenderHistorico();
     if (tab === 'relatorio') ptRenderRelatorio();
+    if (tab === 'replay') { /* Replay tab ready */ }
 }
 
 // ---- Market Status ----
@@ -1465,6 +1483,8 @@ function atualizarUI() {
     const a = state.analise.analise || state.analise;
     const preco = a.preco_atual || 0;
     document.getElementById('precoDisplay').textContent = preco ? preco.toLocaleString('pt-BR') : '--';
+    // Override com preço real do TradingView (futuro)
+    atualizarPrecoRealtime();
     const vp = a.variacao_percentual || 0;
     const pc = document.getElementById('precoChange');
     pc.textContent = (vp >= 0 ? '+' : '') + vp.toFixed(2) + '%';
@@ -1970,6 +1990,158 @@ async function atualizarPrecoRealtime() {
 
 // Refresh preço a cada 30 segundos
 setInterval(atualizarPrecoRealtime, 30000);
+
+
+// =====================================================
+// REPLAY AUTOMATICO DO PREGAO ANTERIOR
+// =====================================================
+async function executarReplay() {
+    const btn = document.getElementById('btnReplay');
+    const loading = document.getElementById('replayLoading');
+    const resultado = document.getElementById('replayResultado');
+    btn.disabled = true;
+    btn.textContent = 'ANALISANDO...';
+    loading.style.display = 'block';
+    resultado.style.display = 'none';
+    
+    try {
+        const contratos = state.numContratos || 1;
+        const res = await fetch(`/api/replay?ativo=${state.ativo}&contratos=${contratos}`);
+        const data = await res.json();
+        
+        if (data.erro) {
+            resultado.innerHTML = `<div style="text-align:center;padding:20px;color:var(--accent-red);">${data.erro}</div>`;
+            resultado.style.display = 'block';
+            loading.style.display = 'none';
+            btn.disabled = false;
+            btn.textContent = 'EXECUTAR REPLAY';
+            return;
+        }
+        
+        const r = data.resumo;
+        const m = data.mercado;
+        const ops = data.operacoes || [];
+        const corResultado = r.resultado_bruto >= 0 ? 'var(--accent-green)' : 'var(--accent-red)';
+        const corVariacao = m.variacao >= 0 ? 'var(--accent-green)' : 'var(--accent-red)';
+        
+        let html = '';
+        
+        // HEADER: Dia + Mercado
+        html += `<div style="padding:12px;border-bottom:1px solid var(--border);">`;
+        html += `<div style="font-size:15px;font-weight:700;text-align:center;color:var(--text-primary);">REPLAY - ${data.dia}</div>`;
+        html += `<div style="font-size:11px;text-align:center;color:var(--text-muted);">${data.contrato} | ${data.contratos} contrato(s) | Multi-timeframe</div>`;
+        html += `</div>`;
+        
+        // MERCADO DO DIA
+        html += `<div style="padding:10px;border-bottom:1px solid var(--border);display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;text-align:center;">`;
+        html += `<div><div style="font-size:10px;color:var(--text-muted);">ABERTURA</div><div style="font-size:13px;font-weight:600;">${m.abertura.toLocaleString('pt-BR')}</div></div>`;
+        html += `<div><div style="font-size:10px;color:var(--text-muted);">FECHAMENTO</div><div style="font-size:13px;font-weight:600;">${m.fechamento.toLocaleString('pt-BR')}</div></div>`;
+        html += `<div><div style="font-size:10px;color:var(--text-muted);">AMPLITUDE</div><div style="font-size:13px;font-weight:600;">${m.amplitude_pts.toLocaleString('pt-BR')} pts</div></div>`;
+        html += `<div><div style="font-size:10px;color:var(--text-muted);">HIGH</div><div style="font-size:13px;color:var(--accent-green);">${m.high.toLocaleString('pt-BR')}</div></div>`;
+        html += `<div><div style="font-size:10px;color:var(--text-muted);">LOW</div><div style="font-size:13px;color:var(--accent-red);">${m.low.toLocaleString('pt-BR')}</div></div>`;
+        html += `<div><div style="font-size:10px;color:var(--text-muted);">VARIACAO</div><div style="font-size:13px;color:${corVariacao};">${m.variacao >= 0 ? '+' : ''}${m.variacao_pct}%</div></div>`;
+        html += `</div>`;
+        
+        // RESULTADO PRINCIPAL
+        html += `<div style="padding:14px;border-bottom:1px solid var(--border);text-align:center;background:rgba(${r.resultado_bruto >= 0 ? '34,197,94' : '239,68,68'},0.08);">`;
+        html += `<div style="font-size:11px;color:var(--text-muted);">RESULTADO DO SISTEMA</div>`;
+        html += `<div style="font-size:24px;font-weight:800;color:${corResultado};">${r.resultado_bruto >= 0 ? '+' : ''}R$ ${r.resultado_bruto.toLocaleString('pt-BR', {minimumFractionDigits:2})}</div>`;
+        html += `<div style="font-size:13px;color:${corResultado};margin-top:2px;">${r.resultado_pts >= 0 ? '+' : ''}${r.resultado_pts} pontos</div>`;
+        html += `</div>`;
+        
+        // ESTATISTICAS
+        html += `<div style="padding:10px;border-bottom:1px solid var(--border);display:grid;grid-template-columns:repeat(4,1fr);gap:6px;text-align:center;">`;
+        html += `<div><div style="font-size:10px;color:var(--text-muted);">OPERACOES</div><div style="font-size:16px;font-weight:700;">${r.total_operacoes}</div></div>`;
+        html += `<div><div style="font-size:10px;color:var(--text-muted);">WINS</div><div style="font-size:16px;font-weight:700;color:var(--accent-green);">${r.wins}</div></div>`;
+        html += `<div><div style="font-size:10px;color:var(--text-muted);">LOSSES</div><div style="font-size:16px;font-weight:700;color:var(--accent-red);">${r.losses}</div></div>`;
+        html += `<div><div style="font-size:10px;color:var(--text-muted);">TAXA ACERTO</div><div style="font-size:16px;font-weight:700;color:${r.taxa_acerto >= 50 ? 'var(--accent-green)' : 'var(--accent-red)'};">${r.taxa_acerto}%</div></div>`;
+        html += `</div>`;
+        
+        // METRICAS AVANCADAS
+        html += `<div style="padding:10px;border-bottom:1px solid var(--border);display:grid;grid-template-columns:repeat(3,1fr);gap:6px;text-align:center;">`;
+        html += `<div><div style="font-size:10px;color:var(--text-muted);">MAIOR WIN</div><div style="font-size:12px;color:var(--accent-green);">+R$ ${r.maior_win.toLocaleString('pt-BR',{minimumFractionDigits:2})}</div><div style="font-size:10px;color:var(--text-muted);">${r.maior_win_pts} pts</div></div>`;
+        html += `<div><div style="font-size:10px;color:var(--text-muted);">MAIOR LOSS</div><div style="font-size:12px;color:var(--accent-red);">R$ ${r.maior_loss.toLocaleString('pt-BR',{minimumFractionDigits:2})}</div><div style="font-size:10px;color:var(--text-muted);">${r.maior_loss_pts} pts</div></div>`;
+        html += `<div><div style="font-size:10px;color:var(--text-muted);">FATOR LUCRO</div><div style="font-size:12px;font-weight:700;color:${r.fator_lucro >= 1 ? 'var(--accent-green)' : 'var(--accent-red)'};">${r.fator_lucro >= 999 ? '∞' : r.fator_lucro.toFixed(2)}</div></div>`;
+        html += `</div>`;
+        
+        html += `<div style="padding:10px;border-bottom:1px solid var(--border);display:grid;grid-template-columns:repeat(3,1fr);gap:6px;text-align:center;">`;
+        html += `<div><div style="font-size:10px;color:var(--text-muted);">MAX DRAWDOWN</div><div style="font-size:12px;color:var(--accent-red);">R$ ${r.max_drawdown.toLocaleString('pt-BR',{minimumFractionDigits:2})}</div></div>`;
+        html += `<div><div style="font-size:10px;color:var(--text-muted);">SEQ. WINS</div><div style="font-size:12px;color:var(--accent-green);">${r.max_sequencia_win}</div></div>`;
+        html += `<div><div style="font-size:10px;color:var(--text-muted);">SEQ. LOSSES</div><div style="font-size:12px;color:var(--accent-red);">${r.max_sequencia_loss}</div></div>`;
+        html += `</div>`;
+        
+        // EQUITY CURVE (simple bar chart)
+        if (r.equity_curve && r.equity_curve.length > 0) {
+            const maxVal = Math.max(...r.equity_curve.map(Math.abs), 1);
+            html += `<div style="padding:10px;border-bottom:1px solid var(--border);">`;
+            html += `<div style="font-size:11px;font-weight:700;color:var(--text-muted);margin-bottom:6px;">CURVA DE CAPITAL</div>`;
+            html += `<div style="display:flex;align-items:end;gap:2px;height:60px;">`;
+            r.equity_curve.forEach((val, i) => {
+                const pct = Math.abs(val) / maxVal * 100;
+                const cor = val >= 0 ? 'var(--accent-green)' : 'var(--accent-red)';
+                const w = Math.max(6, Math.floor(100 / r.equity_curve.length));
+                html += `<div style="flex:1;height:${Math.max(3,pct)}%;background:${cor};border-radius:2px 2px 0 0;min-width:4px;" title="Op ${i+1}: R$ ${val.toFixed(2)}"></div>`;
+            });
+            html += `</div></div>`;
+        }
+        
+        // LISTA DE OPERACOES
+        html += `<div style="padding:10px;">`;
+        html += `<div style="font-size:11px;font-weight:700;color:var(--text-muted);margin-bottom:8px;">OPERACOES (${ops.length})</div>`;
+        
+        ops.forEach((op, i) => {
+            const isWin = op.status === 'WIN';
+            const cor = isWin ? 'var(--accent-green)' : 'var(--accent-red)';
+            const bgOp = isWin ? 'rgba(34,197,94,0.06)' : 'rgba(239,68,68,0.06)';
+            const icon = isWin ? '✓' : '✗';
+            
+            html += `<div style="padding:8px;margin-bottom:6px;border:1px solid var(--border);border-radius:6px;border-left:3px solid ${cor};background:${bgOp};">`;
+            html += `<div style="display:flex;justify-content:space-between;align-items:center;">`;
+            html += `<div>`;
+            html += `<span style="font-size:12px;font-weight:700;color:${cor};">${icon} ${op.tipo}</span>`;
+            html += `<span style="font-size:11px;color:var(--text-muted);margin-left:8px;">${op.hora_entrada} → ${op.hora_saida}</span>`;
+            html += `</div>`;
+            html += `<div style="font-size:13px;font-weight:700;color:${cor};">${op.resultado >= 0 ? '+' : ''}R$ ${op.resultado.toLocaleString('pt-BR',{minimumFractionDigits:2})}</div>`;
+            html += `</div>`;
+            html += `<div style="font-size:10px;color:var(--text-muted);margin-top:4px;">`;
+            html += `Entrada: ${op.entrada.toLocaleString('pt-BR')} | Saida: ${op.saida.toLocaleString('pt-BR')} | ${op.pts >= 0 ? '+' : ''}${op.pts} pts`;
+            if (op.fechamento_forcado) html += ` | <span style="color:var(--accent-yellow);">Fechamento fim do dia</span>`;
+            html += `</div>`;
+            
+            // Motivos do sinal
+            if (op.motivos && op.motivos.length > 0) {
+                html += `<div style="font-size:9px;color:var(--text-muted);margin-top:4px;opacity:0.7;">`;
+                op.motivos.forEach(m => { html += `• ${m}<br>`; });
+                html += `</div>`;
+            }
+            html += `</div>`;
+        });
+        
+        if (ops.length === 0) {
+            html += `<div style="text-align:center;padding:20px;color:var(--text-muted);font-size:12px;">Nenhum sinal de entrada foi gerado neste pregao.<br>O sistema exige confluencia de TODOS os indicadores.</div>`;
+        }
+        
+        html += `</div>`;
+        
+        // SINAIS GERADOS (resumo)
+        if (data.total_sinais > 0) {
+            html += `<div style="padding:10px;border-top:1px solid var(--border);">`;
+            html += `<div style="font-size:10px;color:var(--text-muted);">Total de sinais identificados: ${data.total_sinais} | Velas analisadas: ${m.total_velas}</div>`;
+            html += `</div>`;
+        }
+        
+        resultado.innerHTML = html;
+        resultado.style.display = 'block';
+        
+    } catch(e) {
+        resultado.innerHTML = `<div style="text-align:center;padding:20px;color:var(--accent-red);">Erro: ${e.message}</div>`;
+        resultado.style.display = 'block';
+    }
+    
+    loading.style.display = 'none';
+    btn.disabled = false;
+    btn.textContent = 'EXECUTAR REPLAY';
+}
 
 </script>
 </body>
