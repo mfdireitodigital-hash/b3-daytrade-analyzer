@@ -2062,6 +2062,34 @@ async def get_noticias_impacto():
                         impacto_wdo = ""
                         surpresa = ""
                         
+                        # Default impact based on event type (even without forecast)
+                        operavel = "BOM"
+                        evt_lower = evt_name.lower()
+                        if currency == "USD":
+                            impacto_win = "Dado americano - monitorar"
+                            impacto_wdo = "Dado americano - impacto no dolar"
+                            if any(kw in evt_lower for kw in ["payroll", "nonfarm", "fomc", "fed", "cpi", "ipc", "taxa de juros", "interest rate", "gdp", "pib"]):
+                                operavel = "CAUTELA"
+                                impacto_win = "ALTO IMPACTO potencial no indice"
+                                impacto_wdo = "ALTO IMPACTO potencial no dolar"
+                            elif any(kw in evt_lower for kw in ["pmi", "ism", "emprego", "vendas", "producao", "pedidos"]):
+                                operavel = "BOM"
+                                impacto_win = "Impacto moderado no indice"
+                                impacto_wdo = "Impacto moderado no dolar"
+                            else:
+                                impacto_win = "Baixo impacto no indice"
+                                impacto_wdo = "Baixo impacto no dolar"
+                        elif currency == "BRL":
+                            impacto_win = "Dado brasileiro - monitorar"
+                            impacto_wdo = "Dado brasileiro - impacto no dolar"
+                            if any(kw in evt_lower for kw in ["selic", "copom", "ipca", "pib"]):
+                                operavel = "CAUTELA"
+                                impacto_win = "ALTO IMPACTO no Ibovespa"
+                                impacto_wdo = "ALTO IMPACTO no dolar"
+                            else:
+                                impacto_win = "Impacto moderado no indice"
+                                impacto_wdo = "Impacto moderado no dolar"
+                        
                         if actual and forecast:
                             try:
                                 act_num = float(actual.replace("%", "").replace(",", ".").replace("K", "000").replace("M", "000000").replace("B", "000000000").strip())
@@ -2195,6 +2223,7 @@ async def get_noticias_impacto():
                             "surpresa": surpresa,
                             "impacto_win": impacto_win,
                             "impacto_wdo": impacto_wdo,
+                            "operavel": operavel,
                             "minutos_restantes": minutos_restantes,
                             "ja_passou": ja_passou,
                             "zona_impacto": zona_impacto,
@@ -2449,8 +2478,8 @@ async def simulador_real(ativo: str = Query("WIN")):
             }
             velas_analisadas.append(vela_info)
             
-            # SIMULATE recommended operations
-            if operar and tipo_sinal and posicao_aberta is None:
+            # SIMULATE ALL recommended operations (each independently)
+            if operar and tipo_sinal:
                 stop_pts = round(atr_v * 1.5)
                 stop_pts = max(round(stop_pts / 5) * 5, 50)  # round to tick, min 50
                 alvo_pts = round(stop_pts * 2)
@@ -2494,6 +2523,30 @@ async def simulador_real(ativo: str = Query("WIN")):
                 pts = round((preco_saida - c) if is_compra else (c - preco_saida), 1)
                 rs = round(pts * valor_ponto, 2)
                 
+                # Detalhes da perda quando LOSS
+                detalhes_perda = ""
+                if resultado == "LOSS":
+                    if is_compra:
+                        detalhes_perda = f"Stop atingido em {hora_saida}. Preco caiu de {round(c,2)} ate {round(stop_price,2)} ({stop_pts}pts contra). "
+                        if macd_h < 0:
+                            detalhes_perda += "MACD ja estava negativo na entrada - momentum contra. "
+                        if rsi_v > 70:
+                            detalhes_perda += "RSI sobrecomprado - possivel exaustao da alta. "
+                        if atr_v > 300:
+                            detalhes_perda += f"ATR alto ({atr_v}) - volatilidade excessiva aumentou risco. "
+                        detalhes_perda += f"Confluencia tinha {score}/7 pontos. "
+                        if score <= 4:
+                            detalhes_perda += "Score minimo (4) - setup nao era A+, considere esperar 5+. "
+                        detalhes_perda += "Licao: " + ("Em alta volatilidade, considere stop mais largo ou espere pullback." if atr_v > 250 else "Verifique se a tendencia de TF maior confirmava a direcao.")
+                    else:
+                        detalhes_perda = f"Stop atingido em {hora_saida}. Preco subiu de {round(c,2)} ate {round(stop_price,2)} ({stop_pts}pts contra). "
+                        if macd_h > 0:
+                            detalhes_perda += "MACD positivo na entrada - momentum contra venda. "
+                        if tend == "ALTA":
+                            detalhes_perda += "VENDA contra tendencia ALTA - Elder proibe. "
+                        detalhes_perda += f"Confluencia tinha {score}/7 pontos. "
+                        detalhes_perda += "Licao: Nunca venda em tendencia de alta clara. Espere confirmacao de reversao."
+                
                 operacoes_recomendadas.append({
                     "tipo": tipo_sinal,
                     "hora_entrada": hora,
@@ -2513,16 +2566,10 @@ async def simulador_real(ativo: str = Query("WIN")):
                     "confianca": confianca,
                     "conf_label": conf_label,
                     "motivos": motivos_operar,
+                    "detalhes_perda": detalhes_perda,
                 })
                 
-                # Block next entries until this one resolves (skip forward)
-                posicao_aberta = {"close_idx": future_start + velas_na_op}
-            
-            # Check if position closed
-            if posicao_aberta:
-                current_day_idx = day_indices.index(pos_idx) if pos_idx in day_indices else 0
-                if current_day_idx >= posicao_aberta.get("close_idx", 0):
-                    posicao_aberta = None
+                # Each operation is independent - simulating ALL entries
         
         # ---- RESUMO DO DIA ----
         first_v = velas_analisadas[0] if velas_analisadas else {}
@@ -2533,6 +2580,9 @@ async def simulador_real(ativo: str = Query("WIN")):
         high_dia = max(v["high"] for v in velas_analisadas) if velas_analisadas else 0
         low_dia = min(v["low"] for v in velas_analisadas) if velas_analisadas else 0
         amplitude = round(high_dia - low_dia, 0)
+        
+        # TODAS as oportunidades (score >= 4) - nao so as simuladas
+        oportunidades = [v for v in velas_analisadas if v["score"] >= 4 and v["decisao"] == "OPERAR"]
         
         total_ops = len(operacoes_recomendadas)
         wins = sum(1 for op in operacoes_recomendadas if op["resultado"] == "WIN")
@@ -2570,6 +2620,8 @@ async def simulador_real(ativo: str = Query("WIN")):
                 "total_rs": round(total_rs, 2),
             },
             "operacoes": operacoes_recomendadas,
+            "oportunidades": oportunidades,
+            "total_oportunidades": len(oportunidades),
             "velas": velas_analisadas,
             "timestamp": datetime.now(BRT_tz).strftime("%H:%M:%S"),
         })
