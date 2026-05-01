@@ -2324,69 +2324,106 @@ async def simulador_real(ativo: str = Query("WIN")):
                     elif ema9 < ema21: tend = "BAIXA"
                 except: pass
             
-            # ---- SCORING SYSTEM ----
+            # ---- SCORING SYSTEM (Triple Screen + Confluencia 7pts) ----
+            # Elder Triple Screen: SO opere na direcao da Tela 1 (tendencia maior)
             score = 0
             motivos_operar = []
             motivos_nao_operar = []
             tipo_sinal = None
+            contra_tendencia = False
             
-            # 1. Horario (heatmap logic)
+            # TENDENCIA PRINCIPAL do dia (Tela 1 - Elder)
+            # Calculada globalmente abaixo apos processar todas velas
+            # Aqui usamos tend local como proxy inicial
+            
+            # 1. Horario (Bellafiore: "In Play" = volume + volatilidade)
             bom_horario = hora_int in [9, 10, 14, 15, 16]
-            horario_ruim = hora_int in [12, 13, 17]  # almoco + final
+            horario_ruim = hora_int in [12, 13, 17]
             if hora_int == 9 and minuto < 15:
-                horario_ruim = True  # primeiros 15min sao caos
-                motivos_nao_operar.append("Primeiros 15min do pregao - volatilidade caotica")
+                horario_ruim = True
+                motivos_nao_operar.append("Primeiros 15min - volatilidade caotica")
             if bom_horario and not horario_ruim:
                 score += 1
                 motivos_operar.append(f"Horario forte ({hora})")
             elif horario_ruim:
                 motivos_nao_operar.append(f"Horario fraco ({hora}) - evitar")
             
-            # 2. RSI extremos
+            # 2. RSI - mas RESPEITA TENDENCIA (Elder)
+            # Em ALTA: RSI sobrevendido = COMPRA (pullback). RSI sobrecomprado = NAO vender, trend forte
+            # Em BAIXA: RSI sobrecomprado = VENDA (pullback). RSI sobrevendido = NAO comprar
             if rsi_v < 30:
-                score += 2; tipo_sinal = "COMPRA"
-                motivos_operar.append(f"RSI sobrevendido ({rsi_v})")
+                if tend != "BAIXA":  # Nao comprar contra tendencia baixa
+                    score += 2; tipo_sinal = "COMPRA"
+                    motivos_operar.append(f"RSI sobrevendido ({rsi_v}) - pullback p/ compra")
+                else:
+                    motivos_nao_operar.append(f"RSI sobrevendido ({rsi_v}) mas tendencia BAIXA - nao compre contra")
             elif rsi_v > 70:
-                score += 2; tipo_sinal = "VENDA"
-                motivos_operar.append(f"RSI sobrecomprado ({rsi_v})")
+                if tend != "ALTA":  # Nao vender contra tendencia alta
+                    score += 2; tipo_sinal = "VENDA"
+                    motivos_operar.append(f"RSI sobrecomprado ({rsi_v}) - pullback p/ venda")
+                else:
+                    # Em tendencia alta, RSI alto = forca, nao reversal
+                    motivos_operar.append(f"RSI alto ({rsi_v}) - tendencia forte")
+                    tipo_sinal = "COMPRA"
+                    score += 1
             elif 40 <= rsi_v <= 60:
-                motivos_nao_operar.append(f"RSI neutro ({rsi_v}) - sem forca")
+                motivos_nao_operar.append(f"RSI neutro ({rsi_v}) - sem forca direcional")
+            else:
+                # RSI 30-40 ou 60-70: zona intermediaria
+                if tend == "ALTA" and rsi_v > 50:
+                    tipo_sinal = "COMPRA"
+                elif tend == "BAIXA" and rsi_v < 50:
+                    tipo_sinal = "VENDA"
             
-            # 3. EMA alignment
+            # 3. EMA alignment (Murphy: cruzamento medias)
             if ema9 > 0 and ema21 > 0:
                 if ema9 > ema21 and c > ema9:
                     score += 1
                     if not tipo_sinal: tipo_sinal = "COMPRA"
-                    motivos_operar.append("EMA9 > EMA21 + preco acima")
+                    motivos_operar.append("EMA9 > EMA21 + preco acima (estrutura compradora)")
                 elif ema9 < ema21 and c < ema9:
                     score += 1
                     if not tipo_sinal: tipo_sinal = "VENDA"
-                    motivos_operar.append("EMA9 < EMA21 + preco abaixo")
+                    motivos_operar.append("EMA9 < EMA21 + preco abaixo (estrutura vendedora)")
                 else:
                     motivos_nao_operar.append("EMAs sem alinhamento claro")
             
-            # 4. Tendencia confirmada
+            # 4. Tendencia confirmada (Triple Screen Tela 1 + Tela 2)
             if tend == "ALTA" and tipo_sinal == "COMPRA":
-                score += 1; motivos_operar.append("Tendencia ALTA confirmada")
+                score += 1; motivos_operar.append("Tendencia ALTA confirmada (Triple Screen alinhado)")
             elif tend == "BAIXA" and tipo_sinal == "VENDA":
-                score += 1; motivos_operar.append("Tendencia BAIXA confirmada")
+                score += 1; motivos_operar.append("Tendencia BAIXA confirmada (Triple Screen alinhado)")
             elif tend == "LATERAL":
-                motivos_nao_operar.append("Mercado LATERAL - sem tendencia")
+                motivos_nao_operar.append("Mercado LATERAL - sem tendencia definida")
+            elif tipo_sinal and ((tend == "ALTA" and tipo_sinal == "VENDA") or (tend == "BAIXA" and tipo_sinal == "COMPRA")):
+                # CONTRA TENDENCIA = penaliza pesado (Elder: NUNCA contra Tela 1)
+                score -= 2
+                contra_tendencia = True
+                motivos_nao_operar.append(f"CONTRA TENDENCIA! {tipo_sinal} em mercado {tend} (Elder: proibido)")
             
-            # 5. MACD histogram
+            # 5. MACD histogram (sinal + confirmacao)
             if macd_h > 0 and tipo_sinal == "COMPRA":
-                score += 1; motivos_operar.append(f"MACD histograma positivo ({macd_h})")
+                score += 1; motivos_operar.append(f"MACD positivo ({macd_h}) - momentum comprador")
             elif macd_h < 0 and tipo_sinal == "VENDA":
-                score += 1; motivos_operar.append(f"MACD histograma negativo ({macd_h})")
+                score += 1; motivos_operar.append(f"MACD negativo ({macd_h}) - momentum vendedor")
+            elif macd_h > 0 and tipo_sinal == "VENDA":
+                motivos_nao_operar.append(f"MACD positivo ({macd_h}) CONTRA sinal de venda")
+            elif macd_h < 0 and tipo_sinal == "COMPRA":
+                motivos_nao_operar.append(f"MACD negativo ({macd_h}) CONTRA sinal de compra")
             
-            # 6. ATR (volatilidade minima)
+            # 6. ATR (volatilidade minima p/ day trade)
             if atr_v > 80:
                 score += 1; motivos_operar.append(f"ATR {atr_v} - volatilidade suficiente")
             else:
-                motivos_nao_operar.append(f"ATR {atr_v} - volatilidade baixa")
+                motivos_nao_operar.append(f"ATR {atr_v} - volatilidade baixa (spread pode comer lucro)")
             
-            # DECISAO
-            operar = score >= 4 and tipo_sinal is not None and not horario_ruim
+            # 7. Volume (se disponivel)
+            if vol > 0:
+                score += 0  # placeholder - yfinance nem sempre traz vol de futuros
+            
+            # DECISAO FINAL
+            # Regra: 4+ score, tem sinal, nao contra tendencia, nao horario ruim
+            operar = score >= 4 and tipo_sinal is not None and not horario_ruim and not contra_tendencia
             decisao = "OPERAR" if operar else "NAO OPERAR"
             
             # Confianca (Bellafiore)
