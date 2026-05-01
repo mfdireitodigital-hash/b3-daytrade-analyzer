@@ -691,6 +691,280 @@ def _zona_fibonacci_atual(preco: float, fib: FibonacciLevels) -> str:
     return "Abaixo de 100% (extensão)"
 
 
+
+
+# =====================================================
+# GESTAO DE RISCO - Implementacao do documento de trading
+# =====================================================
+
+class GestaoRisco:
+    """
+    Sistema de gestão de risco conforme documento de lógica de execução B3.
+    Controla risco por operação, risco diário, sequência de stops e lote.
+    """
+
+    # Custos operacionais B3 (valores aproximados 2024-2025)
+    CUSTOS_B3 = {
+        "WIN": {
+            "corretagem": 0.0,       # Day trade isento em muitas corretoras
+            "emolumentos": 0.0035,   # % sobre volume negociado
+            "taxa_registro": 0.0008, # % sobre volume
+            "valor_ponto": 0.20,     # R$ por ponto do mini-indice
+        },
+        "WDO": {
+            "corretagem": 0.0,
+            "emolumentos": 0.0035,
+            "taxa_registro": 0.0008,
+            "valor_ponto": 10.00,    # R$ por ponto do mini-dolar
+        }
+    }
+
+    def __init__(self, capital_total: float = 10000.0, risco_pct_operacao: float = 0.01,
+                 risco_pct_diario: float = 0.02, max_stops_consecutivos: int = 3):
+        self.capital_total = capital_total
+        self.risco_pct_operacao = risco_pct_operacao  # 1% padrão
+        self.risco_pct_diario = risco_pct_diario      # 2% padrão
+        self.max_stops_consecutivos = max_stops_consecutivos
+        self.stops_consecutivos = 0
+        self.perda_diaria = 0.0
+        self.operacoes_dia = []
+        self.bloqueado = False
+        self.motivo_bloqueio = ""
+
+    def definir_risco_operacao(self) -> float:
+        """Calcula risco máximo por operação: 0.5% a 1% do capital total"""
+        return self.capital_total * self.risco_pct_operacao
+
+    def definir_risco_diario_maximo(self) -> float:
+        """Calcula risco diário máximo: 2% do capital total"""
+        return self.capital_total * self.risco_pct_diario
+
+    def verificar_risco_diario(self) -> dict:
+        """Verifica se o risco diário máximo foi atingido"""
+        risco_max = self.definir_risco_diario_maximo()
+        atingido = abs(self.perda_diaria) >= risco_max
+        if atingido:
+            self.bloqueado = True
+            self.motivo_bloqueio = f"Risco diário máximo atingido (R$ {abs(self.perda_diaria):.2f} / R$ {risco_max:.2f})"
+        return {
+            "risco_maximo": risco_max,
+            "perda_atual": abs(self.perda_diaria),
+            "pct_utilizado": (abs(self.perda_diaria) / risco_max * 100) if risco_max > 0 else 0,
+            "atingido": atingido,
+            "bloqueado": self.bloqueado,
+            "motivo": self.motivo_bloqueio
+        }
+
+    def validar_risco_retorno(self, stop_loss: float, preco_entrada: float, alvo: float) -> dict:
+        """
+        Garante que a relação risco/retorno é >= 2:1.
+        Retorna se a operação é válida e a relação calculada.
+        """
+        risco = abs(preco_entrada - stop_loss)
+        retorno = abs(alvo - preco_entrada)
+        if risco == 0:
+            return {"valido": False, "rr": 0, "motivo": "Risco zero - stop_loss igual ao preço de entrada"}
+        rr = retorno / risco
+        valido = rr >= 2.0
+        return {
+            "valido": valido,
+            "rr": round(rr, 2),
+            "risco_pts": round(risco, 2),
+            "retorno_pts": round(retorno, 2),
+            "motivo": f"R/R {rr:.2f}:1 - {'APROVADO' if valido else 'REPROVADO (min 2:1)'}"
+        }
+
+    def calcular_lote_ajustado(self, distancia_stop_pontos: float, ativo: str = "WIN") -> dict:
+        """
+        Ajusta o lote para que a perda máxima não exceda o risco por operação.
+        lote * distancia_stop * valor_ponto <= risco_financeiro
+        """
+        risco_financeiro = self.definir_risco_operacao()
+        custos = self.CUSTOS_B3.get(ativo, self.CUSTOS_B3["WIN"])
+        valor_ponto = custos["valor_ponto"]
+
+        if distancia_stop_pontos <= 0 or valor_ponto <= 0:
+            return {"lote": 1, "risco_financeiro": risco_financeiro, "motivo": "Valores inválidos, lote padrão 1"}
+
+        lote_max = int(risco_financeiro / (distancia_stop_pontos * valor_ponto))
+        lote = max(1, lote_max)
+        risco_real = lote * distancia_stop_pontos * valor_ponto
+
+        return {
+            "lote": lote,
+            "lote_maximo": lote_max,
+            "risco_por_operacao": round(risco_financeiro, 2),
+            "risco_real": round(risco_real, 2),
+            "distancia_stop": round(distancia_stop_pontos, 2),
+            "valor_ponto": valor_ponto,
+            "motivo": f"{lote} contrato(s) - risco R$ {risco_real:.2f} de R$ {risco_financeiro:.2f} permitido"
+        }
+
+    def monitorar_sequencia_stops(self, resultado_ultima_op: float) -> dict:
+        """
+        Monitora sequência de stops. Se 3 consecutivos, bloqueia temporariamente.
+        """
+        if resultado_ultima_op < 0:
+            self.stops_consecutivos += 1
+        else:
+            self.stops_consecutivos = 0
+
+        bloqueado = self.stops_consecutivos >= self.max_stops_consecutivos
+        if bloqueado:
+            self.bloqueado = True
+            self.motivo_bloqueio = f"{self.stops_consecutivos} stops consecutivos - operações bloqueadas"
+
+        return {
+            "stops_consecutivos": self.stops_consecutivos,
+            "max_permitido": self.max_stops_consecutivos,
+            "bloqueado": bloqueado,
+            "motivo": self.motivo_bloqueio if bloqueado else f"{self.stops_consecutivos}/{self.max_stops_consecutivos} stops"
+        }
+
+    def registrar_operacao(self, resultado_financeiro: float, tipo: str, entrada: float, saida: float):
+        """Registra uma operação no controle diário"""
+        self.operacoes_dia.append({
+            "tipo": tipo,
+            "entrada": entrada,
+            "saida": saida,
+            "resultado": resultado_financeiro,
+        })
+        if resultado_financeiro < 0:
+            self.perda_diaria += resultado_financeiro
+        self.monitorar_sequencia_stops(resultado_financeiro)
+
+    def calcular_custos_operacionais(self, preco_entrada: float, preco_saida: float,
+                                      lote: int, ativo: str = "WIN") -> dict:
+        """
+        Calcula custos operacionais reais da B3:
+        corretagem + emolumentos + taxa de registro + liquidação
+        """
+        custos = self.CUSTOS_B3.get(ativo, self.CUSTOS_B3["WIN"])
+        volume = (preco_entrada + preco_saida) * lote  # Volume total (entrada + saída)
+
+        corretagem = custos["corretagem"] * volume
+        emolumentos = custos["emolumentos"] * volume
+        taxa_registro = custos["taxa_registro"] * volume
+        total = corretagem + emolumentos + taxa_registro
+
+        return {
+            "corretagem": round(corretagem, 2),
+            "emolumentos": round(emolumentos, 2),
+            "taxa_registro": round(taxa_registro, 2),
+            "total": round(total, 2),
+            "volume_negociado": round(volume, 2)
+        }
+
+    def calcular_slippage(self, preco_esperado: float, preco_executado: float) -> dict:
+        """Registra e calcula slippage"""
+        slippage = abs(preco_esperado - preco_executado)
+        return {
+            "preco_esperado": preco_esperado,
+            "preco_executado": preco_executado,
+            "slippage_pts": round(slippage, 2),
+            "favoravel": preco_executado <= preco_esperado  # Para compra
+        }
+
+    def buscar_alvo_liquidez(self, dados, tipo_operacao: str, lookback: int = 50) -> dict:
+        """
+        Busca alvos de liquidez baseado em topos/fundos anteriores.
+        Compra -> busca topos anteriores e zonas de stop de vendedores
+        Venda -> busca fundos anteriores e zonas de stop de compradores
+        """
+        if len(dados) < lookback:
+            lookback = len(dados)
+
+        window = dados.tail(lookback)
+        preco_atual = float(dados['close'].iloc[-1])
+
+        if tipo_operacao == "COMPRA":
+            # Buscar topos anteriores (resistências) como alvos
+            highs = window['high'].values
+            alvos = sorted(set([float(h) for h in highs if h > preco_atual]))[:3]
+            return {
+                "tipo": "COMPRA",
+                "alvos": alvos,
+                "alvo_principal": alvos[0] if alvos else preco_atual * 1.005,
+                "descricao": "Topos anteriores como zonas de liquidez"
+            }
+        else:
+            # Buscar fundos anteriores (suportes) como alvos
+            lows = window['low'].values
+            alvos = sorted(set([float(l) for l in lows if l < preco_atual]), reverse=True)[:3]
+            return {
+                "tipo": "VENDA",
+                "alvos": alvos,
+                "alvo_principal": alvos[0] if alvos else preco_atual * 0.995,
+                "descricao": "Fundos anteriores como zonas de liquidez"
+            }
+
+    def status_completo(self) -> dict:
+        """Retorna status completo da gestão de risco"""
+        risco_diario = self.verificar_risco_diario()
+        return {
+            "capital": self.capital_total,
+            "risco_por_op": self.definir_risco_operacao(),
+            "risco_diario_max": self.definir_risco_diario_maximo(),
+            "perda_diaria": abs(self.perda_diaria),
+            "pct_risco_utilizado": risco_diario["pct_utilizado"],
+            "operacoes_hoje": len(self.operacoes_dia),
+            "stops_consecutivos": self.stops_consecutivos,
+            "bloqueado": self.bloqueado,
+            "motivo_bloqueio": self.motivo_bloqueio
+        }
+
+
+def definir_stop_loss(preco_entrada: float, distancia_pontos: float, tipo: str) -> float:
+    """
+    Posiciona stop loss ANTES da execução.
+    Compra: stop = entrada - distância
+    Venda: stop = entrada + distância
+    """
+    if tipo.upper() == "COMPRA":
+        return round(preco_entrada - distancia_pontos, 2)
+    else:
+        return round(preco_entrada + distancia_pontos, 2)
+
+
+def verificar_horario_operacional(hora_atual=None) -> dict:
+    """
+    Verifica se estamos em horário operacional para day trade na B3.
+    Janela 1: 09:15 - 12:00 (melhor liquidez)
+    Janela 2: 14:00 - 16:30 (segundo período)
+    Evitar: abertura (09:00-09:15), almoço (12:00-14:00), últimos 30min
+    """
+    from datetime import datetime
+    if hora_atual is None:
+        hora_atual = datetime.now()
+
+    h = hora_atual.hour
+    m = hora_atual.minute
+    minutos = h * 60 + m
+
+    janela_1 = 555 <= minutos <= 720   # 09:15 - 12:00
+    janela_2 = 840 <= minutos <= 990   # 14:00 - 16:30
+    operacional = janela_1 or janela_2
+
+    if not operacional:
+        if minutos < 555:
+            aviso = "Pre-mercado - aguardar abertura 09:15"
+        elif 720 < minutos < 840:
+            aviso = "Horario de almoco - menor liquidez"
+        elif minutos > 990:
+            aviso = "Apos 16:30 - evitar novas operacoes"
+        else:
+            aviso = "Fora do horario operacional"
+    else:
+        aviso = "Janela 1 (09:15-12:00)" if janela_1 else "Janela 2 (14:00-16:30)"
+
+    return {
+        "janela_1": janela_1,
+        "janela_2": janela_2,
+        "operacional": operacional,
+        "aviso": aviso
+    }
+
+
 def analisar_completo(dados: pd.DataFrame, timeframe: str, ativo: str) -> dict:
     """
     Executa análise completa para um timeframe específico.
@@ -786,6 +1060,10 @@ def analisar_completo(dados: pd.DataFrame, timeframe: str, ativo: str) -> dict:
             "macd_hist": round(float(macd_h_display.iloc[i]), 4) if i < len(macd_h_display) else 0,
         }
         candles_data.append(candle)
+
+    # Gestão de risco
+    gestao = GestaoRisco()
+    horario_op = verificar_horario_operacional()
 
     return {
         "timeframe": timeframe,
