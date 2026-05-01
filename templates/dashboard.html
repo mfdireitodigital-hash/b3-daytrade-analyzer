@@ -415,29 +415,14 @@
                     </div>
                 </div>
 
-                <!-- Trading Panel - Unified -->
-                <div style="margin-top:8px;background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:14px;">
-                    <div class="pt-price-live" id="ptPrecoUnified" style="color:var(--accent-blue);font-size:26px;font-weight:800;text-align:center;padding:8px 0;font-family:monospace;">--</div>
-                    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:12px;">
-                        <div class="pt-input-group">
-                            <label>CONTRATOS</label>
-                            <input type="number" id="ptQtd" value="1" min="1" max="999">
-                        </div>
-                        <div class="pt-input-group">
-                            <label>STOP (pts)</label>
-                            <input type="number" id="ptStop" placeholder="150" step="5">
-                        </div>
-                        <div class="pt-input-group">
-                            <label>ALVO (pts)</label>
-                            <input type="number" id="ptAlvo" placeholder="300" step="5">
-                        </div>
-                    </div>
-                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
-                        <button class="pt-trade-btn buy" id="ptBtnBuy" onclick="ptComprar()" style="padding:14px;font-size:15px;">COMPRAR</button>
-                        <button class="pt-trade-btn sell" id="ptBtnSell" onclick="ptVender()" style="padding:14px;font-size:15px;">VENDER</button>
-                    </div>
+                <!-- Info: Use SIMULADOR REAL -->
+                <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:16px;margin-top:8px;text-align:center;">
+                    <div style="font-size:13px;color:var(--text-muted);margin-bottom:8px;">Para operar com analise completa, use o</div>
+                    <button class="btn" onclick="fecharPaperTrading();abrirSimuladorReal();" style="background:var(--accent-blue);border-color:var(--accent-blue);color:#fff;font-weight:700;font-size:14px;padding:10px 24px;">
+                        SIMULADOR REAL
+                    </button>
+                    <div style="font-size:10px;color:var(--text-muted);margin-top:8px;">Analise Triple Screen + Confluencia + Noticias + Heatmap</div>
                 </div>
-
                 <!-- Open Positions -->
                 <div class="pt-positions">
                     <div class="pt-pos-header">
@@ -573,7 +558,10 @@
                 <span class="contrato-valor" id="valorContrato">R$ 0.20/pt</span>
             </div>
             <button class="btn btn-demo" onclick="abrirPaperTrading()" style="border-color:var(--accent-green);color:var(--accent-green);font-weight:700;">TREINAMENTO</button>
-            <button class="btn" onclick="abrirNoticiasImpacto()" style="border-color:#7c3aed;color:#7c3aed;font-weight:700;position:relative;" id="btnNoticiasHeader">
+            <button class="btn" onclick="abrirSimuladorReal()" style="border-color:var(--accent-blue);color:var(--accent-blue);font-weight:700;" id="btnSimuladorHeader">
+                SIMULADOR REAL
+            </button>
+            <button class="btn" onclick="abrirNoticiasImpacto()" style="border-color:#ef4444;color:#ef4444;font-weight:700;position:relative;" id="btnNoticiasHeader">
                 NOTICIAS DE IMPACTO
                 <span id="notAlertDot" style="display:none;position:absolute;top:-3px;right:-3px;width:10px;height:10px;background:#ef4444;border-radius:50%;animation:pulse 1.5s infinite;"></span>
             </button>
@@ -729,14 +717,14 @@
 <!-- NOTICIAS DE IMPACTO - PAINEL EXTERNO (OPERACOES REAIS) -->
 <div class="pt-overlay" id="noticiasOverlay" style="display:none;">
     <div class="pt-container" style="max-width:900px;">
-        <div class="pt-header" style="border-bottom:2px solid #7c3aed;">
+        <div class="pt-header" style="border-bottom:2px solid #ef4444;">
             <div>
-                <div class="pt-title" style="color:#7c3aed;">NOTICIAS DE IMPACTO</div>
+                <div class="pt-title" style="color:#ef4444;">NOTICIAS DE IMPACTO</div>
                 <div class="pt-title-sub">Calendario Economico | Alto Impacto (3 Estrelas) | EUA & Brasil</div>
             </div>
             <div style="display:flex;align-items:center;gap:10px;">
                 <div id="notAlertBadge2" style="display:none;background:#ef4444;color:#fff;padding:3px 10px;border-radius:10px;font-size:11px;font-weight:800;animation:pulse 1.5s infinite;">ALERTA ATIVO</div>
-                <button class="btn" onclick="carregarNoticias()" style="font-size:11px;padding:5px 14px;background:#7c3aed;border-color:#7c3aed;color:#fff;">ATUALIZAR</button>
+                <button class="btn" onclick="carregarNoticias()" style="font-size:11px;padding:5px 14px;background:#ef4444;border-color:#ef4444;color:#fff;">ATUALIZAR</button>
                 <span id="notTimestamp2" style="font-size:11px;color:var(--text-muted);">--:--</span>
                 <button class="pt-close" onclick="fecharNoticiasImpacto()">FECHAR</button>
             </div>
@@ -749,7 +737,7 @@
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin:10px 0;">
             <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:10px;text-align:center;">
                 <div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;">Eventos Hoje</div>
-                <div id="notCountHoje" style="font-size:22px;font-weight:800;color:#7c3aed;">0</div>
+                <div id="notCountHoje" style="font-size:22px;font-weight:800;color:#ef4444;">0</div>
             </div>
             <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:10px;text-align:center;">
                 <div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;">Proximos</div>
@@ -763,18 +751,14 @@
 
         <!-- FILTER TABS -->
         <div style="display:flex;gap:4px;margin:8px 0;flex-wrap:wrap;">
-            <button class="btn" id="notFilterAll" onclick="filtrarNoticias('all')" style="background:#7c3aed;border-color:#7c3aed;color:#fff;font-size:11px;padding:5px 12px;">TODOS</button>
+            <button class="btn" id="notFilterAll" onclick="filtrarNoticias('all')" style="background:#ef4444;border-color:#ef4444;color:#fff;font-size:11px;padding:5px 12px;">TODOS</button>
             <button class="btn" id="notFilterUSA" onclick="filtrarNoticias('USD')" style="font-size:11px;padding:5px 12px;">USD (EUA)</button>
             <button class="btn" id="notFilterBRL" onclick="filtrarNoticias('BRL')" style="font-size:11px;padding:5px 12px;">BRL (Brasil)</button>
             <button class="btn" id="notFilterProx" onclick="filtrarNoticias('proximos')" style="font-size:11px;padding:5px 12px;">PROXIMOS</button>
             <button class="btn" id="notFilterPassados" onclick="filtrarNoticias('passados')" style="font-size:11px;padding:5px 12px;">JA OCORRIDOS</button>
         </div>
 
-        <!-- REGRA DE OURO -->
-        <div style="background:rgba(124,58,237,0.08);border:1px solid #7c3aed;border-radius:8px;padding:10px 14px;margin:8px 0;font-size:11px;">
-            <span style="font-weight:800;color:#7c3aed;">REGRA DE OURO:</span> 
-            <span style="color:var(--text-secondary);">Evite abrir posicoes 15 minutos ANTES e 15 minutos DEPOIS de noticias de 3 estrelas. Aguarde o mercado digerir o dado. Opere o que VE, nao o que ACHA (Axioma de Zurique #4).</span>
-        </div>
+        
 
         <!-- PROXIMOS EVENTOS -->
         <div style="margin:12px 0;">
@@ -793,6 +777,91 @@
             </div>
             <div id="notPassados" style="max-height:400px;overflow-y:auto;">
                 <div style="text-align:center;padding:20px;color:var(--text-muted);">Carregando...</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- SIMULADOR REAL - ANALISE COMPLETA -->
+<div class="pt-overlay" id="simRealOverlay" style="display:none;">
+    <div class="pt-container" style="max-width:950px;">
+        <div class="pt-header" style="border-bottom:2px solid var(--accent-blue);">
+            <div>
+                <div class="pt-title" style="color:var(--accent-blue);">SIMULADOR REAL</div>
+                <div class="pt-title-sub" id="simRealSubtitle">Analise Completa | Triple Screen + Confluencia + Noticias + Heatmap</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px;">
+                <div id="simRealMarket" style="display:flex;align-items:center;gap:4px;font-size:11px;"></div>
+                <button class="btn btn-primary" onclick="simRealAnalisar()" style="font-size:12px;padding:6px 16px;">ANALISAR AGORA</button>
+                <button class="pt-close" onclick="fecharSimuladorReal()">FECHAR</button>
+            </div>
+        </div>
+
+        <!-- STATUS MERCADO -->
+        <div id="simRealStatus" style="background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:12px;margin:10px 0;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+            <div style="display:flex;align-items:center;gap:8px;">
+                <div id="simRealDot" style="width:10px;height:10px;border-radius:50%;background:#22c55e;"></div>
+                <span id="simRealModoLabel" style="font-weight:700;font-size:13px;">Carregando...</span>
+            </div>
+            <div style="display:flex;gap:12px;font-size:12px;">
+                <span>Preco: <strong id="simRealPreco" style="color:var(--accent-green);">--</strong></span>
+                <span>Ativo: <strong id="simRealAtivo">WIN</strong></span>
+            </div>
+        </div>
+
+        <!-- VEREDICTO PRINCIPAL -->
+        <div id="simRealVeredicto" style="background:var(--bg-card);border:2px solid var(--border);border-radius:10px;padding:16px;margin:8px 0;text-align:center;">
+            <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;margin-bottom:4px;">Veredicto do Simulador</div>
+            <div id="simRealVeredictoText" style="font-size:28px;font-weight:900;color:var(--text-muted);">Clique ANALISAR AGORA</div>
+            <div id="simRealVeredictoSub" style="font-size:12px;color:var(--text-muted);margin-top:4px;"></div>
+        </div>
+
+        <!-- GRID DE ANALISE -->
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:8px 0;" id="simRealGrid">
+            <!-- Triple Screen -->
+            <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:12px;">
+                <div style="font-size:11px;font-weight:700;color:var(--accent-blue);text-transform:uppercase;margin-bottom:6px;">Triple Screen (Elder)</div>
+                <div id="simRealTriple" style="font-size:11px;">--</div>
+            </div>
+            <!-- Confluencia -->
+            <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:12px;">
+                <div style="font-size:11px;font-weight:700;color:var(--accent-green);text-transform:uppercase;margin-bottom:6px;">Confluencia (7 pontos)</div>
+                <div id="simRealConf" style="font-size:11px;">--</div>
+            </div>
+            <!-- Noticias -->
+            <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:12px;">
+                <div style="font-size:11px;font-weight:700;color:#ef4444;text-transform:uppercase;margin-bottom:6px;">Noticias de Impacto</div>
+                <div id="simRealNews" style="font-size:11px;">--</div>
+            </div>
+            <!-- Heatmap Horario -->
+            <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:12px;">
+                <div style="font-size:11px;font-weight:700;color:#ca8a04;text-transform:uppercase;margin-bottom:6px;">Melhor Horario (Heatmap)</div>
+                <div id="simRealHeat" style="font-size:11px;">--</div>
+            </div>
+        </div>
+
+        <!-- ESCALA DE CONFIANCA -->
+        <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:12px;margin:8px 0;">
+            <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;margin-bottom:6px;">Escala de Confianca (Bellafiore)</div>
+            <div style="display:flex;gap:4px;" id="simRealEscala">
+                <div style="flex:1;height:8px;border-radius:4px;background:#333;"></div>
+                <div style="flex:1;height:8px;border-radius:4px;background:#333;"></div>
+                <div style="flex:1;height:8px;border-radius:4px;background:#333;"></div>
+                <div style="flex:1;height:8px;border-radius:4px;background:#333;"></div>
+                <div style="flex:1;height:8px;border-radius:4px;background:#333;"></div>
+            </div>
+            <div style="display:flex;justify-content:space-between;font-size:9px;color:var(--text-muted);margin-top:3px;">
+                <span>1-NAO OPERE</span><span>2-DUVIDOSO</span><span>3-OK</span><span>4-BOM</span><span>5-A+ SETUP</span>
+            </div>
+        </div>
+
+        <!-- OPERACOES RECOMENDADAS -->
+        <div style="margin:10px 0;">
+            <div style="font-size:13px;font-weight:800;color:var(--accent-blue);text-transform:uppercase;margin-bottom:8px;padding-bottom:4px;border-bottom:1px solid var(--border);">
+                Operacoes Recomendadas
+            </div>
+            <div id="simRealOps" style="max-height:400px;overflow-y:auto;">
+                <div style="text-align:center;padding:24px;color:var(--text-muted);">Clique ANALISAR AGORA para gerar operacoes com base em todos os indicadores.</div>
             </div>
         </div>
     </div>
@@ -2696,8 +2765,8 @@ function filtrarNoticias(filtro) {
     const activeMap = {'all':'All','USD':'USA','BRL':'BRL','proximos':'Prox','passados':'Passados'};
     const activeBtn = document.getElementById('notFilter' + (activeMap[filtro] || 'All'));
     if (activeBtn) {
-        activeBtn.style.background = '#7c3aed';
-        activeBtn.style.borderColor = '#7c3aed';
+        activeBtn.style.background = '#ef4444';
+        activeBtn.style.borderColor = '#ef4444';
         activeBtn.style.color = '#fff';
     }
     
@@ -2915,6 +2984,339 @@ function renderNotEventos(eventos, containerId, isPast) {
     
     container.innerHTML = html;
 }
+
+
+
+// =====================================================
+// SIMULADOR REAL - TRADER COMPLETO
+// =====================================================
+function abrirSimuladorReal() {
+    document.getElementById('simRealOverlay').style.display = 'flex';
+    simRealCheckMarket();
+    simRealAnalisar();
+}
+function fecharSimuladorReal() {
+    document.getElementById('simRealOverlay').style.display = 'none';
+}
+function fecharPaperTrading() {
+    document.getElementById('ptOverlay').style.display = 'none';
+}
+
+function simRealCheckMarket() {
+    const now = new Date();
+    const utc = now.getTime() + now.getTimezoneOffset() * 60000;
+    const brt = new Date(utc - 3 * 3600000);
+    const h = brt.getHours(); const d = brt.getDay();
+    const isOpen = d >= 1 && d <= 5 && h >= 9 && h < 18;
+    const dot = document.getElementById('simRealDot');
+    const label = document.getElementById('simRealModoLabel');
+    if (isOpen) {
+        dot.style.background = '#22c55e';
+        label.innerHTML = '<span style="color:#22c55e;">MERCADO ABERTO</span> - Analise em Tempo Real';
+    } else {
+        dot.style.background = '#ef4444';
+        label.innerHTML = '<span style="color:#ef4444;">MERCADO FECHADO</span> - Analise do Pregao Anterior (Dados Reais)';
+    }
+}
+
+async function simRealAnalisar() {
+    const veredEl = document.getElementById('simRealVeredictoText');
+    const veredSub = document.getElementById('simRealVeredictoSub');
+    veredEl.textContent = 'ANALISANDO...';
+    veredEl.style.color = 'var(--accent-blue)';
+    veredSub.textContent = 'Coletando Triple Screen + Confluencia + Noticias + Heatmap...';
+    
+    try {
+        // Fetch all data in parallel
+        const [sinaisRes, notRes, heatRes, replayRes] = await Promise.all([
+            fetch('/api/sinais-ia?ativo=WIN').then(r => r.json()).catch(e => null),
+            fetch('/api/noticias-impacto').then(r => r.json()).catch(e => null),
+            fetch('/api/heatmap?ativo=WIN').then(r => r.json()).catch(e => null),
+            fetch('/api/replay-velas?ativo=WIN').then(r => r.json()).catch(e => null),
+        ]);
+        
+        // Update price
+        const preco = sinaisRes?.preco_atual || 0;
+        document.getElementById('simRealPreco').textContent = preco ? preco.toLocaleString('pt-BR') : '--';
+        
+        // ---- TRIPLE SCREEN ----
+        const ts = sinaisRes?.triple_screen;
+        let tsHtml = '';
+        if (ts) {
+            const t1 = ts.tela1_tendencia;
+            const t2 = ts.tela2_sinal;
+            const t3 = ts.tela3_entrada;
+            const corT = d => d === 'ALTA' || d === 'COMPRA' ? '#22c55e' : d === 'BAIXA' || d === 'VENDA' ? '#ef4444' : '#888';
+            tsHtml += '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-top:4px;">';
+            tsHtml += '<div style="text-align:center;padding:6px;background:rgba(255,255,255,0.03);border-radius:4px;"><div style="font-size:9px;color:var(--text-muted);">TELA 1 (Tendencia)</div><div style="font-weight:800;color:' + corT(t1.direcao) + ';">' + t1.direcao + '</div><div style="font-size:9px;color:var(--text-muted);">' + (t1.detalhes||[]).join(', ') + '</div></div>';
+            tsHtml += '<div style="text-align:center;padding:6px;background:rgba(255,255,255,0.03);border-radius:4px;"><div style="font-size:9px;color:var(--text-muted);">TELA 2 (Sinal)</div><div style="font-weight:800;color:' + corT(t2.direcao) + ';">' + t2.direcao + '</div><div style="font-size:9px;color:var(--text-muted);">' + (t2.detalhes||[]).join(', ') + '</div></div>';
+            tsHtml += '<div style="text-align:center;padding:6px;background:rgba(255,255,255,0.03);border-radius:4px;"><div style="font-size:9px;color:var(--text-muted);">TELA 3 (Entrada)</div><div style="font-weight:800;color:' + corT(t3.direcao) + ';">' + t3.direcao + '</div><div style="font-size:9px;color:var(--text-muted);">' + (t3.detalhes||[]).join(', ') + '</div></div>';
+            tsHtml += '</div>';
+        }
+        document.getElementById('simRealTriple').innerHTML = tsHtml || 'Sem dados';
+        
+        // ---- CONFLUENCIA ----
+        const conf = sinaisRes?.confluencia;
+        let confHtml = '';
+        if (conf) {
+            confHtml += '<div style="font-size:14px;font-weight:900;margin-bottom:6px;color:' + (conf.score >= 5 ? '#22c55e' : conf.score >= 4 ? '#16a34a' : conf.score >= 3 ? '#ca8a04' : '#ef4444') + ';">' + conf.score + '/' + conf.total + ' pontos</div>';
+            (conf.checks || []).forEach(c => {
+                confHtml += '<div style="display:flex;align-items:center;gap:4px;margin:2px 0;"><span style="color:' + (c.status ? '#22c55e' : '#ef4444') + ';">' + (c.status ? '&#x2705;' : '&#x274C;') + '</span><span style="font-size:10px;">' + c.nome + '</span></div>';
+            });
+        }
+        document.getElementById('simRealConf').innerHTML = confHtml || 'Sem dados';
+        
+        // ---- NOTICIAS ----
+        let newsHtml = '';
+        let newsSeguro = true;
+        if (notRes && !notRes.erro) {
+            if (notRes.alertas > 0) {
+                newsSeguro = false;
+                newsHtml += '<div style="color:#ef4444;font-weight:800;font-size:12px;margin-bottom:4px;">&#x26A0; ' + notRes.alertas + ' EVENTO(S) NA ZONA DE IMPACTO</div>';
+                (notRes.alerta_eventos || []).forEach(a => {
+                    newsHtml += '<div style="font-size:10px;padding:3px 0;border-bottom:1px solid rgba(255,255,255,0.05);">' + a.moeda + ' | ' + a.evento + ' | ' + a.hora + ' (' + (a.minutos >= 0 ? 'em ' + a.minutos + 'min' : 'ha ' + Math.abs(a.minutos) + 'min') + ')</div>';
+                });
+                newsHtml += '<div style="color:#ef4444;font-size:10px;font-weight:700;margin-top:4px;">NAO OPERE ATE DIGERIR O DADO</div>';
+            } else {
+                newsHtml += '<div style="color:#22c55e;font-weight:700;">&#x2705; Sem noticias de impacto proximas</div>';
+                const prox = (notRes.proximos || []).slice(0, 3);
+                if (prox.length > 0) {
+                    newsHtml += '<div style="margin-top:4px;font-size:10px;color:var(--text-muted);">Proximos:</div>';
+                    prox.forEach(p => {
+                        newsHtml += '<div style="font-size:10px;">' + p.hora + ' ' + p.moeda + ' ' + p.evento + '</div>';
+                    });
+                }
+            }
+            // Update safety bar
+            updateSafetyBar(newsSeguro, notRes);
+        }
+        document.getElementById('simRealNews').innerHTML = newsHtml || 'Sem dados';
+        
+        // ---- HEATMAP ----
+        let heatHtml = '';
+        if (heatRes && heatRes.slots) {
+            const now = new Date();
+            const utc2 = now.getTime() + now.getTimezoneOffset() * 60000;
+            const brt2 = new Date(utc2 - 3 * 3600000);
+            const horaAtual = brt2.getHours() + ':' + String(brt2.getMinutes()).padStart(2,'0');
+            const sorted = [...heatRes.slots].sort((a,b) => b.volatilidade - a.volatilidade);
+            const top3 = sorted.slice(0, 3);
+            heatHtml += '<div style="font-size:10px;color:var(--text-muted);margin-bottom:4px;">Melhores horarios (maior volatilidade):</div>';
+            top3.forEach((s, i) => {
+                const cor = s.volatilidade >= 70 ? '#ef4444' : s.volatilidade >= 50 ? '#ea580c' : '#ca8a04';
+                heatHtml += '<div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid rgba(255,255,255,0.05);"><span style="font-weight:700;">#' + (i+1) + ' ' + s.hora + '</span><span style="color:' + cor + ';font-weight:700;">' + s.volatilidade + '%</span></div>';
+            });
+        }
+        document.getElementById('simRealHeat').innerHTML = heatHtml || 'Sem dados';
+        
+        // ---- ESCALA DE CONFIANCA ----
+        const escala = sinaisRes?.escala_confianca;
+        if (escala) {
+            const bars = document.getElementById('simRealEscala').children;
+            const cores = ['#ef4444','#ea580c','#ca8a04','#16a34a','#22c55e'];
+            for (let i = 0; i < 5; i++) {
+                bars[i].style.background = i < escala.nota ? cores[i] : '#333';
+            }
+        }
+        
+        // ---- VEREDICTO FINAL ----
+        const sinal = sinaisRes?.sinais?.[0];
+        const confScore = conf?.score || 0;
+        
+        if (!newsSeguro) {
+            veredEl.textContent = '&#x26D4; NAO OPERE';
+            veredEl.innerHTML = '&#x26D4; NAO OPERE';
+            veredEl.style.color = '#ef4444';
+            veredSub.textContent = 'Noticia de alto impacto na zona de 15 minutos. Aguarde o mercado digerir.';
+            document.getElementById('simRealVeredicto').style.borderColor = '#ef4444';
+        } else if (sinal && sinal.tipo !== 'NEUTRO' && confScore >= 4) {
+            const isCompra = sinal.tipo === 'COMPRA';
+            veredEl.innerHTML = (isCompra ? '&#x2B06;' : '&#x2B07;') + ' ' + sinal.tipo;
+            veredEl.style.color = isCompra ? '#22c55e' : '#ef4444';
+            veredSub.textContent = sinal.setup + ' | Confianca: ' + (escala?.nota || '?') + '/5 (' + (escala?.label || '') + ') | R:R ' + (sinal.rr || '?') + ' | Stop ' + (sinal.stop_pts||'?') + 'pts | Alvo ' + (sinal.alvo_pts||'?') + 'pts';
+            document.getElementById('simRealVeredicto').style.borderColor = isCompra ? '#22c55e' : '#ef4444';
+        } else if (confScore >= 3) {
+            veredEl.innerHTML = '&#x23F3; AGUARDAR';
+            veredEl.style.color = '#ca8a04';
+            veredSub.textContent = 'Confluencia ' + confScore + '/7 - setup fraco. Aguarde alinhamento de 4+ pontos para entrar.';
+            document.getElementById('simRealVeredicto').style.borderColor = '#ca8a04';
+        } else {
+            veredEl.innerHTML = '&#x26D4; NAO OPERE';
+            veredEl.style.color = '#ef4444';
+            veredSub.textContent = 'Confluencia ' + confScore + '/7 - sem setup valido. Sem confluencia = sem trade. (Douglas: cada momento e unico)';
+            document.getElementById('simRealVeredicto').style.borderColor = '#ef4444';
+        }
+        
+        // ---- OPERACOES RECOMENDADAS (replay do dia anterior quando fechado) ----
+        let opsHtml = '';
+        if (replayRes && replayRes.velas && replayRes.velas.length > 0) {
+            // Analyze each candle for best entries
+            const velas = replayRes.velas;
+            let bestOps = [];
+            
+            for (let i = 5; i < velas.length - 5; i++) {
+                const v = velas[i];
+                const prevVelas = velas.slice(Math.max(0, i-5), i);
+                
+                // Check for setup conditions
+                let score = 0;
+                let tipo = null;
+                let motivos = [];
+                
+                // RSI extremes
+                if (v.rsi && v.rsi < 30) { score += 2; tipo = 'COMPRA'; motivos.push('RSI sobrevendido (' + v.rsi + ')'); }
+                else if (v.rsi && v.rsi > 70) { score += 2; tipo = 'VENDA'; motivos.push('RSI sobrecomprado (' + v.rsi + ')'); }
+                
+                // EMA alignment
+                if (v.ema9 && v.ema21) {
+                    if (v.ema9 > v.ema21 && v.close > v.ema9) { score += 1; if(!tipo) tipo = 'COMPRA'; motivos.push('EMA9 > EMA21 + preco acima'); }
+                    else if (v.ema9 < v.ema21 && v.close < v.ema9) { score += 1; if(!tipo) tipo = 'VENDA'; motivos.push('EMA9 < EMA21 + preco abaixo'); }
+                }
+                
+                // Tendencia
+                if (v.tendencia === 'ALTA' && tipo === 'COMPRA') { score += 1; motivos.push('Tendencia ALTA'); }
+                else if (v.tendencia === 'BAIXA' && tipo === 'VENDA') { score += 1; motivos.push('Tendencia BAIXA'); }
+                
+                // MACD histogram reversal
+                if (v.macd_hist !== null && i > 0 && velas[i-1].macd_hist !== null) {
+                    if (v.macd_hist > 0 && velas[i-1].macd_hist <= 0) { score += 1; if(!tipo) tipo = 'COMPRA'; motivos.push('MACD virou positivo'); }
+                    else if (v.macd_hist < 0 && velas[i-1].macd_hist >= 0) { score += 1; if(!tipo) tipo = 'VENDA'; motivos.push('MACD virou negativo'); }
+                }
+                
+                if (score >= 3 && tipo) {
+                    bestOps.push({idx: i, hora: v.hora, tipo: tipo, score: score, preco: v.close, motivos: motivos, rsi: v.rsi, tend: v.tendencia});
+                }
+            }
+            
+            // Sort by score descending, take top entries
+            bestOps.sort((a,b) => b.score - a.score);
+            const topOps = bestOps.slice(0, 8);
+            
+            if (topOps.length > 0) {
+                opsHtml += '<div style="font-size:10px;color:var(--text-muted);margin-bottom:6px;">Dia: ' + replayRes.dia + ' | ' + replayRes.contrato + ' | Analisadas ' + velas.length + ' velas | ' + bestOps.length + ' setups encontrados</div>';
+                
+                topOps.forEach((op, idx) => {
+                    const isCompra = op.tipo === 'COMPRA';
+                    const cor = isCompra ? '#22c55e' : '#ef4444';
+                    const stopPts = 150;
+                    const alvoPts = 300;
+                    const stopPrice = isCompra ? op.preco - stopPts : op.preco + stopPts;
+                    const alvoPrice = isCompra ? op.preco + alvoPts : op.preco - alvoPts;
+                    
+                    // Simulate: walk forward to see result
+                    let resultado = 'ABERTO';
+                    let resCor = '#888';
+                    let precoSaida = 0;
+                    let horaSaida = '';
+                    
+                    for (let j = op.idx + 1; j < velas.length; j++) {
+                        const fv = velas[j];
+                        if (isCompra) {
+                            if (fv.low <= stopPrice) { resultado = 'LOSS'; resCor = '#ef4444'; precoSaida = stopPrice; horaSaida = fv.hora; break; }
+                            if (fv.high >= alvoPrice) { resultado = 'WIN'; resCor = '#22c55e'; precoSaida = alvoPrice; horaSaida = fv.hora; break; }
+                        } else {
+                            if (fv.high >= stopPrice) { resultado = 'LOSS'; resCor = '#ef4444'; precoSaida = stopPrice; horaSaida = fv.hora; break; }
+                            if (fv.low <= alvoPrice) { resultado = 'WIN'; resCor = '#22c55e'; precoSaida = alvoPrice; horaSaida = fv.hora; break; }
+                        }
+                    }
+                    if (resultado === 'ABERTO') {
+                        const lastV = velas[velas.length - 1];
+                        precoSaida = lastV.close;
+                        horaSaida = lastV.hora;
+                        const pts = isCompra ? precoSaida - op.preco : op.preco - precoSaida;
+                        resultado = pts > 0 ? 'WIN' : 'LOSS';
+                        resCor = pts > 0 ? '#22c55e' : '#ef4444';
+                    }
+                    
+                    const pts = isCompra ? precoSaida - op.preco : op.preco - precoSaida;
+                    const rs = pts * 0.20;
+                    
+                    opsHtml += '<div style="background:rgba(255,255,255,0.02);border:1px solid ' + cor + '30;border-left:3px solid ' + cor + ';border-radius:6px;padding:10px 12px;margin-bottom:6px;">';
+                    opsHtml += '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;">';
+                    opsHtml += '<div style="display:flex;align-items:center;gap:8px;">';
+                    opsHtml += '<span style="font-size:11px;font-weight:800;color:' + cor + ';background:' + cor + '15;padding:2px 8px;border-radius:4px;">' + op.tipo + '</span>';
+                    opsHtml += '<span style="font-weight:700;font-size:13px;">' + op.hora + '</span>';
+                    opsHtml += '<span style="font-size:11px;color:var(--text-muted);">@ ' + op.preco.toLocaleString('pt-BR') + '</span>';
+                    opsHtml += '<span style="font-size:10px;color:var(--accent-blue);">Score ' + op.score + '</span>';
+                    opsHtml += '</div>';
+                    opsHtml += '<div style="display:flex;align-items:center;gap:8px;">';
+                    opsHtml += '<span style="font-size:18px;font-weight:900;color:' + resCor + ';">' + resultado + '</span>';
+                    opsHtml += '<span style="font-size:12px;font-weight:700;color:' + resCor + ';">' + (pts >= 0 ? '+' : '') + pts.toFixed(0) + 'pts</span>';
+                    opsHtml += '<span style="font-size:11px;color:' + resCor + ';">' + (rs >= 0 ? '+' : '') + 'R$ ' + rs.toFixed(2) + '</span>';
+                    opsHtml += '<span style="font-size:10px;color:var(--text-muted);">saida ' + horaSaida + '</span>';
+                    opsHtml += '</div></div>';
+                    opsHtml += '<div style="font-size:10px;color:var(--text-muted);margin-top:4px;">' + op.motivos.join(' | ') + '</div>';
+                    opsHtml += '</div>';
+                });
+                
+                // Summary
+                const wins = topOps.filter(o => {
+                    const isC = o.tipo === 'COMPRA';
+                    let res = 'ABERTO';
+                    for (let j = o.idx + 1; j < velas.length; j++) {
+                        if (isC && velas[j].low <= (o.preco - 150)) { res = 'LOSS'; break; }
+                        if (isC && velas[j].high >= (o.preco + 300)) { res = 'WIN'; break; }
+                        if (!isC && velas[j].high >= (o.preco + 150)) { res = 'LOSS'; break; }
+                        if (!isC && velas[j].low <= (o.preco - 300)) { res = 'WIN'; break; }
+                    }
+                    return res === 'WIN';
+                }).length;
+                
+                opsHtml += '<div style="background:var(--bg-card);border:1px solid var(--border);border-radius:6px;padding:10px;margin-top:8px;display:flex;justify-content:space-around;text-align:center;">';
+                opsHtml += '<div><div style="font-size:10px;color:var(--text-muted);">Operacoes</div><div style="font-size:18px;font-weight:800;">' + topOps.length + '</div></div>';
+                opsHtml += '<div><div style="font-size:10px;color:var(--text-muted);">Win Rate</div><div style="font-size:18px;font-weight:800;color:#22c55e;">' + Math.round(wins/topOps.length*100) + '%</div></div>';
+                opsHtml += '</div>';
+            } else {
+                opsHtml = '<div style="text-align:center;padding:16px;color:var(--text-muted);">Nenhum setup com score 3+ encontrado no pregao anterior.</div>';
+            }
+        } else {
+            opsHtml = '<div style="text-align:center;padding:16px;color:var(--text-muted);">Sem dados de replay disponiveis.</div>';
+        }
+        document.getElementById('simRealOps').innerHTML = opsHtml;
+        
+    } catch(e) {
+        veredEl.textContent = 'ERRO';
+        veredEl.style.color = '#ef4444';
+        veredSub.textContent = e.message;
+    }
+}
+
+// Safety bar update for Noticias panel
+function updateSafetyBar(seguro, data) {
+    const bar = document.getElementById('notSafetyBar');
+    const icon = document.getElementById('notSafetyIcon');
+    const label = document.getElementById('notSafetyLabel');
+    const detail = document.getElementById('notSafetyDetail');
+    if (!bar) return;
+    
+    if (!seguro) {
+        bar.style.background = 'rgba(239,68,68,0.12)';
+        bar.style.borderColor = '#ef4444';
+        icon.innerHTML = '&#x26D4;';
+        label.textContent = 'NAO OPERE AGORA';
+        label.style.color = '#ef4444';
+        const evts = (data.alerta_eventos || []).map(a => a.evento).join(', ');
+        detail.textContent = 'Evento(s) na zona de impacto: ' + evts + '. Aguarde 15min apos o resultado.';
+    } else {
+        const prox = data.proximos || [];
+        if (prox.length > 0 && prox[0].minutos_restantes && prox[0].minutos_restantes <= 30) {
+            bar.style.background = 'rgba(234,88,12,0.1)';
+            bar.style.borderColor = '#ea580c';
+            icon.innerHTML = '&#x26A0;';
+            label.textContent = 'ATENCAO - EVENTO PROXIMO';
+            label.style.color = '#ea580c';
+            detail.textContent = prox[0].evento + ' (' + prox[0].moeda + ') em ' + prox[0].minutos_restantes + ' minutos. Considere reduzir posicoes.';
+        } else {
+            bar.style.background = 'rgba(34,197,94,0.1)';
+            bar.style.borderColor = '#22c55e';
+            icon.innerHTML = '&#x2705;';
+            label.textContent = 'SEGURO PARA OPERAR';
+            label.style.color = '#22c55e';
+            detail.textContent = 'Nenhum evento de alto impacto nos proximos 30 minutos.';
+        }
+    }
+}
+
 
 </script>
 </body>
