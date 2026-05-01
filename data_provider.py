@@ -85,14 +85,15 @@ class DataProvider:
         except Exception as e:
             logger.error(f"Erro ao obter dados {ativo}/{timeframe}: {e}")
 
-            # Fallback para cache se disponível
+            # Fallback para cache em memoria se disponivel
             if cache_key in self.cache:
                 _, cached_data = self.cache[cache_key]
+                logger.info(f"Usando cache em memoria para {ativo}/{timeframe}")
                 return cached_data
 
-        # Gerar dados simulados como último recurso (para desenvolvimento)
-        logger.warning(f"Usando dados simulados para {ativo}/{timeframe}")
-        return self._gerar_dados_simulados(ativo, timeframe)
+        # Sem dados disponiveis - retorna None (main.py usara cache em disco)
+        logger.warning(f"Sem dados disponiveis para {ativo}/{timeframe}")
+        return None
 
     def _obter_yfinance(self, ativo: str, timeframe: str) -> pd.DataFrame:
         """Obtém dados via yfinance"""
