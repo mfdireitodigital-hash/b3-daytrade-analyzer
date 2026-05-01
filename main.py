@@ -1061,14 +1061,55 @@ async def get_replay(ativo: str = Query("WIN"), contratos: int = Query(1)):
                 w5 = dados_5m.iloc[max(0, pos_idx - 100):pos_idx + 1]
                 a5 = analisar_tf(w5) if len(w5) >= 30 else None
 
-                if a5 and a5["sinais"]:
+                if a5 and (a5["sinais"] or a5.get("tendencia") in ("ALTA", "BAIXA")):
                     # Confirm with 15m and 1h
                     w15 = get_window(dados_15m, ts)
                     w1h = get_window(dados_1h, ts)
                     a15 = analisar_tf(w15) if w15 is not None else None
                     a1h = analisar_tf(w1h) if w1h is not None else None
 
-                    s5 = a5["sinais"][0]
+                    # Use sinal formal if available, otherwise use simplified strategy
+                    if a5["sinais"]:
+                        s5 = a5["sinais"][0]
+                        tipo_5m = s5.tipo
+                    else:
+                        # Estrategia simplificada: RSI + MACD + tendencia
+                        rsi5 = a5.get("rsi", 50)
+                        macd5 = a5.get("macd_hist", 0)
+                        tend5 = a5["tendencia"]
+                        atr_s = calcular_atr_series(w5)
+                        atr_val = float(atr_s.iloc[-1]) if len(atr_s) > 0 else 100
+                        p = a5["preco"]
+                        if tend5 == "ALTA" and rsi5 < 65 and macd5 > 0:
+                            tipo_5m = "COMPRA"
+                            stop_v = round(p - atr_val * 1.5, 2)
+                            alvo_v = round(p + atr_val * 2.0, 2)
+                        elif tend5 == "BAIXA" and rsi5 > 35 and macd5 < 0:
+                            tipo_5m = "VENDA"
+                            stop_v = round(p + atr_val * 1.5, 2)
+                            alvo_v = round(p - atr_val * 2.0, 2)
+                        else:
+                            tipo_5m = None
+                        
+                        if tipo_5m:
+                            from types import SimpleNamespace
+                            s5 = SimpleNamespace(
+                                tipo=tipo_5m, preco_entrada=p,
+                                stop_loss=stop_v, take_profit_1=alvo_v,
+                                confianca=60, motivos=[
+                                    f"5m {tend5}: RSI {rsi5:.0f} + MACD hist {macd5:.1f}",
+                                    f"ATR: {atr_val:.0f} pts | RR: 1:1.3"
+                                ]
+                            )
+                        else:
+                            s5 = None
+                    
+                    if not s5:
+                        vela_data["sinal"] = None
+                        vela_data["posicao_aberta"] = False
+                        velas_info.append(vela_data)
+                        continue
+                    
                     tipo_5m = s5.tipo
 
                     # Confluencia: 15m e 1h devem ter mesma tendencia
