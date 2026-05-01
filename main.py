@@ -1086,38 +1086,88 @@ async def get_replay(ativo: str = Query("WIN"), contratos: int = Query(1)):
                     a15 = analisar_tf(w15) if w15 is not None else None
                     a1h = analisar_tf(w1h) if w1h is not None else None
 
-                    # Use sinal formal if available, otherwise use simplified strategy
+                    # Use sinal formal if available, otherwise use multiple strategies
                     if a5["sinais"]:
                         s5 = a5["sinais"][0]
                         tipo_5m = s5.tipo
                     else:
-                        # Estrategia simplificada: RSI + MACD + tendencia
+                        from types import SimpleNamespace
                         rsi5 = a5.get("rsi", 50)
                         macd5 = a5.get("macd_hist", 0)
-                        tend5 = a5.get("tendencia_raw", a5["tendencia"])  # Use raw trend, ignore lateralization
+                        tend5 = a5.get("tendencia_raw", a5.get("tendencia"))
+                        p = a5["preco"]
                         atr_s = calcular_atr_series(w5)
                         atr_val = float(atr_s.iloc[-1]) if len(atr_s) > 0 else 100
-                        p = a5["preco"]
-                        if tend5 == "ALTA" and rsi5 < 65 and macd5 > 0:
+                        ema9_v = float(w5['close'].ewm(span=9, adjust=False).mean().iloc[-1])
+                        ema21_v = float(w5['close'].ewm(span=21, adjust=False).mean().iloc[-1])
+                        prev_close = float(w5['close'].iloc[-2]) if len(w5) >= 2 else p
+                        prev_low = float(w5['low'].iloc[-2]) if len(w5) >= 2 else p
+                        prev_high = float(w5['high'].iloc[-2]) if len(w5) >= 2 else p
+                        curr_high = float(w5['high'].iloc[-1])
+                        curr_low = float(w5['low'].iloc[-1])
+
+                        tipo_5m = None
+                        motivo_entrada = []
+                        confianca_v = 60
+
+                        # --- ESTRATEGIA 1: Tendencia + RSI + MACD (relaxado) ---
+                        if tend5 == "ALTA" and rsi5 < 70 and macd5 > 0:
                             tipo_5m = "COMPRA"
-                            stop_v = round(p - atr_val * 1.5, 2)
-                            alvo_v = round(p + atr_val * 2.0, 2)
-                        elif tend5 == "BAIXA" and rsi5 > 35 and macd5 < 0:
+                            motivo_entrada = [f"Tendencia ALTA + RSI {rsi5:.0f} + MACD hist {macd5:.1f}"]
+                            confianca_v = 65
+                        elif tend5 == "BAIXA" and rsi5 > 30 and macd5 < 0:
                             tipo_5m = "VENDA"
-                            stop_v = round(p + atr_val * 1.5, 2)
-                            alvo_v = round(p - atr_val * 2.0, 2)
-                        else:
-                            tipo_5m = None
-                        
+                            motivo_entrada = [f"Tendencia BAIXA + RSI {rsi5:.0f} + MACD hist {macd5:.1f}"]
+                            confianca_v = 65
+
+                        # --- ESTRATEGIA 2: Pullback em EMA9 ---
+                        if not tipo_5m and tend5 == "ALTA":
+                            if curr_low <= ema9_v * 1.001 and p > ema9_v and p > prev_close:
+                                tipo_5m = "COMPRA"
+                                motivo_entrada = [f"Pullback EMA9 ({ema9_v:.0f}) + reversao alta"]
+                                confianca_v = 70
+                        if not tipo_5m and tend5 == "BAIXA":
+                            if curr_high >= ema9_v * 0.999 and p < ema9_v and p < prev_close:
+                                tipo_5m = "VENDA"
+                                motivo_entrada = [f"Pullback EMA9 ({ema9_v:.0f}) + reversao baixa"]
+                                confianca_v = 70
+
+                        # --- ESTRATEGIA 3: Rompimento de high/low anterior ---
+                        if not tipo_5m and len(w5) >= 3:
+                            last3_high = float(w5['high'].iloc[-3:-1].max())
+                            last3_low = float(w5['low'].iloc[-3:-1].min())
+                            if p > last3_high and ema9_v > ema21_v:
+                                tipo_5m = "COMPRA"
+                                motivo_entrada = [f"Rompimento alta {last3_high:.0f} + EMA9>EMA21"]
+                                confianca_v = 60
+                            elif p < last3_low and ema9_v < ema21_v:
+                                tipo_5m = "VENDA"
+                                motivo_entrada = [f"Rompimento baixa {last3_low:.0f} + EMA9<EMA21"]
+                                confianca_v = 60
+
+                        # --- ESTRATEGIA 4: RSI extremo (reversao) ---
+                        if not tipo_5m:
+                            if rsi5 < 25 and macd5 > float(calcular_macd(w5)[2].iloc[-2] if len(w5) > 2 else 0):
+                                tipo_5m = "COMPRA"
+                                motivo_entrada = [f"RSI sobrevendido ({rsi5:.0f}) + MACD virando"]
+                                confianca_v = 55
+                            elif rsi5 > 75 and macd5 < float(calcular_macd(w5)[2].iloc[-2] if len(w5) > 2 else 0):
+                                tipo_5m = "VENDA"
+                                motivo_entrada = [f"RSI sobrecomprado ({rsi5:.0f}) + MACD virando"]
+                                confianca_v = 55
+
                         if tipo_5m:
-                            from types import SimpleNamespace
+                            if tipo_5m == "COMPRA":
+                                stop_v = round(p - atr_val * 1.2, 2)
+                                alvo_v = round(p + atr_val * 1.8, 2)
+                            else:
+                                stop_v = round(p + atr_val * 1.2, 2)
+                                alvo_v = round(p - atr_val * 1.8, 2)
+                            motivo_entrada.append(f"ATR: {atr_val:.0f} pts | Stop: {abs(p-stop_v):.0f} | Alvo: {abs(p-alvo_v):.0f} | RR: 1:{abs(p-alvo_v)/abs(p-stop_v):.1f}")
                             s5 = SimpleNamespace(
                                 tipo=tipo_5m, preco_entrada=p,
                                 stop_loss=stop_v, take_profit_1=alvo_v,
-                                confianca=60, motivos=[
-                                    f"5m {tend5}: RSI {rsi5:.0f} + MACD hist {macd5:.1f}",
-                                    f"ATR: {atr_val:.0f} pts | RR: 1:1.3"
-                                ]
+                                confianca=confianca_v, motivos=motivo_entrada
                             )
                         else:
                             s5 = None
@@ -1127,6 +1177,18 @@ async def get_replay(ativo: str = Query("WIN"), contratos: int = Query(1)):
                         vela_data["posicao_aberta"] = False
                         velas_info.append(vela_data)
                         continue
+                    
+                    # Cooldown: espera pelo menos 3 velas apos fechar uma operacao
+                    if operacoes and len(operacoes) > 0:
+                        last_op = operacoes[-1]
+                        last_exit_hora = last_op.get("hora_saida", "")
+                        if last_exit_hora:
+                            exit_idx = next((i for i, v in enumerate(velas_info) if v["hora"] == last_exit_hora), -1)
+                            if exit_idx >= 0 and (len(velas_info) - exit_idx) < 3:
+                                vela_data["sinal"] = None
+                                vela_data["posicao_aberta"] = False
+                                velas_info.append(vela_data)
+                                continue
                     
                     tipo_5m = s5.tipo
 
@@ -1162,8 +1224,11 @@ async def get_replay(ativo: str = Query("WIN"), contratos: int = Query(1)):
                         conf_1h = True
                         motivo_conf.append("1h: Sem dados suficientes")
 
-                    # So entra se ambos confirmam
-                    if conf_15m and conf_1h:
+                    # Confluencia ponderada: 5m obrigatorio, 15m e 1h sao bonus
+                    # Entra se: ambos confirmam, OU 1 confirma e confianca >= 60, OU 5m forte (confianca >= 70)
+                    conf_score = (1 if conf_15m else 0) + (1 if conf_1h else 0)
+                    entra = conf_score == 2 or (conf_score >= 1 and s5.confianca >= 60) or s5.confianca >= 70
+                    if entra:
                         sinal_aqui = {
                             "hora": hora_str,
                             "tipo": tipo_5m,
@@ -1286,6 +1351,288 @@ async def get_replay(ativo: str = Query("WIN"), contratos: int = Query(1)):
     except Exception as e:
         logger.error(f"Erro replay: {e}\n{traceback.format_exc()}")
         return JSONResponse({"erro": f"Erro no replay: {str(e)}"}, status_code=500)
+
+
+
+
+@app.get("/api/replay-velas")
+async def replay_velas(ativo: str = "WIN"):
+    """Retorna todas as velas do dia anterior com indicadores para simulacao manual"""
+    try:
+        provider = app_state["provider"]
+        ticker = "^BVSP" if ativo == "WIN" else "USDBRL=X"
+        contrato = provider.obter_contrato_vigente(ativo)
+        valor_ponto = 0.20 if ativo == "WIN" else 10.00
+
+        dados = yf.download(ticker, period="5d", interval="5m", progress=False)
+        if dados.empty:
+            return JSONResponse({"erro": "Sem dados do yfinance"})
+        
+        if isinstance(dados.columns, pd.MultiIndex):
+            dados.columns = dados.columns.get_level_values(0)
+        dados.columns = [c.lower() for c in dados.columns]
+        
+        from datetime import timezone, timedelta
+        BRT = timezone(timedelta(hours=-3))
+        dados.index = dados.index.tz_convert(BRT)
+        
+        hoje = datetime.now(BRT).date()
+        dates = sorted(set(dados.index.date))
+        dia_anterior = None
+        for d in reversed(dates):
+            if d < hoje:
+                dia_anterior = d
+                break
+        if not dia_anterior:
+            return JSONResponse({"erro": "Dia anterior nao encontrado"})
+        
+        # Get day data
+        day_mask = dados.index.date == dia_anterior
+        day_data = dados[day_mask]
+        
+        # Calculate indicators for each candle
+        from analysis_engine import calcular_rsi, calcular_macd, calcular_atr_series
+        import math
+        
+        velas = []
+        all_indices = list(range(len(dados)))
+        day_indices = [i for i, d in enumerate(dados.index.date) if d == dia_anterior]
+        
+        for pos_idx in day_indices:
+            w = dados.iloc[max(0, pos_idx - 100):pos_idx + 1]
+            vela = dados.iloc[pos_idx]
+            ts = dados.index[pos_idx]
+            
+            rsi_v = None
+            macd_v = None
+            ema9_v = None
+            ema21_v = None
+            atr_v = None
+            tend = "N/A"
+            
+            if len(w) >= 20:
+                try:
+                    rsi_s = calcular_rsi(w)
+                    rsi_v = round(float(rsi_s.iloc[-1]), 1)
+                    ml, ms, mh = calcular_macd(w)
+                    macd_v = round(float(mh.iloc[-1]), 1)
+                    ema9_v = round(float(w['close'].ewm(span=9, adjust=False).mean().iloc[-1]), 0)
+                    ema21_v = round(float(w['close'].ewm(span=21, adjust=False).mean().iloc[-1]), 0)
+                    atr_s = calcular_atr_series(w)
+                    atr_v = round(float(atr_s.iloc[-1]), 0) if len(atr_s) > 0 else None
+                    
+                    p = float(vela['close'])
+                    if ema9_v > ema21_v and p > ema9_v:
+                        tend = "ALTA"
+                    elif ema9_v < ema21_v and p < ema9_v:
+                        tend = "BAIXA"
+                    elif ema9_v > ema21_v:
+                        tend = "ALTA"
+                    elif ema9_v < ema21_v:
+                        tend = "BAIXA"
+                    else:
+                        tend = "LATERAL"
+                except:
+                    pass
+            
+            velas.append({
+                "idx": len(velas),
+                "hora": ts.strftime("%H:%M"),
+                "open": round(float(vela['open']), 2),
+                "high": round(float(vela['high']), 2),
+                "low": round(float(vela['low']), 2),
+                "close": round(float(vela['close']), 2),
+                "volume": int(vela.get('volume', 0)),
+                "rsi": rsi_v,
+                "macd_hist": macd_v,
+                "ema9": ema9_v,
+                "ema21": ema21_v,
+                "atr": atr_v,
+                "tendencia": tend,
+                "variacao": round(float(vela['close']) - float(vela['open']), 2),
+            })
+        
+        mercado = {
+            "abertura": velas[0]["open"] if velas else 0,
+            "fechamento": velas[-1]["close"] if velas else 0,
+            "high": max(v["high"] for v in velas) if velas else 0,
+            "low": min(v["low"] for v in velas) if velas else 0,
+        }
+        mercado["amplitude_pts"] = round(mercado["high"] - mercado["low"], 0)
+        mercado["variacao_pct"] = round((mercado["fechamento"] / mercado["abertura"] - 1) * 100, 2)
+        
+        return JSONResponse({
+            "dia": dia_anterior.strftime("%d/%m/%Y"),
+            "ativo": ativo,
+            "contrato": contrato["codigo"],
+            "valor_ponto": valor_ponto,
+            "mercado": mercado,
+            "total_velas": len(velas),
+            "velas": velas,
+        })
+    except Exception as e:
+        logger.error(f"Erro replay-velas: {e}")
+        return JSONResponse({"erro": str(e)}, status_code=500)
+
+
+@app.post("/api/simular-entrada")
+async def simular_entrada(request: Request):
+    """Simula uma entrada manual do usuario: recebe vela, tipo, stop, alvo e calcula resultado"""
+    try:
+        body = await request.json()
+        ativo = body.get("ativo", "WIN")
+        vela_idx = body.get("vela_idx")  # indice da vela no dia
+        tipo = body.get("tipo")  # COMPRA ou VENDA
+        stop_pts = body.get("stop_pts", 200)  # stop em pontos
+        alvo_pts = body.get("alvo_pts", 300)  # alvo em pontos
+        contratos = body.get("contratos", 1)
+        
+        if vela_idx is None or tipo not in ("COMPRA", "VENDA"):
+            return JSONResponse({"erro": "Parametros invalidos: vela_idx e tipo (COMPRA/VENDA) obrigatorios"})
+        
+        valor_ponto = 0.20 if ativo == "WIN" else 10.00
+        ticker = "^BVSP" if ativo == "WIN" else "USDBRL=X"
+        
+        dados = yf.download(ticker, period="5d", interval="5m", progress=False)
+        if dados.empty:
+            return JSONResponse({"erro": "Sem dados"})
+        
+        if isinstance(dados.columns, pd.MultiIndex):
+            dados.columns = dados.columns.get_level_values(0)
+        dados.columns = [c.lower() for c in dados.columns]
+        
+        from datetime import timezone, timedelta
+        BRT = timezone(timedelta(hours=-3))
+        dados.index = dados.index.tz_convert(BRT)
+        
+        hoje = datetime.now(BRT).date()
+        dates = sorted(set(dados.index.date))
+        dia_anterior = None
+        for d in reversed(dates):
+            if d < hoje:
+                dia_anterior = d
+                break
+        
+        day_indices = [i for i, d in enumerate(dados.index.date) if d == dia_anterior]
+        
+        if vela_idx < 0 or vela_idx >= len(day_indices):
+            return JSONResponse({"erro": f"vela_idx invalido: {vela_idx}, max: {len(day_indices)-1}"})
+        
+        # Entry candle
+        entry_global_idx = day_indices[vela_idx]
+        entry_vela = dados.iloc[entry_global_idx]
+        preco_entrada = float(entry_vela['close'])
+        hora_entrada = dados.index[entry_global_idx].strftime("%H:%M")
+        
+        # Calculate stop and target
+        if tipo == "COMPRA":
+            stop_loss = round(preco_entrada - stop_pts, 2)
+            take_profit = round(preco_entrada + alvo_pts, 2)
+        else:
+            stop_loss = round(preco_entrada + stop_pts, 2)
+            take_profit = round(preco_entrada - alvo_pts, 2)
+        
+        # Simulate forward vela by vela
+        resultado = None
+        hora_saida = None
+        preco_saida = None
+        velas_na_operacao = 0
+        max_favoravel = 0
+        max_adverso = 0
+        caminho = []
+        
+        for future_idx in day_indices[vela_idx + 1:]:
+            vela_f = dados.iloc[future_idx]
+            h = float(vela_f['high'])
+            l = float(vela_f['low'])
+            c = float(vela_f['close'])
+            hora_f = dados.index[future_idx].strftime("%H:%M")
+            velas_na_operacao += 1
+            
+            if tipo == "COMPRA":
+                favoravel = h - preco_entrada
+                adverso = preco_entrada - l
+                if l <= stop_loss:
+                    resultado = "LOSS"
+                    preco_saida = stop_loss
+                    hora_saida = hora_f
+                    break
+                elif h >= take_profit:
+                    resultado = "WIN"
+                    preco_saida = take_profit
+                    hora_saida = hora_f
+                    break
+            else:
+                favoravel = preco_entrada - l
+                adverso = h - preco_entrada
+                if h >= stop_loss:
+                    resultado = "LOSS"
+                    preco_saida = stop_loss
+                    hora_saida = hora_f
+                    break
+                elif l <= take_profit:
+                    resultado = "WIN"
+                    preco_saida = take_profit
+                    hora_saida = hora_f
+                    break
+            
+            max_favoravel = max(max_favoravel, favoravel)
+            max_adverso = max(max_adverso, adverso)
+            caminho.append({"hora": hora_f, "close": round(c, 2), "favoravel": round(favoravel, 1), "adverso": round(adverso, 1)})
+        
+        # Se nao bateu stop nem alvo, fecha no ultimo preco
+        if resultado is None:
+            last_vela = dados.iloc[day_indices[-1]]
+            preco_saida = float(last_vela['close'])
+            hora_saida = dados.index[day_indices[-1]].strftime("%H:%M")
+            if tipo == "COMPRA":
+                pts = preco_saida - preco_entrada
+            else:
+                pts = preco_entrada - preco_saida
+            resultado = "WIN" if pts > 0 else "LOSS"
+            fechou_forcado = True
+        else:
+            fechou_forcado = False
+        
+        if tipo == "COMPRA":
+            pts = round(preco_saida - preco_entrada, 1)
+        else:
+            pts = round(preco_entrada - preco_saida, 1)
+        
+        resultado_rs = round(pts * valor_ponto * contratos, 2)
+        rr = round(alvo_pts / stop_pts, 1) if stop_pts > 0 else 0
+        
+        return JSONResponse({
+            "entrada": {
+                "tipo": tipo,
+                "preco": preco_entrada,
+                "hora": hora_entrada,
+                "stop_loss": stop_loss,
+                "take_profit": take_profit,
+                "stop_pts": stop_pts,
+                "alvo_pts": alvo_pts,
+                "rr": rr,
+            },
+            "saida": {
+                "preco": preco_saida,
+                "hora": hora_saida,
+                "resultado": resultado,
+                "pts": pts,
+                "resultado_rs": resultado_rs,
+                "velas_na_operacao": velas_na_operacao,
+                "fechamento_forcado": fechou_forcado,
+            },
+            "detalhes": {
+                "max_favoravel_pts": round(max_favoravel, 1),
+                "max_adverso_pts": round(max_adverso, 1),
+                "caminho": caminho[-10:] if len(caminho) > 10 else caminho,
+            },
+            "contratos": contratos,
+            "valor_ponto": valor_ponto,
+        })
+    except Exception as e:
+        logger.error(f"Erro simular-entrada: {e}")
+        return JSONResponse({"erro": str(e)}, status_code=500)
 
 
 @app.get("/api/preco-realtime")
