@@ -100,7 +100,7 @@ class AlterarSenhaRequest(BaseModel):
 
 
 def converter_numpy(obj):
-    """Converte tipos numpy/pandas para tipos Python nativos serializáveis em JSON"""
+    """Converte tipos numpy/pandas para tipos Python nativos serializaveis em JSON"""
     if isinstance(obj, dict):
         return {k: converter_numpy(v) for k, v in obj.items()}
     elif isinstance(obj, (list, tuple)):
@@ -284,9 +284,9 @@ async def get_analise(
     try:
         ativo = ativo.upper()
         if ativo not in ATIVOS:
-            return JSONResponse({"erro": f"Ativo inválido. Use: {ATIVOS}"}, status_code=400)
+            return JSONResponse({"erro": f"Ativo invalido. Use: {ATIVOS}"}, status_code=400)
         if timeframe not in TIMEFRAMES:
-            return JSONResponse({"erro": f"Timeframe inválido. Use: {TIMEFRAMES}"}, status_code=400)
+            return JSONResponse({"erro": f"Timeframe invalido. Use: {TIMEFRAMES}"}, status_code=400)
 
         analise = app_state["analises"].get(ativo, {}).get(timeframe)
         if not analise:
@@ -294,19 +294,15 @@ async def get_analise(
                 logger.info(f"Analise on-the-fly para {ativo}/{timeframe}...")
                 dados = await app_state["provider"].obter_dados(ativo, timeframe)
                 if dados is not None and len(dados) >= 30:
-                    logger.info(f"Dados obtidos: {len(dados)} candles, cols={list(dados.columns)}")
                     analise = analisar_completo(dados, timeframe, ativo)
                     analise = converter_numpy(analise)
-                    logger.info(f"Analise completa: {list(analise.keys()) if isinstance(analise, dict) else type(analise)}")
                 else:
-                    logger.warning(f"Dados insuficientes: {len(dados) if dados is not None else 'None'}")
                     analise = {"erro": "Dados insuficientes"}
             except Exception as e:
                 tb = traceback.format_exc()
                 logger.error(f"Erro analise on-the-fly: {tb}")
                 return JSONResponse({"erro": str(e), "traceback": tb}, status_code=500)
 
-        # Serializar com segurança
         response_data = {
             "ultima_atualizacao": app_state["ultima_atualizacao"],
             "analise": analise,
@@ -315,83 +311,46 @@ async def get_analise(
             "mercado_aberto": mercado_aberto(),
             "preco_realtime": app_state.get("preco_realtime", {}).get(ativo, {}),
         }
-
-        # Test serialization
         try:
             json.dumps(response_data, default=str)
-        except Exception as json_err:
-            logger.error(f"Erro serialização JSON: {json_err}")
-            # Force convert everything
+        except Exception:
             response_data["analise"] = json.loads(json.dumps(converter_numpy(analise), default=str))
-
         return JSONResponse(response_data)
-
     except Exception as e:
         tb = traceback.format_exc()
         logger.error(f"Erro geral /api/analise: {tb}")
         return JSONResponse({"erro": str(e), "traceback": tb}, status_code=500)
 
 
-
 @app.get("/api/debug")
 async def debug_analise():
-    """Endpoint de debug para diagnosticar erros de análise"""
     resultado = {"steps": [], "errors": []}
     try:
-        # Step 1: Check provider
-        resultado["steps"].append("1. Provider inicializado: " + str(app_state["provider"] is not None))
-
-        # Step 2: Try to get data
+        resultado["steps"].append("1. Provider: " + str(app_state["provider"] is not None))
+        dados = None
         try:
             dados = await app_state["provider"].obter_dados("WIN", "5m")
             if dados is not None:
-                resultado["steps"].append(f"2. Dados obtidos: {len(dados)} candles")
-                resultado["steps"].append(f"   Colunas: {list(dados.columns)}")
-                resultado["steps"].append(f"   Index type: {type(dados.index).__name__}")
-                resultado["steps"].append(f"   Index tz: {dados.index.tz if hasattr(dados.index, 'tz') else 'None'}")
-                resultado["steps"].append(f"   Dtypes: {dados.dtypes.to_dict()}")
-                resultado["steps"].append(f"   Last close: {dados['close'].iloc[-1]}")
-                resultado["steps"].append(f"   Close dtype: {dados['close'].dtype}")
+                resultado["steps"].append(f"2. Dados: {len(dados)} candles")
+                resultado["steps"].append(f"   Close dtype: {dados['close'].dtype}, last={dados['close'].iloc[-1]}")
             else:
                 resultado["steps"].append("2. Dados: None")
-        except Exception as e:
-            resultado["errors"].append(f"Step 2 error: {traceback.format_exc()}")
-
-        # Step 3: Try analysis
+        except Exception:
+            resultado["errors"].append(f"Step 2: {traceback.format_exc()}")
         if dados is not None and len(dados) >= 30:
             try:
                 analise = analisar_completo(dados, "5m", "WIN")
-                resultado["steps"].append(f"3. Analise OK: {list(analise.keys())[:10]}")
-                resultado["steps"].append(f"   Preco: {analise.get('preco_atual')}")
-                resultado["steps"].append(f"   Tendencia: {analise.get('tendencia')}")
-                resultado["steps"].append(f"   Candles count: {len(analise.get('candles', []))}")
-            except Exception as e:
-                resultado["errors"].append(f"Step 3 error: {traceback.format_exc()}")
-
-            # Step 4: Try numpy conversion
-            try:
+                resultado["steps"].append(f"3. Analise OK: preco={analise.get('preco_atual')}")
                 converted = converter_numpy(analise)
                 resultado["steps"].append("4. converter_numpy OK")
-            except Exception as e:
-                resultado["errors"].append(f"Step 4 error: {traceback.format_exc()}")
-
-            # Step 5: Try JSON serialization
-            try:
                 json_str = json.dumps(converted, default=str)
                 resultado["steps"].append(f"5. JSON OK ({len(json_str)} bytes)")
-            except Exception as e:
-                resultado["errors"].append(f"Step 5 error: {traceback.format_exc()}")
-
-        # Step 6: Check cached analyses
+            except Exception:
+                resultado["errors"].append(f"Step 3-5: {traceback.format_exc()}")
         cached = app_state["analises"]
-        resultado["steps"].append(f"6. Cache: {list(cached.keys())} timeframes: {[list(v.keys()) for v in cached.values()]}")
-
-        # Step 7: Check preco_realtime
-        resultado["steps"].append(f"7. Preco RT: {app_state.get('preco_realtime', {})}")
-
-    except Exception as e:
-        resultado["errors"].append(f"General error: {traceback.format_exc()}")
-
+        resultado["steps"].append(f"6. Cache: {list(cached.keys())}")
+    except Exception:
+        resultado["errors"].append(f"General: {traceback.format_exc()}")
     return JSONResponse(resultado)
 
 
@@ -829,4 +788,18 @@ def _calcular_tendencia_geral(painel: dict) -> str:
     return "LATERAL"
 
 
-def _sinal_principal(pain
+def _sinal_principal(painel: dict) -> dict:
+    analise_5m = painel.get("5m", {})
+    sinais = analise_5m.get("sinais", [])
+
+    if sinais:
+        melhor = max(sinais, key=lambda s: s.get("confianca", 0))
+        return melhor
+
+    return {"tipo": "NEUTRO", "confianca": 0, "motivos": ["Sem sinais claros no momento"]}
+
+
+if __name__ == "__main__":
+    import uvicorn
+    port = int(os.getenv("PORT", 8080))
+    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=True)
