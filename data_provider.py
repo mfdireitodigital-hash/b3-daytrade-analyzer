@@ -23,20 +23,97 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# Mapeamento de ativos B3
+# Mapeamento de meses B3 (código de vencimento)
+MESES_B3 = {
+    1: "F", 2: "G", 3: "H", 4: "J", 5: "K", 6: "M",
+    7: "N", 8: "Q", 9: "U", 10: "V", 11: "X", 12: "Z"
+}
+
+# WIN vence na quarta-feira mais próxima do dia 15 dos meses pares (G, J, M, Q, V, Z)
+# WDO vence no 1o dia útil de cada mês
+VENCIMENTOS_WIN = ["G", "J", "M", "Q", "V", "Z"]  # Fev, Abr, Jun, Ago, Out, Dez
+
+
+def obter_contrato_vigente(ativo: str) -> dict:
+    """Detecta automaticamente o contrato vigente baseado na data atual e calendário B3"""
+    from datetime import datetime, timedelta
+    hoje = datetime.now()
+    mes = hoje.month
+    ano = hoje.year % 100  # 26 para 2026
+
+    if ativo == "WIN":
+        # WIN vence nos meses pares (G=Fev, J=Abr, M=Jun, Q=Ago, V=Out, Z=Dez)
+        # Após o vencimento do mês par atual, rola para o próximo
+        meses_venc = [2, 4, 6, 8, 10, 12]
+        proximo_venc = None
+        for m in meses_venc:
+            if m >= mes:
+                # Se estamos no mês de vencimento, verificar se já passou dia 15
+                if m == mes and hoje.day > 18:  # margem de segurança após vencimento
+                    continue
+                proximo_venc = m
+                break
+        if proximo_venc is None:
+            # Passou dezembro, vai para fevereiro do próximo ano
+            proximo_venc = 2
+            ano += 1
+
+        letra = MESES_B3[proximo_venc]
+        ticker_b3 = f"WIN{letra}{ano}"
+        ticker_yf = "^BVSP"  # Ibovespa como proxy
+        return {
+            "ticker_b3": ticker_b3,
+            "yfinance": ticker_yf,
+            "nome": f"Mini-Índice ({ticker_b3})",
+            "tick": 5,
+            "valor_tick": 0.20,
+            "contrato": ticker_b3,
+            "vencimento_mes": proximo_venc,
+            "vencimento_ano": 2000 + ano,
+        }
+
+    elif ativo == "WDO":
+        # WDO vence no 1o dia útil de cada mês
+        # Se já passou o 1o dia útil, rola para o próximo mês
+        proximo_mes = mes
+        proximo_ano = ano
+        if hoje.day > 3:  # margem - após dia 3 já rolou
+            proximo_mes = mes + 1
+            if proximo_mes > 12:
+                proximo_mes = 1
+                proximo_ano += 1
+
+        letra = MESES_B3[proximo_mes]
+        ticker_b3 = f"WDO{letra}{proximo_ano}"
+        ticker_yf = "BRL=X"  # USD/BRL como proxy
+        return {
+            "ticker_b3": ticker_b3,
+            "yfinance": ticker_yf,
+            "nome": f"Mini-Dólar ({ticker_b3})",
+            "tick": 0.5,
+            "valor_tick": 10.00,
+            "contrato": ticker_b3,
+            "vencimento_mes": proximo_mes,
+            "vencimento_ano": 2000 + proximo_ano,
+        }
+
+    return {"ticker_b3": ativo, "yfinance": ativo, "nome": ativo, "tick": 1, "valor_tick": 1.0, "contrato": ativo}
+
+
+# Mapeamento de ativos B3 (agora dinâmico via obter_contrato_vigente)
 ATIVOS_B3 = {
     "WIN": {
-        "yfinance": "^BVSP",  # Usa Ibovespa como proxy
+        "yfinance": "^BVSP",
         "nome": "Mini-Índice (WIN)",
-        "tick": 5,  # Tamanho do tick em pontos
-        "valor_tick": 0.20,  # Valor financeiro por tick
+        "tick": 5,
+        "valor_tick": 0.20,
         "contrato": "WINFUT",
     },
     "WDO": {
-        "yfinance": "BRL=X",  # Usa USD/BRL como proxy
+        "yfinance": "BRL=X",
         "nome": "Mini-Dólar (WDO)",
         "tick": 0.5,
-        "valor_tick": 5.00,
+        "valor_tick": 10.00,
         "contrato": "WDOFUT",
     }
 }
@@ -60,6 +137,33 @@ class DataProvider:
         self.cache_ttl = 60  # segundos
         self.bridge_url = os.getenv("BRIDGE_URL", "http://localhost:8081")
         self.brapi_token = os.getenv("BRAPI_TOKEN", "")
+        # Detectar contratos vigentes automaticamente
+        self.contratos = {}
+        for ativo in ["WIN", "WDO"]:
+            self.contratos[ativo] = obter_contrato_vigente(ativo)
+            logger.info(f"Contrato vigente {ativo}: {self.contratos[ativo]['ticker_b3']}")
+
+    def get_contrato_info(self, ativo: str) -> dict:
+        """Retorna informações do contrato vigente"""
+        return self.contratos.get(ativo, obter_contrato_vigente(ativo))
+
+    async def obter_candles_json(self, ativo: str, timeframe: str) -> list:
+        """Retorna candles em formato JSON para gráficos frontend"""
+        dados = await self.obter_dados(ativo, timeframe)
+        if dados is None or dados.empty:
+            return []
+        candles = []
+        for idx, row in dados.iterrows():
+            ts = idx.isoformat() if hasattr(idx, 'isoformat') else str(idx)
+            candles.append({
+                "time": ts,
+                "open": round(float(row["open"]), 2),
+                "high": round(float(row["high"]), 2),
+                "low": round(float(row["low"]), 2),
+                "close": round(float(row["close"]), 2),
+                "volume": int(row.get("volume", 0)),
+            })
+        return candles
 
     async def obter_dados(self, ativo: str, timeframe: str) -> pd.DataFrame:
         """Obtém dados de mercado para o ativo e timeframe especificados"""
