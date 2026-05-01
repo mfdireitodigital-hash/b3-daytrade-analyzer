@@ -1,14 +1,14 @@
 """
 B3 Day Trade Analyzer - API Principal
-FastAPI backend com analise automatica a cada 5 minutos.
-Cache persistente: mostra dados do ultimo pregao fora do horario.
+FastAPI backend com análise automática a cada 5 minutos.
+Cache persistente: mostra dados do último pregão fora do horário.
 
 Endpoints:
-  GET /              -> Dashboard web
-  GET /api/analise   -> Analise completa (ativo, timeframe)
-  GET /api/painel    -> Painel multi-timeframe
-  GET /api/sinais    -> Sinais ativos de entrada
-  GET /api/status    -> Status do sistema
+  GET /              → Dashboard web
+  GET /api/analise   → Análise completa (ativo, timeframe)
+  GET /api/painel    → Painel multi-timeframe
+  GET /api/sinais    → Sinais ativos de entrada
+  GET /api/status    → Status do sistema
 """
 
 import os
@@ -25,6 +25,8 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from dotenv import load_dotenv
 
+import numpy as np
+
 from analysis_engine import analisar_completo
 from data_provider import DataProvider
 
@@ -33,14 +35,14 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Fuso horario de Brasilia (UTC-3)
+# Fuso horário de Brasília (UTC-3)
 BRT = timezone(timedelta(hours=-3))
 
 # Caminho do cache persistente
 APP_DIR = Path(os.path.dirname(os.path.abspath(__file__)))
 CACHE_FILE = APP_DIR / "cache_analises.json"
 
-# Estado global da aplicacao
+# Estado global da aplicação
 app_state = {
     "ultima_atualizacao": None,
     "analises": {},
@@ -54,8 +56,25 @@ TIMEFRAMES = ["5m", "15m", "1h", "4h", "1d"]
 ATIVOS = ["WIN", "WDO"]
 
 
+def converter_numpy(obj):
+    """Converte tipos numpy para tipos Python nativos para serialização JSON"""
+    if isinstance(obj, dict):
+        return {k: converter_numpy(v) for k, v in obj.items()}
+    elif isinstance(obj, (list, tuple)):
+        return [converter_numpy(item) for item in obj]
+    elif isinstance(obj, (np.integer,)):
+        return int(obj)
+    elif isinstance(obj, (np.floating,)):
+        return float(obj)
+    elif isinstance(obj, (np.bool_,)):
+        return bool(obj)
+    elif isinstance(obj, np.ndarray):
+        return obj.tolist()
+    return obj
+
+
 def mercado_aberto() -> bool:
-    """Verifica se o mercado B3 esta aberto (9:00-18:00 BRT, seg-sex)"""
+    """Verifica se o mercado B3 está aberto (9:00-18:00 BRT, seg-sex)"""
     agora = datetime.now(BRT)
     if agora.weekday() >= 5:
         return False
@@ -65,7 +84,7 @@ def mercado_aberto() -> bool:
 
 
 def salvar_cache(analises: dict, timestamp: str):
-    """Salva analises bem-sucedidas em arquivo JSON para persistencia"""
+    """Salva análises bem-sucedidas em arquivo JSON para persistência"""
     try:
         cache_data = {
             "timestamp": timestamp,
@@ -80,7 +99,7 @@ def salvar_cache(analises: dict, timestamp: str):
 
 
 def carregar_cache() -> bool:
-    """Carrega analises do cache em disco. Retorna True se carregou."""
+    """Carrega análises do cache em disco. Retorna True se carregou."""
     try:
         if CACHE_FILE.exists():
             with open(CACHE_FILE, "r", encoding="utf-8") as f:
@@ -89,7 +108,7 @@ def carregar_cache() -> bool:
             app_state["ultima_atualizacao"] = cache_data.get("timestamp")
             app_state["cache_data_pregao"] = cache_data.get("data_pregao")
             app_state["usando_cache"] = True
-            logger.info(f"Cache carregado: pregao de {app_state['cache_data_pregao']}")
+            logger.info(f"Cache carregado: pregão de {app_state['cache_data_pregao']}")
             return True
     except Exception as e:
         logger.error(f"Erro ao carregar cache: {e}")
@@ -97,7 +116,7 @@ def carregar_cache() -> bool:
 
 
 async def atualizar_analises():
-    """Atualiza todas as analises para todos os ativos e timeframes"""
+    """Atualiza todas as análises para todos os ativos e timeframes"""
     provider = app_state["provider"]
     resultados = {}
     tem_dados_validos = False
@@ -109,13 +128,14 @@ async def atualizar_analises():
                 dados = await provider.obter_dados(ativo, tf)
                 if dados is not None and len(dados) >= 30:
                     analise = analisar_completo(dados, tf, ativo)
+                    analise = converter_numpy(analise)
                     resultados[ativo][tf] = analise
                     tem_dados_validos = True
-                    logger.info(f"Analise atualizada: {ativo}/{tf}")
+                    logger.info(f"Análise atualizada: {ativo}/{tf}")
                 else:
                     resultados[ativo][tf] = {"erro": "Dados insuficientes"}
             except Exception as e:
-                logger.error(f"Erro na analise {ativo}/{tf}: {e}")
+                logger.error(f"Erro na análise {ativo}/{tf}: {e}")
                 resultados[ativo][tf] = {"erro": str(e)}
 
     if tem_dados_validos:
@@ -124,15 +144,15 @@ async def atualizar_analises():
         app_state["usando_cache"] = False
         app_state["cache_data_pregao"] = None
         salvar_cache(resultados, app_state["ultima_atualizacao"])
-        logger.info(f"Analises atualizadas em {app_state['ultima_atualizacao']}")
+        logger.info(f"Análises atualizadas em {app_state['ultima_atualizacao']}")
     else:
         if not app_state["analises"] or app_state["usando_cache"]:
             carregar_cache()
-            logger.info("Sem dados novos, mantendo cache do ultimo pregao")
+            logger.info("Sem dados novos, mantendo cache do último pregão")
 
 
 async def auto_refresh_loop():
-    """Loop de atualizacao automatica - inteligente com horario de mercado"""
+    """Loop de atualização automática - inteligente com horário de mercado"""
     while True:
         try:
             if mercado_aberto():
@@ -141,7 +161,7 @@ async def auto_refresh_loop():
             else:
                 if not app_state["analises"]:
                     carregar_cache()
-                logger.info("Mercado fechado - usando cache do ultimo pregao")
+                logger.info("Mercado fechado - usando cache do último pregão")
         except Exception as e:
             logger.error(f"Erro no auto-refresh: {e}")
         await asyncio.sleep(300)
@@ -160,9 +180,9 @@ async def lifespan(app: FastAPI):
         logger.info("Mercado aberto, buscando dados atualizados...")
         await atualizar_analises()
     elif cache_ok:
-        logger.info(f"Mercado fechado - exibindo dados do pregao de {app_state['cache_data_pregao']}")
+        logger.info(f"Mercado fechado - exibindo dados do pregão de {app_state['cache_data_pregao']}")
     else:
-        logger.info("Sem cache disponivel, tentando buscar dados historicos...")
+        logger.info("Sem cache disponível, tentando buscar dados históricos...")
         await atualizar_analises()
 
     app_state["auto_refresh_task"] = asyncio.create_task(auto_refresh_loop())
@@ -176,8 +196,8 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="B3 Day Trade Analyzer",
-    description="Analise tecnica em tempo real para Mini-Indice e Mini-Dolar da B3",
-    version="1.1.0",
+    description="Análise técnica em tempo real para Mini-Índice e Mini-Dólar da B3",
+    version="1.2.0",
     lifespan=lifespan
 )
 
@@ -188,7 +208,7 @@ templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
 
 @app.get("/", response_class=HTMLResponse)
 async def dashboard(request: Request):
-    """Pagina principal do dashboard"""
+    """Página principal do dashboard"""
     return templates.TemplateResponse("dashboard.html", {"request": request})
 
 
@@ -197,12 +217,12 @@ async def get_analise(
     ativo: str = Query("WIN", description="Ativo: WIN ou WDO"),
     timeframe: str = Query("5m", description="Timeframe: 5m, 15m, 1h, 4h, 1d")
 ):
-    """Retorna analise completa para um ativo e timeframe"""
+    """Retorna análise completa para um ativo e timeframe"""
     ativo = ativo.upper()
     if ativo not in ATIVOS:
-        return JSONResponse({"erro": f"Ativo invalido. Use: {ATIVOS}"}, status_code=400)
+        return JSONResponse({"erro": f"Ativo inválido. Use: {ATIVOS}"}, status_code=400)
     if timeframe not in TIMEFRAMES:
-        return JSONResponse({"erro": f"Timeframe invalido. Use: {TIMEFRAMES}"}, status_code=400)
+        return JSONResponse({"erro": f"Timeframe inválido. Use: {TIMEFRAMES}"}, status_code=400)
 
     analise = app_state["analises"].get(ativo, {}).get(timeframe)
     if not analise:
@@ -210,6 +230,7 @@ async def get_analise(
             dados = await app_state["provider"].obter_dados(ativo, timeframe)
             if dados is not None and len(dados) >= 30:
                 analise = analisar_completo(dados, timeframe, ativo)
+                analise = converter_numpy(analise)
         except Exception as e:
             return JSONResponse({"erro": str(e)}, status_code=500)
 
@@ -229,7 +250,7 @@ async def get_painel(
     """Retorna painel multi-timeframe completo para um ativo"""
     ativo = ativo.upper()
     if ativo not in ATIVOS:
-        return JSONResponse({"erro": "Ativo invalido"}, status_code=400)
+        return JSONResponse({"erro": f"Ativo inválido"}, status_code=400)
 
     painel = app_state["analises"].get(ativo, {})
 
@@ -303,7 +324,7 @@ async def get_status():
         "ativos_monitorados": ATIVOS,
         "timeframes": TIMEFRAMES,
         "intervalo_refresh": "5 minutos",
-        "versao": "1.1.0",
+        "versao": "1.2.0",
         "mercado_aberto": mercado_aberto(),
         "usando_cache": app_state["usando_cache"],
         "cache_data_pregao": app_state["cache_data_pregao"],
@@ -312,16 +333,16 @@ async def get_status():
 
 @app.post("/api/forcar-atualizacao")
 async def forcar_atualizacao():
-    """Forca uma atualizacao imediata de todas as analises"""
+    """Força uma atualização imediata de todas as análises"""
     await atualizar_analises()
     return JSONResponse({
-        "mensagem": "Analises atualizadas com sucesso",
+        "mensagem": "Análises atualizadas com sucesso",
         "ultima_atualizacao": app_state["ultima_atualizacao"]
     })
 
 
 def _calcular_tendencia_geral(painel: dict) -> str:
-    """Calcula tendencia geral baseada em multiplos timeframes"""
+    """Calcula tendência geral baseada em múltiplos timeframes"""
     pesos = {"5m": 1, "15m": 2, "1h": 3, "4h": 4, "1d": 5}
     score = 0
     total_peso = 0
