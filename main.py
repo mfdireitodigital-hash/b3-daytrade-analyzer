@@ -18,11 +18,12 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 from dotenv import load_dotenv
+import pandas as pd
+import yfinance as yf
 import random
 import hashlib
 
 import numpy as np
-import pandas as pd
 import traceback
 
 from analysis_engine import analisar_completo
