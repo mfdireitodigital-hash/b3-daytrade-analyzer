@@ -1130,9 +1130,6 @@ def analisar_completo(dados: pd.DataFrame, timeframe: str, ativo: str) -> dict:
         "atr": round(float(atr_atual), 2),
         "lateralizacao": lateralizacao,
         "pullback": pullback_info,
-        "horario_operacional": {
-            "janela_1": "09:05 - 11:30",
-            "janela_2": "14:00 - 16:30",
-            "aviso": "Evitar primeiros 5 min e horários de notícias",
-        },
+        "horario_operacional": horario_op,
+        "gestao_risco": gestao.status_completo(),
     }
