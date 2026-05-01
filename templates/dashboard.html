@@ -734,6 +734,15 @@ function carregarContratos() {
 // AUTO-LOGIN ON PAGE LOAD
 // =====================================================
 window.addEventListener('DOMContentLoaded', function() {
+    // Clear corrupted sessions
+    try {
+        const raw = localStorage.getItem('b3_sessao');
+        if (raw) {
+            const s = JSON.parse(raw);
+            if (!s.usuario || !s.timestamp) { localStorage.removeItem('b3_sessao'); }
+        }
+    } catch(e) { localStorage.removeItem('b3_sessao'); }
+
     // Load saved contracts
     state.numContratos = carregarContratos();
     const numInput = document.getElementById('numContratos');
@@ -790,7 +799,7 @@ async function fazerLogin() {
             salvarSessao(data.usuario, data.admin);
             entrarDashboard();
         } else {
-            errorEl.textContent = data.mensagem || 'Usuario ou senha invalidos';
+            errorEl.textContent = data.mensagem || 'Usuario ou senha invalidos'; limparSessao();
             btn.textContent = 'ENTRAR';
             btn.disabled = false;
         }
@@ -956,11 +965,7 @@ function ptCheckMarket() {
         el.className = 'pt-market-status closed';
         el.innerHTML = '<div class="status-dot offline"></div><span>MERCADO FECHADO</span>';
     }
-    // Enable/disable trade buttons based on market
-    const btnBuy = document.getElementById('ptBtnBuy');
-    const btnSell = document.getElementById('ptBtnSell');
-    if (btnBuy) btnBuy.disabled = !isOpen;
-    if (btnSell) btnSell.disabled = !isOpen;
+    // Market status is informational only - trading always available
     return isOpen;
 }
 
