@@ -965,6 +965,244 @@ def verificar_horario_operacional(hora_atual=None) -> dict:
     }
 
 
+
+
+# =====================================================
+# ESTRATEGIA ZERO LOSS - Proteção de Capital
+# Baseado no documento "Estratégia Master Logic B3"
+# =====================================================
+
+class ZeroLossProtection:
+    """
+    Sistema de proteção "Zero Loss" conforme Master Logic B3.
+    Gerencia break-even dinâmico, trailing stop e proteção de lucro.
+    """
+
+    def __init__(self, ativo: str = "WIN"):
+        self.ativo = ativo
+        custos_map = {"WIN": 0.20, "WDO": 10.00}
+        self.valor_ponto = custos_map.get(ativo, 0.20)
+
+    def dynamic_break_even(self, preco_entrada: float, preco_atual: float,
+                           alvo: float, stop_atual: float, tipo: str) -> dict:
+        """
+        Break-even dinâmico: quando preço atinge 50% do alvo,
+        mover stop para entrada + custos operacionais.
+        """
+        distancia_total = abs(alvo - preco_entrada)
+        distancia_atual = abs(preco_atual - preco_entrada)
+        pct_caminho = (distancia_atual / distancia_total * 100) if distancia_total > 0 else 0
+
+        # Custos operacionais estimados em pontos
+        custos_pts = 2 if self.ativo == "WIN" else 0.5  # ~2 pts WIN, ~0.5 WDO
+
+        ativar_be = pct_caminho >= 50
+        if ativar_be:
+            if tipo.upper() == "COMPRA":
+                novo_stop = preco_entrada + custos_pts
+                ativado = preco_atual > preco_entrada + custos_pts
+            else:
+                novo_stop = preco_entrada - custos_pts
+                ativado = preco_atual < preco_entrada - custos_pts
+        else:
+            novo_stop = stop_atual
+            ativado = False
+
+        return {
+            "ativado": ativado,
+            "pct_caminho": round(pct_caminho, 1),
+            "stop_original": stop_atual,
+            "stop_breakeven": round(novo_stop, 2) if ativar_be else None,
+            "custos_pts": custos_pts,
+            "descricao": f"BE ativado - stop em {novo_stop:.2f} (+custos)" if ativado else f"Aguardando 50% do alvo ({pct_caminho:.0f}% atingido)"
+        }
+
+    def trailing_stop_atr(self, preco_atual: float, atr: float,
+                          stop_atual: float, tipo: str) -> dict:
+        """
+        Trailing stop baseado em 1.5x ATR.
+        O stop segue o preço mantendo distância de 1.5 * ATR.
+        """
+        distancia = atr * 1.5
+
+        if tipo.upper() == "COMPRA":
+            trailing = round(preco_atual - distancia, 2)
+            novo_stop = max(trailing, stop_atual)  # Só move para cima
+            moveu = novo_stop > stop_atual
+        else:
+            trailing = round(preco_atual + distancia, 2)
+            novo_stop = min(trailing, stop_atual)  # Só move para baixo
+            moveu = novo_stop < stop_atual
+
+        return {
+            "stop_atual": stop_atual,
+            "trailing_calculado": trailing,
+            "novo_stop": novo_stop,
+            "moveu": moveu,
+            "distancia_atr": round(distancia, 2),
+            "atr_usado": round(atr, 2),
+            "descricao": f"Trailing 1.5xATR = {distancia:.0f} pts" + (" - MOVEU" if moveu else "")
+        }
+
+    def profit_protection(self, preco_entrada: float, preco_atual: float,
+                          alvo: float, tipo: str) -> dict:
+        """
+        Proteção de lucro: se lucro atinge 1.5:1, garantir mínimo de 0.8:1.
+        """
+        risco = abs(alvo - preco_entrada) / 2  # Risco original ~= distância ao stop
+        if tipo.upper() == "COMPRA":
+            lucro_atual = preco_atual - preco_entrada
+        else:
+            lucro_atual = preco_entrada - preco_atual
+
+        rr_atual = (lucro_atual / risco) if risco > 0 else 0
+
+        proteger = rr_atual >= 1.5
+        if proteger:
+            # Garantir mínimo de 0.8 do risco como lucro
+            lucro_minimo = risco * 0.8
+            if tipo.upper() == "COMPRA":
+                stop_protecao = round(preco_entrada + lucro_minimo, 2)
+            else:
+                stop_protecao = round(preco_entrada - lucro_minimo, 2)
+        else:
+            stop_protecao = None
+
+        return {
+            "rr_atual": round(rr_atual, 2),
+            "proteger": proteger,
+            "stop_protecao": stop_protecao,
+            "lucro_minimo_garantido": round(risco * 0.8, 2) if proteger else 0,
+            "descricao": f"R/R atual {rr_atual:.2f} - {'PROTEGER lucro min 0.8:1' if proteger else 'Aguardando 1.5:1'}"
+        }
+
+    def volatility_lock(self, atr_atual: float, atr_medio: float,
+                        atr_std: float) -> dict:
+        """
+        Volatility lock: se ATR dispara acima de 1 desvio padrão,
+        suspender novas entradas e proteger posições.
+        """
+        limite = atr_medio + atr_std
+        bloqueado = atr_atual > limite
+
+        return {
+            "atr_atual": round(atr_atual, 2),
+            "atr_medio": round(atr_medio, 2),
+            "atr_std": round(atr_std, 2),
+            "limite": round(limite, 2),
+            "bloqueado": bloqueado,
+            "descricao": f"ATR {atr_atual:.0f} {'> LIMITE' if bloqueado else '<= limite'} {limite:.0f} - {'BLOQUEADO' if bloqueado else 'OK'}"
+        }
+
+    def gestao_posicao_completa(self, preco_entrada: float, preco_atual: float,
+                                 alvo: float, stop_atual: float, atr: float,
+                                 tipo: str) -> dict:
+        """Executa toda a lógica de proteção Zero Loss em uma chamada."""
+        be = self.dynamic_break_even(preco_entrada, preco_atual, alvo, stop_atual, tipo)
+        trailing = self.trailing_stop_atr(preco_atual, atr, stop_atual, tipo)
+        profit = self.profit_protection(preco_entrada, preco_atual, alvo, tipo)
+
+        # Determinar o melhor stop (mais protetor)
+        stops = [stop_atual]
+        if be["ativado"] and be["stop_breakeven"]:
+            stops.append(be["stop_breakeven"])
+        if trailing["moveu"]:
+            stops.append(trailing["novo_stop"])
+        if profit["proteger"] and profit["stop_protecao"]:
+            stops.append(profit["stop_protecao"])
+
+        if tipo.upper() == "COMPRA":
+            melhor_stop = max(stops)
+        else:
+            melhor_stop = min(stops)
+
+        return {
+            "break_even": be,
+            "trailing_stop": trailing,
+            "profit_protection": profit,
+            "stop_recomendado": round(melhor_stop, 2),
+            "stop_original": stop_atual,
+            "protecao_ativa": melhor_stop != stop_atual,
+        }
+
+
+def analisar_correlacao_ativos(dados_win, dados_wdo) -> dict:
+    """
+    Correlação WIN/WDO: se Índice sobe e Dólar cai com volume,
+    confiança no sinal de compra do índice aumenta (e vice-versa).
+    """
+    import numpy as np
+
+    if dados_win is None or dados_wdo is None:
+        return {"disponivel": False, "descricao": "Dados insuficientes"}
+
+    if len(dados_win) < 10 or len(dados_wdo) < 10:
+        return {"disponivel": False, "descricao": "Dados insuficientes"}
+
+    # Retornos dos últimos 10 candles
+    ret_win = dados_win['close'].pct_change().tail(10).dropna()
+    ret_wdo = dados_wdo['close'].pct_change().tail(10).dropna()
+
+    min_len = min(len(ret_win), len(ret_wdo))
+    if min_len < 5:
+        return {"disponivel": False, "descricao": "Poucos dados"}
+
+    ret_win = ret_win.tail(min_len).values
+    ret_wdo = ret_wdo.tail(min_len).values
+
+    correlacao = float(np.corrcoef(ret_win, ret_wdo)[0, 1])
+
+    # Tendência recente
+    win_direcao = "ALTA" if ret_win[-1] > 0 else "BAIXA"
+    wdo_direcao = "ALTA" if ret_wdo[-1] > 0 else "BAIXA"
+
+    # Correlação normal B3: WIN e WDO são inversamente correlacionados
+    # WIN sobe + WDO cai = confirmação de alta do índice
+    confirmacao = (win_direcao == "ALTA" and wdo_direcao == "BAIXA") or \
+                  (win_direcao == "BAIXA" and wdo_direcao == "ALTA")
+
+    return {
+        "disponivel": True,
+        "correlacao": round(correlacao, 4),
+        "win_direcao": win_direcao,
+        "wdo_direcao": wdo_direcao,
+        "confirmacao": confirmacao,
+        "forca": "FORTE" if abs(correlacao) > 0.5 else "FRACA",
+        "descricao": f"WIN {win_direcao} / WDO {wdo_direcao} - Correlacao {correlacao:.2f} - {'CONFIRMADO' if confirmacao else 'DIVERGENTE'}"
+    }
+
+
+def detectar_absorcao(dados, lookback: int = 5) -> dict:
+    """
+    Detecta absorção: agressão forte (volume alto) mas preço não desloca.
+    Indica possível reversão iminente.
+    """
+    if len(dados) < lookback + 1:
+        return {"detectada": False, "descricao": "Dados insuficientes"}
+
+    ultimos = dados.tail(lookback)
+    vol_medio = dados['volume'].tail(20).mean()
+    vol_recente = ultimos['volume'].mean()
+
+    # Deslocamento de preço
+    range_preco = abs(float(ultimos['close'].iloc[-1] - ultimos['open'].iloc[0]))
+    range_max = float(ultimos['high'].max() - ultimos['low'].min())
+
+    # Alto volume com pouco deslocamento = absorção
+    volume_alto = vol_recente > vol_medio * 1.5
+    pouco_deslocamento = range_preco < range_max * 0.3 if range_max > 0 else False
+
+    detectada = volume_alto and pouco_deslocamento
+
+    return {
+        "detectada": detectada,
+        "volume_ratio": round(vol_recente / vol_medio, 2) if vol_medio > 0 else 0,
+        "deslocamento_pct": round(range_preco / range_max * 100, 1) if range_max > 0 else 0,
+        "tipo": "ABSORCAO_VENDA" if dados['close'].iloc[-1] < dados['open'].iloc[-1] else "ABSORCAO_COMPRA",
+        "descricao": f"{'ABSORCAO DETECTADA - possível reversão' if detectada else 'Sem absorção'}"
+    }
+
+
 def analisar_completo(dados: pd.DataFrame, timeframe: str, ativo: str) -> dict:
     """
     Executa análise completa para um timeframe específico.
