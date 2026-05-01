@@ -2324,8 +2324,8 @@ async def simulador_real(ativo: str = Query("WIN")):
         
         # ---- PRO TRADER CONTROLS ----
         # Regras de um operador profissional que PROTEGE capital:
-        MAX_OPS_DIA = 6          # Maximo 6 operacoes por dia (Bellafiore: foco nos bons setups)
-        MAX_LOSSES_CONSECUTIVOS = 2  # Apos 2 losses seguidos, PARA (Tendler: evitar tilt/revenge)
+        MAX_OPS_DIA = 8          # Maximo 8 operacoes por dia (operar o que vier, aprender com cada uma)
+        MAX_LOSSES_CONSECUTIVOS = 3  # Apos 3 losses seguidos, PARA (Tendler: evitar tilt/revenge)
         LOSS_LIMIT_PTS = -400    # Limite de perda diaria em pontos (gestao de risco)
         
         losses_consecutivos = 0
@@ -2588,15 +2588,15 @@ async def simulador_real(ativo: str = Query("WIN")):
             # Score minimo 9 = A+ SETUP ONLY. Nao entra em BOM, OK, Duvidoso.
             # "Entre so no que for seguro" - Fabio
             # Livermore: "O dinheiro grande esta no ESPERAR, nao no trading"
-            _score_min = max(7, obter_score_minimo())  # BOM setup minimo (Bellafiore: A+ e B+ = tamanho cheio)
+            _score_min = max(5, obter_score_minimo())  # OK+ setup (cada indicador protege individualmente, nao precisa todos juntos)
             operar = score >= _score_min and tipo_sinal is not None and not horario_ruim and not contra_tendencia
             decisao = "OPERAR" if operar else "NAO OPERAR"
             
             # Confianca (Bellafiore) - PRO scoring
-            if score >= 10: confianca = 5; conf_label = "A+ SETUP"
+            if score >= 9: confianca = 5; conf_label = "A+ SETUP"
             elif score >= 7: confianca = 4; conf_label = "BOM"
             elif score >= 5: confianca = 3; conf_label = "OK"
-            elif score >= 4: confianca = 2; conf_label = "DUVIDOSO"
+            elif score >= 3: confianca = 2; conf_label = "ARRISCADO"
             else: confianca = 1; conf_label = "SEM SETUP"
             
             vela_info = {
@@ -3132,6 +3132,14 @@ async def simulador_real(ativo: str = Query("WIN")):
             "oportunidades": oportunidades,
             "total_oportunidades": len(oportunidades),
             "velas": velas_analisadas,
+            "chart_data": [{
+                "hora": v["hora"],
+                "open": v["open"], "high": v["high"], "low": v["low"], "close": v["close"],
+                "rsi": v["rsi"], "ema9": v.get("ema9", 0), "ema21": v.get("ema21", 0),
+                "atr": v.get("atr", 0), "vwap": v.get("vwap"),
+                "score": v["score"], "decisao": v["decisao"],
+                "tipo_sinal": v.get("tipo_sinal"),
+            } for v in velas_analisadas],
             "timestamp": datetime.now(BRT_tz).strftime("%H:%M:%S"),
         })
     except Exception as e:

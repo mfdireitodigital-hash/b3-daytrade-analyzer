@@ -871,6 +871,23 @@
             </div>
         </div>
 
+        <!-- GRAFICO DE VELAS -->
+        <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:12px;margin:8px 0;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+                <div style="font-size:11px;font-weight:700;color:var(--accent-blue);text-transform:uppercase;">Grafico de Velas + Indicadores</div>
+                <div style="display:flex;gap:4px;">
+                    <button onclick="simChartToggle('ema')" id="simChartBtnEma" class="btn" style="font-size:9px;padding:2px 6px;background:rgba(59,130,246,0.2);color:#60a5fa;border:1px solid #3b82f6;">EMA</button>
+                    <button onclick="simChartToggle('vwap')" id="simChartBtnVwap" class="btn" style="font-size:9px;padding:2px 6px;background:rgba(168,85,247,0.2);color:#a855f7;border:1px solid #8b5cf6;">VWAP</button>
+                    <button onclick="simChartToggle('ops')" id="simChartBtnOps" class="btn" style="font-size:9px;padding:2px 6px;background:rgba(34,197,94,0.2);color:#22c55e;border:1px solid #22c55e;">ENTRADAS</button>
+                </div>
+            </div>
+            <canvas id="simChartCanvas" width="900" height="320" style="width:100%;height:320px;border-radius:4px;background:#0a0a0a;"></canvas>
+            <div style="margin-top:6px;">
+                <div style="font-size:9px;font-weight:700;color:var(--text-muted);margin-bottom:4px;">RSI</div>
+                <canvas id="simRsiCanvas" width="900" height="80" style="width:100%;height:80px;border-radius:4px;background:#0a0a0a;"></canvas>
+            </div>
+        </div>
+
         <!-- ESCALA DE CONFIANCA -->
         <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:12px;margin:8px 0;">
             <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;margin-bottom:6px;">Escala de Confianca (Bellafiore)</div>
@@ -3213,6 +3230,237 @@ function simRealSetAtivo(a) {
     simRealAnalisar();
 }
 
+// ===== CHART RENDERING =====
+let simChartData = [];
+let simChartOps = [];
+let simChartShow = {ema: true, vwap: true, ops: true};
+
+function simChartToggle(key) {
+    simChartShow[key] = !simChartShow[key];
+    const btn = document.getElementById('simChartBtn' + key.charAt(0).toUpperCase() + key.slice(1));
+    btn.style.opacity = simChartShow[key] ? '1' : '0.3';
+    simChartRender();
+}
+
+function simChartRender() {
+    const canvas = document.getElementById('simChartCanvas');
+    const rsiCanvas = document.getElementById('simRsiCanvas');
+    if (!canvas || !simChartData.length) return;
+    
+    const ctx = canvas.getContext('2d');
+    const rctx = rsiCanvas.getContext('2d');
+    const W = canvas.width = canvas.offsetWidth * 2;
+    const H = canvas.height = 640;
+    rsiCanvas.width = W;
+    rsiCanvas.height = 160;
+    ctx.clearRect(0, 0, W, H);
+    rctx.clearRect(0, 0, W, rsiCanvas.height);
+    
+    const d = simChartData;
+    const pad = {l: 60, r: 20, t: 10, b: 30};
+    const cW = (W - pad.l - pad.r) / d.length;
+    
+    // Find price range
+    let minP = Infinity, maxP = -Infinity;
+    d.forEach(v => { if(v.low < minP) minP = v.low; if(v.high > maxP) maxP = v.high; });
+    const range = maxP - minP || 1;
+    const pY = (p) => pad.t + (1 - (p - minP) / range) * (H - pad.t - pad.b);
+    
+    // Grid lines
+    ctx.strokeStyle = 'rgba(255,255,255,0.05)';
+    ctx.lineWidth = 1;
+    const gridStep = Math.pow(10, Math.floor(Math.log10(range / 5)));
+    const gridStart = Math.ceil(minP / gridStep) * gridStep;
+    ctx.font = '18px monospace';
+    ctx.fillStyle = 'rgba(255,255,255,0.3)';
+    for (let p = gridStart; p <= maxP; p += gridStep) {
+        const y = pY(p);
+        ctx.beginPath(); ctx.moveTo(pad.l, y); ctx.lineTo(W - pad.r, y); ctx.stroke();
+        ctx.fillText(p.toFixed(0), 4, y + 5);
+    }
+    
+    // Time labels
+    d.forEach((v, i) => {
+        if (i % 6 === 0) {
+            const x = pad.l + i * cW + cW / 2;
+            ctx.fillStyle = 'rgba(255,255,255,0.3)';
+            ctx.fillText(v.hora, x - 15, H - 5);
+        }
+    });
+    
+    // VWAP line
+    if (simChartShow.vwap) {
+        ctx.strokeStyle = '#a855f7';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([4, 4]);
+        ctx.beginPath();
+        let started = false;
+        d.forEach((v, i) => {
+            if (v.vwap && v.vwap > 0) {
+                const x = pad.l + i * cW + cW / 2;
+                const y = pY(v.vwap);
+                if (!started) { ctx.moveTo(x, y); started = true; } else { ctx.lineTo(x, y); }
+            }
+        });
+        ctx.stroke();
+        ctx.setLineDash([]);
+    }
+    
+    // EMA lines
+    if (simChartShow.ema) {
+        // EMA9
+        ctx.strokeStyle = '#3b82f6';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        let s9 = false;
+        d.forEach((v, i) => {
+            if (v.ema9 > 0) {
+                const x = pad.l + i * cW + cW / 2;
+                const y = pY(v.ema9);
+                if (!s9) { ctx.moveTo(x, y); s9 = true; } else { ctx.lineTo(x, y); }
+            }
+        });
+        ctx.stroke();
+        // EMA21
+        ctx.strokeStyle = '#f59e0b';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        let s21 = false;
+        d.forEach((v, i) => {
+            if (v.ema21 > 0) {
+                const x = pad.l + i * cW + cW / 2;
+                const y = pY(v.ema21);
+                if (!s21) { ctx.moveTo(x, y); s21 = true; } else { ctx.lineTo(x, y); }
+            }
+        });
+        ctx.stroke();
+    }
+    
+    // Candlesticks
+    d.forEach((v, i) => {
+        const x = pad.l + i * cW;
+        const bW = Math.max(cW * 0.6, 2);
+        const bx = x + (cW - bW) / 2;
+        const isUp = v.close >= v.open;
+        const bodyTop = pY(Math.max(v.open, v.close));
+        const bodyBot = pY(Math.min(v.open, v.close));
+        const bodyH = Math.max(bodyBot - bodyTop, 1);
+        
+        // Wick
+        ctx.strokeStyle = isUp ? '#22c55e' : '#ef4444';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        const cx = bx + bW / 2;
+        ctx.moveTo(cx, pY(v.high));
+        ctx.lineTo(cx, pY(v.low));
+        ctx.stroke();
+        
+        // Body
+        ctx.fillStyle = isUp ? '#22c55e' : '#ef4444';
+        if (!isUp) {
+            ctx.fillRect(bx, bodyTop, bW, bodyH);
+        } else {
+            ctx.strokeStyle = '#22c55e';
+            ctx.lineWidth = 1.5;
+            ctx.strokeRect(bx, bodyTop, bW, bodyH);
+        }
+        
+        // Score badge on OPERAR candles
+        if (v.decisao === 'OPERAR') {
+            ctx.fillStyle = 'rgba(34,197,94,0.15)';
+            ctx.fillRect(x, pad.t, cW, H - pad.t - pad.b);
+        }
+    });
+    
+    // Entry/Exit markers
+    if (simChartShow.ops && simChartOps.length) {
+        simChartOps.forEach(op => {
+            const entryIdx = d.findIndex(v => v.hora === op.hora_entrada);
+            if (entryIdx >= 0) {
+                const x = pad.l + entryIdx * cW + cW / 2;
+                const y = pY(op.preco_entrada);
+                const isCompra = op.tipo === 'COMPRA';
+                
+                // Triangle marker
+                ctx.fillStyle = isCompra ? '#22c55e' : '#ef4444';
+                ctx.beginPath();
+                if (isCompra) {
+                    ctx.moveTo(x, y + 14); ctx.lineTo(x - 8, y + 26); ctx.lineTo(x + 8, y + 26);
+                } else {
+                    ctx.moveTo(x, y - 14); ctx.lineTo(x - 8, y - 26); ctx.lineTo(x + 8, y - 26);
+                }
+                ctx.fill();
+                
+                // Label
+                ctx.font = 'bold 16px sans-serif';
+                ctx.fillStyle = op.resultado === 'WIN' ? '#22c55e' : '#ef4444';
+                ctx.fillText(op.resultado + ' ' + op.pts + 'pts', x + 12, y);
+                
+                // Stop line
+                if (op.stop_loss) {
+                    ctx.strokeStyle = 'rgba(239,68,68,0.5)';
+                    ctx.setLineDash([3, 3]);
+                    ctx.lineWidth = 1;
+                    const sy = pY(op.stop_loss);
+                    ctx.beginPath(); ctx.moveTo(x - cW*2, sy); ctx.lineTo(x + cW*8, sy); ctx.stroke();
+                    ctx.setLineDash([]);
+                }
+                // Take profit line
+                if (op.take_profit) {
+                    ctx.strokeStyle = 'rgba(34,197,94,0.5)';
+                    ctx.setLineDash([3, 3]);
+                    ctx.lineWidth = 1;
+                    const ty = pY(op.take_profit);
+                    ctx.beginPath(); ctx.moveTo(x - cW*2, ty); ctx.lineTo(x + cW*8, ty); ctx.stroke();
+                    ctx.setLineDash([]);
+                }
+            }
+        });
+    }
+    
+    // ===== RSI CHART =====
+    const rH = rsiCanvas.height;
+    const rW2 = rsiCanvas.width;
+    
+    // Background
+    rctx.fillStyle = 'rgba(239,68,68,0.03)';
+    rctx.fillRect(pad.l, 0, rW2 - pad.l - pad.r, rH * 0.3); // overbought zone
+    rctx.fillRect(pad.l, rH * 0.7, rW2 - pad.l - pad.r, rH * 0.3); // oversold zone
+    
+    // 70/30 lines
+    rctx.strokeStyle = 'rgba(239,68,68,0.3)';
+    rctx.setLineDash([4, 4]);
+    rctx.lineWidth = 1;
+    rctx.beginPath(); rctx.moveTo(pad.l, rH * 0.3); rctx.lineTo(rW2 - pad.r, rH * 0.3); rctx.stroke();
+    rctx.beginPath(); rctx.moveTo(pad.l, rH * 0.7); rctx.lineTo(rW2 - pad.r, rH * 0.7); rctx.stroke();
+    // 50 line
+    rctx.strokeStyle = 'rgba(255,255,255,0.1)';
+    rctx.beginPath(); rctx.moveTo(pad.l, rH * 0.5); rctx.lineTo(rW2 - pad.r, rH * 0.5); rctx.stroke();
+    rctx.setLineDash([]);
+    
+    // Labels
+    rctx.font = '16px monospace';
+    rctx.fillStyle = 'rgba(239,68,68,0.5)';
+    rctx.fillText('70', 4, rH * 0.3 + 5);
+    rctx.fillText('30', 4, rH * 0.7 + 5);
+    rctx.fillStyle = 'rgba(255,255,255,0.3)';
+    rctx.fillText('50', 4, rH * 0.5 + 5);
+    
+    // RSI line
+    rctx.strokeStyle = '#f59e0b';
+    rctx.lineWidth = 2;
+    rctx.beginPath();
+    let rsStart = false;
+    d.forEach((v, i) => {
+        if (v.rsi > 0) {
+            const x = pad.l + i * cW + cW / 2;
+            const y = (1 - v.rsi / 100) * rH;
+            if (!rsStart) { rctx.moveTo(x, y); rsStart = true; } else { rctx.lineTo(x, y); }
+        }
+    });
+    rctx.stroke();
+}
+
 async function simRealAnalisar() {
     const veredEl = document.getElementById('simRealVeredictoText');
     const veredSub = document.getElementById('simRealVeredictoSub');
@@ -3347,6 +3595,11 @@ async function simRealAnalisar() {
             hH += '<div style="display:flex;align-items:center;gap:6px;padding:1px 0;font-size:10px;"><span style="width:35px;font-weight:700;">' + h2 + ':00</span><div style="flex:1;height:6px;background:#333;border-radius:3px;"><div style="height:100%;width:' + p + '%;background:' + c3 + ';border-radius:3px;"></div></div><span style="width:30px;text-align:right;color:' + c3 + ';font-weight:700;">' + p + '%</span></div>';
         });
         document.getElementById('simRealHeat').innerHTML = hH;
+        
+        // ---- CHART DATA ----
+        simChartData = simRes.chart_data || simRes.velas || [];
+        simChartOps = ops;
+        simChartRender();
         
         // ---- ESCALA ----
         const avgC = Math.round(velas.reduce((s,v)=>s+v.confianca,0)/velas.length);
