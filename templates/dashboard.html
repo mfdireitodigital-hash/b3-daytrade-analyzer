@@ -3029,9 +3029,7 @@ function abrirSimuladorReal() {
 function fecharSimuladorReal() {
     document.getElementById('simRealOverlay').style.display = 'none';
 }
-function fecharPaperTrading() {
-    document.getElementById('ptOverlay').style.display = 'none';
-}
+// fecharPaperTrading defined above (line ~1141)
 
 function simRealCheckMarket() {
     const now = new Date();
@@ -3053,9 +3051,8 @@ function simRealCheckMarket() {
 async function simRealAnalisar() {
     const veredEl = document.getElementById('simRealVeredictoText');
     const veredSub = document.getElementById('simRealVeredictoSub');
-    veredEl.textContent = 'ANALISANDO...';
-    veredEl.style.color = 'var(--accent-blue)';
-    veredSub.textContent = 'Analisando pregao completo 09:00-18:00, vela por vela...';
+    if (veredEl) { veredEl.textContent = 'ANALISANDO...'; veredEl.style.color = 'var(--accent-blue)'; }
+    if (veredSub) { veredSub.textContent = 'Analisando pregao completo 09:00-18:00, vela por vela...'; }
     document.getElementById('simRealOps').innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-muted);">Processando todas as velas do pregao...</div>';
     
     try {
@@ -3074,8 +3071,8 @@ async function simRealAnalisar() {
         const ops = simRes.operacoes;
         const velas = simRes.velas;
         
-        document.getElementById('simRealSubtitle').textContent = simRes.dia + ' | ' + simRes.contrato + ' | Relatorio Completo 09:00-18:00 | ' + res.total_velas + ' velas';
-        document.getElementById('simRealPreco').textContent = res.fechamento ? res.fechamento.toLocaleString('pt-BR') : '--';
+        var _sub = document.getElementById('simRealSubtitle'); if(_sub) _sub.textContent = simRes.dia + ' | ' + simRes.contrato + ' | Relatorio Completo 09:00-18:00 | ' + res.total_velas + ' velas';
+        var _preco = document.getElementById('simRealPreco'); if(_preco) _preco.textContent = res.fechamento ? res.fechamento.toLocaleString('pt-BR') : '--';
         
         // ---- RESUMO DO DIA ----
         const corVar = res.variacao_pct >= 0 ? '#22c55e' : '#ef4444';
@@ -3093,17 +3090,16 @@ async function simRealAnalisar() {
         // ---- VEREDICTO (performance) ----
         if (perf.total_operacoes > 0) {
             const corP = perf.total_rs >= 0 ? '#22c55e' : '#ef4444';
-            veredEl.innerHTML = perf.win_rate + '% WIN RATE';
-            veredEl.style.color = perf.win_rate >= 60 ? '#22c55e' : perf.win_rate >= 40 ? '#ca8a04' : '#ef4444';
-            veredSub.innerHTML = '<span style="font-size:14px;">' + perf.wins + 'W / ' + perf.losses + 'L</span> | ' +
+            if(veredEl) { veredEl.innerHTML = perf.win_rate + '% WIN RATE';
+            veredEl.style.color = perf.win_rate >= 60 ? '#22c55e' : perf.win_rate >= 40 ? '#ca8a04' : '#ef4444'; }
+            if(veredSub) { veredSub.innerHTML = '<span style="font-size:14px;">' + perf.wins + 'W / ' + perf.losses + 'L</span> | ' +
                 (perf.total_pts >= 0 ? '+' : '') + perf.total_pts + ' pts | ' +
-                '<span style="color:' + corP + ';font-weight:800;font-size:14px;">' + (perf.total_rs >= 0 ? '+' : '') + 'R$ ' + perf.total_rs.toFixed(2) + '</span>';
-            document.getElementById('simRealVeredicto').style.borderColor = perf.total_rs >= 0 ? '#22c55e' : '#ef4444';
+                '<span style="color:' + corP + ';font-weight:800;font-size:14px;">' + (perf.total_rs >= 0 ? '+' : '') + 'R$ ' + perf.total_rs.toFixed(2) + '</span>'; }
+            var _vb = document.getElementById('simRealVeredicto'); if(_vb) _vb.style.borderColor = perf.total_rs >= 0 ? '#22c55e' : '#ef4444';
         } else {
-            veredEl.innerHTML = 'SEM OPORTUNIDADES CLARAS';
-            veredEl.style.color = '#ca8a04';
-            veredSub.textContent = 'Nenhum setup atingiu score 4+ neste pregao. Dia de ficar de fora.';
-            document.getElementById('simRealVeredicto').style.borderColor = '#ca8a04';
+            if(veredEl) { veredEl.innerHTML = 'SEM OPORTUNIDADES CLARAS'; veredEl.style.color = '#ca8a04'; }
+            if(veredSub) { veredSub.textContent = 'Nenhum setup atingiu score 4+ neste pregao. Dia de ficar de fora.'; }
+            var _vb2 = document.getElementById('simRealVeredicto'); if(_vb2) _vb2.style.borderColor = '#ca8a04';
         }
         
         // ---- TRIPLE SCREEN (ultimo estado) ----
@@ -3252,8 +3248,9 @@ async function simRealAnalisar() {
         document.getElementById('simRealOps').innerHTML = oH;
         
     } catch(e) {
-        veredEl.textContent = 'ERRO'; veredEl.style.color = '#ef4444';
-        veredSub.textContent = e.message;
+        if (veredEl) { veredEl.textContent = 'ERRO'; veredEl.style.color = '#ef4444'; }
+        if (veredSub) { veredSub.textContent = e.message; }
+        console.error('simRealAnalisar error:', e);
     }
 }
 
@@ -3271,8 +3268,9 @@ function updateSafetyBar(seguro, data) {
         icon.innerHTML = '&#x26D4;';
         label.textContent = 'RUIM PARA OPERAR';
         label.style.color = '#ef4444';
-        const evts = (data.alerta_eventos || []).map(a => a.evento).join(', ');
-        detail.textContent = 'Evento(s) na zona de impacto: ' + evts + '. Aguarde 15min apos o resultado.';
+        const evts = (data.alerta_eventos || []);
+        const evtNames = evts.map(a => '<strong>' + a.hora + '</strong> ' + (a.moeda||'') + ' ' + a.evento).join('<br>');
+        detail.innerHTML = '<strong>' + evts.length + ' evento(s) na zona de impacto:</strong><br>' + evtNames + '<br><span style="color:#ef4444;font-weight:700;">Aguarde 15min apos o resultado antes de operar.</span>';
     } else {
         const prox = data.proximos || [];
         if (prox.length > 0 && prox[0].minutos_restantes && prox[0].minutos_restantes <= 30) {
@@ -3281,14 +3279,21 @@ function updateSafetyBar(seguro, data) {
             icon.innerHTML = '&#x26A0;';
             label.textContent = 'CAUTELA - EVENTO PROXIMO';
             label.style.color = '#ea580c';
-            detail.textContent = prox[0].evento + ' (' + prox[0].moeda + ') em ' + prox[0].minutos_restantes + ' min. Cautela: reduza posicoes ou aguarde resultado.';
+            detail.innerHTML = '<strong>' + prox[0].hora + '</strong> ' + prox[0].moeda + ' - <strong>' + prox[0].evento + '</strong> em ' + prox[0].minutos_restantes + ' min.<br><span style="color:#ea580c;">Reduza posicoes ou aguarde resultado antes de operar.</span>';
         } else {
             bar.style.background = 'rgba(34,197,94,0.1)';
             bar.style.borderColor = '#22c55e';
             icon.innerHTML = '&#x2705;';
             label.textContent = 'BOM PARA OPERAR';
             label.style.color = '#22c55e';
-            detail.textContent = 'Nenhum evento de alto impacto nos proximos 30 minutos.';
+            // Show which events were analyzed
+            const allEvts = [...(data.proximos||[]), ...(data.passados||[])];
+            if (allEvts.length > 0) {
+                const nomes = allEvts.slice(0, 5).map(e => e.hora + ' ' + (e.moeda||'') + ' ' + (e.evento||e.title||'')).join(' | ');
+                detail.innerHTML = '<strong>' + allEvts.length + ' eventos analisados</strong> - nenhum impacto nos proximos 30min.<br><span style="font-size:10px;color:var(--text-muted);">' + nomes + (allEvts.length > 5 ? ' ...' : '') + '</span>';
+            } else {
+                detail.textContent = 'Nenhum evento de alto impacto hoje. Cenario limpo para operacoes.';
+            }
         }
     }
 }
