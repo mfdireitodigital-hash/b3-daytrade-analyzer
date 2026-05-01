@@ -2426,7 +2426,7 @@ async function simInit() {
 // =====================================================
 async function carregarSinaisIA() {
     const container = document.getElementById('sinaisIAContent');
-    container.innerHTML = '<div style="text-align:center;padding:12px;color:var(--text-muted);font-size:12px;">Analisando mercado com IA...</div>';
+    container.innerHTML = '<div style="text-align:center;padding:12px;color:var(--text-muted);font-size:12px;">Analisando com Triple Screen + Confluencia 7 pontos...</div>';
     try {
         const res = await fetch('/api/sinais-ia?ativo=' + ptState.ativo);
         const data = await res.json();
@@ -2434,83 +2434,106 @@ async function carregarSinaisIA() {
         
         let html = '';
         
-        // Indicadores resumo
-        const ind = data.indicadores || {};
-        html += '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;">';
-        if (ind.rsi != null) {
-            const rsiC = ind.rsi > 70 ? '#ef4444' : ind.rsi < 30 ? '#22c55e' : '#888';
-            html += '<span style="padding:2px 8px;border-radius:4px;font-size:10px;font-weight:700;background:rgba(255,255,255,0.05);border:1px solid ' + rsiC + ';color:' + rsiC + ';">RSI ' + ind.rsi + '</span>';
-        }
-        const tfs = [['5m', ind.tendencia_5m], ['15m', ind.tendencia_15m], ['1h', ind.tendencia_1h]];
-        tfs.forEach(function(tf) {
-            if (tf[1] && tf[1] !== 'N/A') {
-                const c = tf[1] === 'ALTA' ? '#22c55e' : tf[1] === 'BAIXA' ? '#ef4444' : '#888';
-                html += '<span style="padding:2px 8px;border-radius:4px;font-size:10px;font-weight:700;background:rgba(255,255,255,0.05);border:1px solid ' + c + ';color:' + c + ';">' + tf[0] + ' ' + tf[1] + '</span>';
-            }
+        // === TRIPLE SCREEN (Elder) ===
+        const ts = data.triple_screen || {};
+        html += '<div style="margin-bottom:8px;padding:8px;background:rgba(255,255,255,0.02);border-radius:6px;border:1px solid var(--border);">';
+        html += '<div style="font-size:10px;font-weight:800;color:#60a5fa;margin-bottom:6px;">TRIPLE SCREEN (Elder)</div>';
+        html += '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;">';
+        
+        var screens = [
+            ['T1 TENDENCIA', ts.tela1_tendencia, '1h/4h/1d'],
+            ['T2 SINAL', ts.tela2_sinal, '15m'],
+            ['T3 ENTRADA', ts.tela3_entrada, '5m']
+        ];
+        screens.forEach(function(scr) {
+            var dir = (scr[1]||{}).direcao||'N/A';
+            var c = dir==='ALTA'||dir==='COMPRA'?'#22c55e':dir==='BAIXA'||dir==='VENDA'?'#ef4444':'#888';
+            html += '<div style="text-align:center;padding:6px;border-radius:4px;border:1px solid '+c+'33;background:'+c+'0a;">';
+            html += '<div style="font-size:9px;color:var(--text-muted);">'+scr[0]+'</div>';
+            html += '<div style="font-size:9px;color:var(--text-muted);">('+scr[2]+')</div>';
+            html += '<div style="font-size:14px;font-weight:900;color:'+c+';">'+dir+'</div>';
+            html += '</div>';
         });
-        if (ind.macd) {
-            const mc = ind.macd.includes('ALTA') || ind.macd.includes('COMPRA') ? '#22c55e' : ind.macd.includes('BAIXA') || ind.macd.includes('VENDA') ? '#ef4444' : '#888';
-            html += '<span style="padding:2px 8px;border-radius:4px;font-size:10px;font-weight:700;background:rgba(255,255,255,0.05);border:1px solid ' + mc + ';color:' + mc + ';">MACD ' + ind.macd + '</span>';
+        html += '</div></div>';
+        
+        // === CHECKLIST CONFLUENCIA ===
+        const conf = data.confluencia || {checks:[], score:0, total:7};
+        const esc = data.escala_confianca || {};
+        html += '<div style="margin-bottom:8px;padding:8px;background:rgba(255,255,255,0.02);border-radius:6px;border:1px solid var(--border);">';
+        html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">';
+        html += '<span style="font-size:10px;font-weight:800;color:#f97316;">CONFLUENCIA ('+conf.score+'/'+conf.total+')</span>';
+        html += '<span style="padding:2px 10px;border-radius:4px;font-size:11px;font-weight:900;background:'+(esc.cor||'#888')+';color:#fff;">'+( esc.label||'--')+'</span>';
+        html += '</div>';
+        
+        (conf.checks||[]).forEach(function(ck) {
+            var icon = ck.status ? '&#9989;' : '&#10060;';
+            html += '<div style="display:flex;align-items:center;gap:6px;padding:2px 0;font-size:10px;">';
+            html += '<span>'+icon+'</span>';
+            html += '<span style="font-weight:700;min-width:130px;color:'+(ck.status?'#22c55e':'#ef4444')+';">'+ck.nome+'</span>';
+            html += '<span style="color:var(--text-muted);">'+ck.detalhe+'</span>';
+            html += '</div>';
+        });
+        
+        if (esc.acao) {
+            html += '<div style="margin-top:4px;padding:4px 8px;border-radius:4px;background:'+(esc.cor||'#888')+'15;text-align:center;font-size:10px;font-weight:700;color:'+(esc.cor||'#888')+';">'+esc.acao+'</div>';
         }
         html += '</div>';
         
-        // Sinais
+        // === INDICADORES RESUMO ===
+        const ind = data.indicadores || {};
+        html += '<div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:8px;">';
+        var badges = [];
+        if (ind.rsi_5m != null) { var rc=ind.rsi_5m>70?'#ef4444':ind.rsi_5m<30?'#22c55e':'#888'; badges.push(['RSI '+ind.rsi_5m, rc]); }
+        if (ind.adx) { var ac=ind.adx>25?'#22c55e':ind.adx>20?'#ca8a04':'#ef4444'; badges.push(['ADX '+ind.adx, ac]); }
+        if (ind.vwap) badges.push(['VWAP '+ind.vwap.toLocaleString('pt-BR'), '#60a5fa']);
+        var tfs2=[['5m',ind.tendencia_5m],['15m',ind.tendencia_15m],['1h',ind.tendencia_1h]];
+        tfs2.forEach(function(t){if(t[1]&&t[1]!=='N/A'){var c2=t[1]==='ALTA'?'#22c55e':t[1]==='BAIXA'?'#ef4444':'#888';badges.push([t[0]+' '+t[1],c2]);}});
+        badges.forEach(function(b){
+            html+='<span style="padding:2px 6px;border-radius:3px;font-size:9px;font-weight:700;border:1px solid '+b[1]+';color:'+b[1]+';background:'+b[1]+'0a;">'+b[0]+'</span>';
+        });
+        html += '</div>';
+        
+        // === SINAL PRINCIPAL ===
         data.sinais.forEach(function(s) {
             if (s.tipo === 'NEUTRO') {
                 html += '<div style="padding:12px;border:1px solid #555;border-radius:6px;text-align:center;">';
-                html += '<span style="font-size:14px;font-weight:700;color:#888;">&#9940; SEM SINAL CLARO</span>';
+                html += '<span style="font-size:14px;font-weight:700;color:#888;">&#9940; AGUARDAR - Sem setup valido</span>';
                 html += '<div style="font-size:11px;color:var(--text-muted);margin-top:4px;">' + (s.motivos||[]).join(' | ') + '</div>';
                 html += '</div>';
                 return;
             }
             
-            const isCompra = s.tipo === 'COMPRA';
-            const cor = isCompra ? '#22c55e' : '#ef4444';
-            const bg = isCompra ? 'rgba(34,197,94,0.08)' : 'rgba(239,68,68,0.08)';
+            var isC = s.tipo === 'COMPRA';
+            var cor = isC ? '#22c55e' : '#ef4444';
+            var bg = isC ? 'rgba(34,197,94,0.08)' : 'rgba(239,68,68,0.08)';
             
-            html += '<div style="padding:10px;border:2px solid ' + cor + ';border-radius:8px;background:' + bg + ';margin-bottom:6px;">';
+            html += '<div style="padding:10px;border:2px solid '+cor+';border-radius:8px;background:'+bg+';margin-bottom:6px;">';
             
-            // Header com tipo e confiança
+            // Header
             html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">';
             html += '<div style="display:flex;align-items:center;gap:8px;">';
-            html += '<span style="font-size:18px;font-weight:900;color:' + cor + ';">' + (isCompra ? '&#9650;' : '&#9660;') + ' ' + s.tipo + '</span>';
-            html += '<span style="font-size:11px;color:var(--text-muted);">' + s.ativo + ' | ' + s.timestamp + '</span>';
+            html += '<span style="font-size:20px;font-weight:900;color:'+cor+';">'+(isC?'&#9650;':'&#9660;')+' '+s.tipo+'</span>';
+            html += '<span style="padding:2px 8px;border-radius:4px;font-size:10px;font-weight:800;background:'+cor+'20;color:'+cor+';">'+( s.setup||'')+'</span>';
+            html += '</div>';
+            html += '<span style="padding:3px 10px;border-radius:4px;font-size:12px;font-weight:900;background:'+(esc.cor||cor)+';color:#fff;">Nota '+(s.confianca||0)+'/5</span>';
             html += '</div>';
             
-            // Barra de confiança
-            html += '<div style="display:flex;align-items:center;gap:6px;">';
-            html += '<div style="width:60px;height:8px;background:#333;border-radius:4px;overflow:hidden;"><div style="height:100%;width:' + s.confianca + '%;background:' + cor + ';border-radius:4px;"></div></div>';
-            html += '<span style="font-size:12px;font-weight:800;color:' + cor + ';">' + s.confianca + '%</span>';
+            // Entrada/Stop/Alvo
+            html += '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:6px;">';
+            html += '<div style="text-align:center;padding:8px;background:rgba(255,255,255,0.03);border-radius:4px;"><div style="font-size:9px;color:var(--text-muted);">ENTRADA</div><div style="font-size:16px;font-weight:900;color:var(--text-primary);">'+( s.preco_entrada||0).toLocaleString('pt-BR')+'</div></div>';
+            html += '<div style="text-align:center;padding:8px;background:rgba(239,68,68,0.06);border-radius:4px;border:1px solid rgba(239,68,68,0.2);"><div style="font-size:9px;color:#ef4444;">STOP LOSS</div><div style="font-size:16px;font-weight:900;color:#ef4444;">'+(s.stop_loss||0).toLocaleString('pt-BR')+'</div><div style="font-size:9px;color:#ef4444;">-'+s.stop_pts+' pts</div></div>';
+            html += '<div style="text-align:center;padding:8px;background:rgba(34,197,94,0.06);border-radius:4px;border:1px solid rgba(34,197,94,0.2);"><div style="font-size:9px;color:#22c55e;">TAKE PROFIT</div><div style="font-size:16px;font-weight:900;color:#22c55e;">'+(s.take_profit||0).toLocaleString('pt-BR')+'</div><div style="font-size:9px;color:#22c55e;">+'+s.alvo_pts+' pts</div></div>';
+            html += '</div>';
+            
+            // R:R + Motivos
+            html += '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:4px;">';
+            html += '<span style="font-size:10px;font-weight:700;color:var(--text-muted);">R:R '+s.rr+'</span>';
+            html += '<div style="display:flex;gap:3px;flex-wrap:wrap;">';
+            (s.motivos||[]).forEach(function(m){html+='<span style="padding:1px 5px;border-radius:3px;font-size:8px;background:rgba(255,255,255,0.05);color:var(--text-secondary);">'+m+'</span>';});
             html += '</div></div>';
             
-            // Entrada, Stop, Alvo
-            html += '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:6px;">';
-            html += '<div style="text-align:center;padding:6px;background:rgba(255,255,255,0.03);border-radius:4px;">';
-            html += '<div style="font-size:9px;color:var(--text-muted);margin-bottom:2px;">ENTRADA</div>';
-            html += '<div style="font-size:14px;font-weight:800;color:var(--text-primary);">' + (s.preco_entrada||0).toLocaleString('pt-BR') + '</div></div>';
-            html += '<div style="text-align:center;padding:6px;background:rgba(239,68,68,0.06);border-radius:4px;border:1px solid rgba(239,68,68,0.2);">';
-            html += '<div style="font-size:9px;color:#ef4444;margin-bottom:2px;">STOP LOSS</div>';
-            html += '<div style="font-size:14px;font-weight:800;color:#ef4444;">' + (s.stop_loss||0).toLocaleString('pt-BR') + '</div>';
-            html += '<div style="font-size:9px;color:#ef4444;">-' + s.stop_pts + ' pts</div></div>';
-            html += '<div style="text-align:center;padding:6px;background:rgba(34,197,94,0.06);border-radius:4px;border:1px solid rgba(34,197,94,0.2);">';
-            html += '<div style="font-size:9px;color:#22c55e;margin-bottom:2px;">TAKE PROFIT</div>';
-            html += '<div style="font-size:14px;font-weight:800;color:#22c55e;">' + (s.take_profit||0).toLocaleString('pt-BR') + '</div>';
-            html += '<div style="font-size:9px;color:#22c55e;">+' + s.alvo_pts + ' pts</div></div>';
-            html += '</div>';
-            
-            // R:R e Motivos
-            html += '<div style="display:flex;justify-content:space-between;align-items:center;">';
-            html += '<span style="font-size:10px;color:var(--text-muted);">R:R ' + s.rr + '</span>';
-            html += '<div style="display:flex;gap:4px;flex-wrap:wrap;">';
-            (s.motivos||[]).forEach(function(m) {
-                html += '<span style="padding:1px 6px;border-radius:3px;font-size:9px;background:rgba(255,255,255,0.05);color:var(--text-secondary);">' + m + '</span>';
-            });
-            html += '</div></div>';
-            
-            // Botão para usar sinal
-            html += '<div style="margin-top:8px;display:flex;gap:6px;">';
-            html += '<button onclick="usarSinalIA(' + JSON.stringify(s).replace(/"/g, '&quot;') + ')" style="flex:1;padding:6px;background:' + cor + ';color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;font-weight:800;">USAR ESTE SINAL</button>';
-            html += '</div>';
+            // Botao usar sinal
+            html += '<button onclick="usarSinalIA({tipo:&quot;'+s.tipo+'&quot;,stop_pts:'+s.stop_pts+',alvo_pts:'+s.alvo_pts+'})" style="margin-top:8px;width:100%;padding:8px;background:'+cor+';color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;font-weight:900;">USAR ESTE SINAL</button>';
             
             html += '</div>';
         });
