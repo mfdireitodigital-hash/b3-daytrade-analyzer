@@ -292,7 +292,7 @@
         /* Market Status */
         .pt-market-status { display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px; border-radius: 20px; font-size: 11px; font-weight: 600; }
         .pt-market-status.open { background: rgba(34,197,94,0.15); color: var(--accent-green); }
-        .pt-market-status.closed { background: rgba(239,68,68,0.15); color: var(--accent-red); }
+        .pt-market-status.closed { background: rgba(59,130,246,0.15); color: #3b82f6; }
 
         /* Daily Report */
         .pt-report-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin-bottom: 12px; }
@@ -1159,7 +1159,6 @@ function ptMudarTab(tab) {
 // ---- Market Status ----
 function ptCheckMarket() {
     const now = new Date();
-    // Convert to BRT (UTC-3)
     const utc = now.getTime() + now.getTimezoneOffset() * 60000;
     const brt = new Date(utc - 3 * 3600000);
     const h = brt.getHours();
@@ -1168,13 +1167,29 @@ function ptCheckMarket() {
     const el = document.getElementById('ptMarketStatus');
     if (isOpen) {
         el.className = 'pt-market-status open';
-        el.innerHTML = '<div class="status-dot online"></div><span>MERCADO ABERTO</span>';
+        el.innerHTML = '<div class="status-dot online"></div><span>MERCADO ABERTO - Tempo Real</span>';
     } else {
+        // No training there's no "closed" - we always operate using last session data
         el.className = 'pt-market-status closed';
-        el.innerHTML = '<div class="status-dot offline"></div><span>MERCADO FECHADO</span>';
+        el.innerHTML = '<div class="status-dot online" style="background:#3b82f6;"></div><span>OPERANDO PREGAO ANTERIOR</span>';
+        // Auto-load last trading day info
+        ptCarregarInfoPregao();
     }
-    // Replay tab is always visible - it's for training anytime
     return isOpen;
+}
+
+// Load info about which trading day is being used
+async function ptCarregarInfoPregao() {
+    try {
+        if (!window.simVelas) {
+            const res = await fetch('/api/replay-velas?ativo=' + ptState.ativo);
+            window.simVelas = await res.json();
+        }
+        if (window.simVelas && window.simVelas.data) {
+            const el = document.getElementById('ptMarketStatus');
+            el.innerHTML = '<div class="status-dot online" style="background:#3b82f6;"></div><span>OPERANDO PREGAO ' + window.simVelas.data + '</span>';
+        }
+    } catch(e) {}
 }
 
 // ---- Price Updates ----
@@ -1269,11 +1284,11 @@ function ptExecutarTrade(tipo) {
         return;
     }
 
-    // Check if market is open
+    // Verifica se mercado esta aberto ou fechado
     const isOpen = ptCheckMarket();
     
     if (!isOpen) {
-        // MERCADO FECHADO: simular com dados REAIS do dia anterior
+        // Mercado fechado: usar dados REAIS do ultimo pregao automaticamente
         ptSimularComDadosReais(tipo, qtd, stopPts, alvoPts);
         return;
     }
@@ -1314,7 +1329,7 @@ function ptExecutarTrade(tipo) {
 }
 
 // =====================================================
-// SIMULACAO COM DADOS REAIS (mercado fechado)
+// SIMULACAO COM DADOS REAIS (ultimo pregao disponivel)
 // =====================================================
 async function ptSimularComDadosReais(tipo, contratos, stopPts, alvoPts) {
     // Load replay candles if not loaded
@@ -1418,7 +1433,7 @@ async function ptSimularComDadosReais(tipo, contratos, stopPts, alvoPts) {
         rhtml += '<span style="font-size:18px;font-weight:800;color:' + cor + ';">' + (s.pts >= 0 ? '+' : '') + s.pts + ' pts</span>';
         rhtml += '<span style="font-size:16px;font-weight:700;color:' + cor + ';">' + (s.resultado_rs >= 0 ? '+' : '') + 'R$ ' + s.resultado_rs.toFixed(2) + '</span>';
         rhtml += '</div>';
-        rhtml += '<span style="font-size:10px;padding:3px 8px;border-radius:4px;background:rgba(255,255,255,0.05);color:var(--text-muted);">DADOS REAIS DO DIA ANTERIOR</span>';
+        rhtml += '<span style="font-size:10px;padding:3px 8px;border-radius:4px;background:rgba(255,255,255,0.05);color:var(--text-muted);">DADOS REAIS - PREGAO ANTERIOR</span>';
         rhtml += '</div>';
         
         rhtml += '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:10px;font-size:11px;">';
@@ -1673,7 +1688,7 @@ function ptRenderRelatorio() {
     const trades = ptState.history.filter(t => t.dataISO === hoje);
 
     if (trades.length === 0) {
-        container.innerHTML = '<div class="pt-empty">Nenhuma operacao finalizada hoje. Use o REPLAY PREGAO (mercado fechado) para simular operacoes.</div>';
+        container.innerHTML = '<div class="pt-empty">Nenhuma operacao finalizada hoje. Use COMPRAR/VENDER ou o REPLAY PREGAO para simular operacoes.</div>';
         return;
     }
 
