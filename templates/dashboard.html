@@ -475,17 +475,33 @@
             </div>
             <!-- TAB: REPLAY DO PREGAO ANTERIOR -->
             <div class="pt-tab-content" id="ptTabReplay">
-                <div style="text-align:center;padding:10px;">
-                    <div style="font-size:14px;font-weight:700;color:var(--accent-green);margin-bottom:8px;">REPLAY AUTOMATICO DO PREGAO ANTERIOR</div>
-                    <div style="font-size:11px;color:var(--text-muted);margin-bottom:12px;">Analise multi-timeframe (5m + 15m + 1h) com confluencias</div>
-                    <button class="pt-trade-btn buy" onclick="executarReplay()" id="btnReplay" style="width:100%;max-width:300px;padding:10px;font-size:13px;">
-                        EXECUTAR REPLAY
-                    </button>
-                </div>
-                <div id="replayResultado" style="display:none;"></div>
-                <div id="replayLoading" style="display:none;text-align:center;padding:30px;">
-                    <div style="font-size:13px;color:var(--accent-green);">Analisando pregao anterior vela a vela...</div>
-                    <div style="font-size:11px;color:var(--text-muted);margin-top:6px;">Multi-timeframe: 5min + 15min + 1h</div>
+                <div id="replaySimulador">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
+                        <div style="font-size:14px;font-weight:700;">SIMULADOR DE ENTRADAS</div>
+                        <button onclick="carregarVelasReplay()" style="padding:6px 16px;background:var(--accent-blue);color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;">CARREGAR DIA ANTERIOR</button>
+                    </div>
+                    <div id="replayConfig" style="display:none;padding:10px;background:var(--card-bg);border:1px solid var(--border);border-radius:8px;margin-bottom:10px;">
+                        <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
+                            <div id="replayDiaInfo" style="font-size:12px;font-weight:700;color:var(--text-primary);"></div>
+                        </div>
+                        <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:8px;">
+                            <div style="display:flex;gap:4px;align-items:center;">
+                                <label style="font-size:11px;color:var(--text-muted);">Stop (pts):</label>
+                                <input id="replayStopPts" type="number" value="200" style="width:65px;padding:4px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:4px;color:var(--text-primary);font-size:12px;">
+                            </div>
+                            <div style="display:flex;gap:4px;align-items:center;">
+                                <label style="font-size:11px;color:var(--text-muted);">Alvo (pts):</label>
+                                <input id="replayAlvoPts" type="number" value="300" style="width:65px;padding:4px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:4px;color:var(--text-primary);font-size:12px;">
+                            </div>
+                            <div style="display:flex;gap:4px;align-items:center;">
+                                <label style="font-size:11px;color:var(--text-muted);">Contratos:</label>
+                                <input id="replayContratos" type="number" value="1" min="1" style="width:45px;padding:4px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:4px;color:var(--text-primary);font-size:12px;">
+                            </div>
+                            <div id="replayPlacar" style="font-size:12px;font-weight:700;margin-left:auto;"></div>
+                        </div>
+                    </div>
+                    <div id="replayVelasContainer" style="max-height:450px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;"></div>
+                    <div id="replayResultadoOp" style="display:none;margin-top:10px;"></div>
                 </div>
             </div>
         </div>
@@ -1995,153 +2011,129 @@ setInterval(atualizarPrecoRealtime, 30000);
 // =====================================================
 // REPLAY AUTOMATICO DO PREGAO ANTERIOR
 // =====================================================
-async function executarReplay() {
-    const btn = document.getElementById('btnReplay');
-    const loading = document.getElementById('replayLoading');
-    const resultado = document.getElementById('replayResultado');
-    btn.disabled = true;
-    btn.textContent = 'ANALISANDO...';
-    loading.style.display = 'block';
-    resultado.style.display = 'none';
-    
-    try {
-        const contratos = state.numContratos || 1;
-        const res = await fetch(`/api/replay?ativo=${state.ativo}&contratos=${contratos}`);
-        const data = await res.json();
-        
-        if (data.erro) {
-            resultado.innerHTML = `<div style="text-align:center;padding:20px;color:var(--accent-red);">${data.erro}</div>`;
-            resultado.style.display = 'block';
-            loading.style.display = 'none';
-            btn.disabled = false;
-            btn.textContent = 'EXECUTAR REPLAY';
-            return;
+async function carregarVelasReplay() {
+            const container = document.getElementById('replayVelasContainer');
+            container.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-muted);">Carregando velas do dia anterior...</div>';
+            document.getElementById('replayConfig').style.display = 'none';
+            document.getElementById('replayResultadoOp').style.display = 'none';
+            window.replayScore = {wins: 0, losses: 0, totalPts: 0, totalRS: 0, ops: []};
+            
+            fetch('/api/replay-velas?ativo=WIN')
+            .then(r => r.json())
+            .then(data => {
+                if (data.erro) { container.innerHTML = '<div style="text-align:center;padding:20px;color:var(--accent-red);">'+data.erro+'</div>'; return; }
+                window.replayVelas = data;
+                document.getElementById('replayConfig').style.display = 'block';
+                const m = data.mercado;
+                document.getElementById('replayDiaInfo').innerHTML = 
+                    data.dia + ' | ' + data.contrato + ' | Abertura: ' + m.abertura.toLocaleString('pt-BR') + 
+                    ' | Fech: ' + m.fechamento.toLocaleString('pt-BR') + ' (' + (m.variacao_pct >= 0 ? '+' : '') + m.variacao_pct + '%) | Amp: ' + m.amplitude_pts.toLocaleString('pt-BR') + ' pts';
+                atualizarPlacarReplay();
+                renderVelasReplay(data.velas);
+            })
+            .catch(err => { container.innerHTML = '<div style="text-align:center;padding:20px;color:var(--accent-red);">Erro: '+err.message+'</div>'; });
         }
         
-        const r = data.resumo;
-        const m = data.mercado;
-        const ops = data.operacoes || [];
-        const corResultado = r.resultado_bruto >= 0 ? 'var(--accent-green)' : 'var(--accent-red)';
-        const corVariacao = m.variacao >= 0 ? 'var(--accent-green)' : 'var(--accent-red)';
+        function atualizarPlacarReplay() {
+            const s = window.replayScore || {wins:0,losses:0,totalPts:0,totalRS:0};
+            const total = s.wins + s.losses;
+            const taxa = total > 0 ? Math.round(s.wins/total*100) : 0;
+            const cor = s.totalRS >= 0 ? 'var(--accent-green)' : 'var(--accent-red)';
+            document.getElementById('replayPlacar').innerHTML = total === 0 ? '<span style="color:var(--text-muted);">Clique C (compra) ou V (venda) em qualquer vela</span>' :
+                '<span style="color:var(--accent-green);">' + s.wins + 'W</span> / <span style="color:var(--accent-red);">' + s.losses + 'L</span> | ' +
+                taxa + '% | <span style="color:'+cor+';">' + (s.totalRS >= 0 ? '+' : '') + 'R$ ' + s.totalRS.toFixed(2) + '</span>';
+        }
         
-        let html = '';
-        
-        // HEADER: Dia + Mercado
-        html += `<div style="padding:12px;border-bottom:1px solid var(--border);">`;
-        html += `<div style="font-size:15px;font-weight:700;text-align:center;color:var(--text-primary);">REPLAY - ${data.dia}</div>`;
-        html += `<div style="font-size:11px;text-align:center;color:var(--text-muted);">${data.contrato} | ${data.contratos} contrato(s) | Multi-timeframe</div>`;
-        html += `</div>`;
-        
-        // MERCADO DO DIA
-        html += `<div style="padding:10px;border-bottom:1px solid var(--border);display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;text-align:center;">`;
-        html += `<div><div style="font-size:10px;color:var(--text-muted);">ABERTURA</div><div style="font-size:13px;font-weight:600;">${m.abertura.toLocaleString('pt-BR')}</div></div>`;
-        html += `<div><div style="font-size:10px;color:var(--text-muted);">FECHAMENTO</div><div style="font-size:13px;font-weight:600;">${m.fechamento.toLocaleString('pt-BR')}</div></div>`;
-        html += `<div><div style="font-size:10px;color:var(--text-muted);">AMPLITUDE</div><div style="font-size:13px;font-weight:600;">${m.amplitude_pts.toLocaleString('pt-BR')} pts</div></div>`;
-        html += `<div><div style="font-size:10px;color:var(--text-muted);">HIGH</div><div style="font-size:13px;color:var(--accent-green);">${m.high.toLocaleString('pt-BR')}</div></div>`;
-        html += `<div><div style="font-size:10px;color:var(--text-muted);">LOW</div><div style="font-size:13px;color:var(--accent-red);">${m.low.toLocaleString('pt-BR')}</div></div>`;
-        html += `<div><div style="font-size:10px;color:var(--text-muted);">VARIACAO</div><div style="font-size:13px;color:${corVariacao};">${m.variacao >= 0 ? '+' : ''}${m.variacao_pct}%</div></div>`;
-        html += `</div>`;
-        
-        // RESULTADO PRINCIPAL
-        html += `<div style="padding:14px;border-bottom:1px solid var(--border);text-align:center;background:rgba(${r.resultado_bruto >= 0 ? '34,197,94' : '239,68,68'},0.08);">`;
-        html += `<div style="font-size:11px;color:var(--text-muted);">RESULTADO DO SISTEMA</div>`;
-        html += `<div style="font-size:24px;font-weight:800;color:${corResultado};">${r.resultado_bruto >= 0 ? '+' : ''}R$ ${r.resultado_bruto.toLocaleString('pt-BR', {minimumFractionDigits:2})}</div>`;
-        html += `<div style="font-size:13px;color:${corResultado};margin-top:2px;">${r.resultado_pts >= 0 ? '+' : ''}${r.resultado_pts} pontos</div>`;
-        html += `</div>`;
-        
-        // ESTATISTICAS
-        html += `<div style="padding:10px;border-bottom:1px solid var(--border);display:grid;grid-template-columns:repeat(4,1fr);gap:6px;text-align:center;">`;
-        html += `<div><div style="font-size:10px;color:var(--text-muted);">OPERACOES</div><div style="font-size:16px;font-weight:700;">${r.total_operacoes}</div></div>`;
-        html += `<div><div style="font-size:10px;color:var(--text-muted);">WINS</div><div style="font-size:16px;font-weight:700;color:var(--accent-green);">${r.wins}</div></div>`;
-        html += `<div><div style="font-size:10px;color:var(--text-muted);">LOSSES</div><div style="font-size:16px;font-weight:700;color:var(--accent-red);">${r.losses}</div></div>`;
-        html += `<div><div style="font-size:10px;color:var(--text-muted);">TAXA ACERTO</div><div style="font-size:16px;font-weight:700;color:${r.taxa_acerto >= 50 ? 'var(--accent-green)' : 'var(--accent-red)'};">${r.taxa_acerto}%</div></div>`;
-        html += `</div>`;
-        
-        // METRICAS AVANCADAS
-        html += `<div style="padding:10px;border-bottom:1px solid var(--border);display:grid;grid-template-columns:repeat(3,1fr);gap:6px;text-align:center;">`;
-        html += `<div><div style="font-size:10px;color:var(--text-muted);">MAIOR WIN</div><div style="font-size:12px;color:var(--accent-green);">+R$ ${r.maior_win.toLocaleString('pt-BR',{minimumFractionDigits:2})}</div><div style="font-size:10px;color:var(--text-muted);">${r.maior_win_pts} pts</div></div>`;
-        html += `<div><div style="font-size:10px;color:var(--text-muted);">MAIOR LOSS</div><div style="font-size:12px;color:var(--accent-red);">R$ ${r.maior_loss.toLocaleString('pt-BR',{minimumFractionDigits:2})}</div><div style="font-size:10px;color:var(--text-muted);">${r.maior_loss_pts} pts</div></div>`;
-        html += `<div><div style="font-size:10px;color:var(--text-muted);">FATOR LUCRO</div><div style="font-size:12px;font-weight:700;color:${r.fator_lucro >= 1 ? 'var(--accent-green)' : 'var(--accent-red)'};">${r.fator_lucro >= 999 ? '∞' : r.fator_lucro.toFixed(2)}</div></div>`;
-        html += `</div>`;
-        
-        html += `<div style="padding:10px;border-bottom:1px solid var(--border);display:grid;grid-template-columns:repeat(3,1fr);gap:6px;text-align:center;">`;
-        html += `<div><div style="font-size:10px;color:var(--text-muted);">MAX DRAWDOWN</div><div style="font-size:12px;color:var(--accent-red);">R$ ${r.max_drawdown.toLocaleString('pt-BR',{minimumFractionDigits:2})}</div></div>`;
-        html += `<div><div style="font-size:10px;color:var(--text-muted);">SEQ. WINS</div><div style="font-size:12px;color:var(--accent-green);">${r.max_sequencia_win}</div></div>`;
-        html += `<div><div style="font-size:10px;color:var(--text-muted);">SEQ. LOSSES</div><div style="font-size:12px;color:var(--accent-red);">${r.max_sequencia_loss}</div></div>`;
-        html += `</div>`;
-        
-        // EQUITY CURVE (simple bar chart)
-        if (r.equity_curve && r.equity_curve.length > 0) {
-            const maxVal = Math.max(...r.equity_curve.map(Math.abs), 1);
-            html += `<div style="padding:10px;border-bottom:1px solid var(--border);">`;
-            html += `<div style="font-size:11px;font-weight:700;color:var(--text-muted);margin-bottom:6px;">CURVA DE CAPITAL</div>`;
-            html += `<div style="display:flex;align-items:end;gap:2px;height:60px;">`;
-            r.equity_curve.forEach((val, i) => {
-                const pct = Math.abs(val) / maxVal * 100;
-                const cor = val >= 0 ? 'var(--accent-green)' : 'var(--accent-red)';
-                const w = Math.max(6, Math.floor(100 / r.equity_curve.length));
-                html += `<div style="flex:1;height:${Math.max(3,pct)}%;background:${cor};border-radius:2px 2px 0 0;min-width:4px;" title="Op ${i+1}: R$ ${val.toFixed(2)}"></div>`;
+        function renderVelasReplay(velas) {
+            const c = document.getElementById('replayVelasContainer');
+            let h = '<table style="width:100%;border-collapse:collapse;font-size:11px;">';
+            h += '<thead><tr style="background:var(--bg-secondary);position:sticky;top:0;z-index:1;">';
+            h += '<th style="padding:6px 4px;text-align:left;border-bottom:2px solid var(--border);">Hora</th>';
+            h += '<th style="padding:6px 4px;text-align:right;border-bottom:2px solid var(--border);">Open</th>';
+            h += '<th style="padding:6px 4px;text-align:right;border-bottom:2px solid var(--border);">High</th>';
+            h += '<th style="padding:6px 4px;text-align:right;border-bottom:2px solid var(--border);">Low</th>';
+            h += '<th style="padding:6px 4px;text-align:right;border-bottom:2px solid var(--border);">Close</th>';
+            h += '<th style="padding:6px 4px;text-align:center;border-bottom:2px solid var(--border);">Tend</th>';
+            h += '<th style="padding:6px 4px;text-align:center;border-bottom:2px solid var(--border);">RSI</th>';
+            h += '<th style="padding:6px 4px;text-align:center;border-bottom:2px solid var(--border);">MACD</th>';
+            h += '<th style="padding:6px 4px;text-align:center;border-bottom:2px solid var(--border);">Operar</th>';
+            h += '</tr></thead><tbody>';
+            velas.forEach((v, i) => {
+                const isUp = v.close >= v.open;
+                const corV = isUp ? 'var(--accent-green)' : 'var(--accent-red)';
+                const corT = v.tendencia==='ALTA' ? 'var(--accent-green)' : v.tendencia==='BAIXA' ? 'var(--accent-red)' : 'var(--text-muted)';
+                const corR = v.rsi > 70 ? 'var(--accent-red)' : v.rsi < 30 ? 'var(--accent-green)' : 'var(--text-primary)';
+                const corM = v.macd_hist > 0 ? 'var(--accent-green)' : v.macd_hist < 0 ? 'var(--accent-red)' : 'var(--text-muted)';
+                const isLast = i >= velas.length - 1;
+                h += '<tr id="rRow'+i+'" style="border-bottom:1px solid var(--border);">';
+                h += '<td style="padding:5px 4px;font-weight:600;">'+v.hora+'</td>';
+                h += '<td style="padding:5px 4px;text-align:right;">'+v.open.toLocaleString('pt-BR')+'</td>';
+                h += '<td style="padding:5px 4px;text-align:right;">'+v.high.toLocaleString('pt-BR')+'</td>';
+                h += '<td style="padding:5px 4px;text-align:right;">'+v.low.toLocaleString('pt-BR')+'</td>';
+                h += '<td style="padding:5px 4px;text-align:right;font-weight:700;color:'+corV+';">'+v.close.toLocaleString('pt-BR')+'</td>';
+                h += '<td style="padding:5px 4px;text-align:center;color:'+corT+';font-weight:600;font-size:10px;">'+v.tendencia+'</td>';
+                h += '<td style="padding:5px 4px;text-align:center;color:'+corR+';">'+(v.rsi!=null?v.rsi:'-')+'</td>';
+                h += '<td style="padding:5px 4px;text-align:center;color:'+corM+';">'+(v.macd_hist!=null?v.macd_hist:'-')+'</td>';
+                h += '<td style="padding:5px 4px;text-align:center;">';
+                if (!isLast) {
+                    h += '<button onclick="simEntrada('+i+',\'COMPRA\')" style="padding:2px 8px;background:var(--accent-green);color:#fff;border:none;border-radius:3px;cursor:pointer;font-size:10px;font-weight:800;margin-right:2px;" title="Comprar nesta vela">C</button>';
+                    h += '<button onclick="simEntrada('+i+',\'VENDA\')" style="padding:2px 8px;background:var(--accent-red);color:#fff;border:none;border-radius:3px;cursor:pointer;font-size:10px;font-weight:800;" title="Vender nesta vela">V</button>';
+                }
+                h += '</td></tr>';
             });
-            html += `</div></div>`;
+            h += '</tbody></table>';
+            c.innerHTML = h;
         }
         
-        // LISTA DE OPERACOES
-        html += `<div style="padding:10px;">`;
-        html += `<div style="font-size:11px;font-weight:700;color:var(--text-muted);margin-bottom:8px;">OPERACOES (${ops.length})</div>`;
-        
-        ops.forEach((op, i) => {
-            const isWin = op.status === 'WIN';
-            const cor = isWin ? 'var(--accent-green)' : 'var(--accent-red)';
-            const bgOp = isWin ? 'rgba(34,197,94,0.06)' : 'rgba(239,68,68,0.06)';
-            const icon = isWin ? '✓' : '✗';
-            
-            html += `<div style="padding:8px;margin-bottom:6px;border:1px solid var(--border);border-radius:6px;border-left:3px solid ${cor};background:${bgOp};">`;
-            html += `<div style="display:flex;justify-content:space-between;align-items:center;">`;
-            html += `<div>`;
-            html += `<span style="font-size:12px;font-weight:700;color:${cor};">${icon} ${op.tipo}</span>`;
-            html += `<span style="font-size:11px;color:var(--text-muted);margin-left:8px;">${op.hora_entrada} → ${op.hora_saida}</span>`;
-            html += `</div>`;
-            html += `<div style="font-size:13px;font-weight:700;color:${cor};">${op.resultado >= 0 ? '+' : ''}R$ ${op.resultado.toLocaleString('pt-BR',{minimumFractionDigits:2})}</div>`;
-            html += `</div>`;
-            html += `<div style="font-size:10px;color:var(--text-muted);margin-top:4px;">`;
-            html += `Entrada: ${op.entrada.toLocaleString('pt-BR')} | Saida: ${op.saida.toLocaleString('pt-BR')} | ${op.pts >= 0 ? '+' : ''}${op.pts} pts`;
-            if (op.fechamento_forcado) html += ` | <span style="color:var(--accent-yellow);">Fechamento fim do dia</span>`;
-            html += `</div>`;
-            
-            // Motivos do sinal
-            if (op.motivos && op.motivos.length > 0) {
-                html += `<div style="font-size:9px;color:var(--text-muted);margin-top:4px;opacity:0.7;">`;
-                op.motivos.forEach(m => { html += `• ${m}<br>`; });
-                html += `</div>`;
-            }
-            html += `</div>`;
-        });
-        
-        if (ops.length === 0) {
-            html += `<div style="text-align:center;padding:20px;color:var(--text-muted);font-size:12px;">Nenhum sinal de entrada foi gerado neste pregao.<br>O sistema exige confluencia de TODOS os indicadores.</div>`;
+        function simEntrada(idx, tipo) {
+            const stopPts = parseInt(document.getElementById('replayStopPts').value) || 200;
+            const alvoPts = parseInt(document.getElementById('replayAlvoPts').value) || 300;
+            const ctrs = parseInt(document.getElementById('replayContratos').value) || 1;
+            const rd = document.getElementById('replayResultadoOp');
+            rd.style.display = 'block';
+            rd.innerHTML = '<div style="text-align:center;padding:10px;color:var(--text-muted);font-size:12px;">Simulando '+tipo+' na vela '+idx+'...</div>';
+            const row = document.getElementById('rRow'+idx);
+            if(row) row.style.background = tipo==='COMPRA' ? 'rgba(34,197,94,0.12)' : 'rgba(239,68,68,0.12)';
+            fetch('/api/simular-entrada', {method:'POST', headers:{'Content-Type':'application/json'},
+                body: JSON.stringify({ativo:'WIN', vela_idx:idx, tipo:tipo, stop_pts:stopPts, alvo_pts:alvoPts, contratos:ctrs})
+            }).then(r=>r.json()).then(data => {
+                if(data.erro){rd.innerHTML='<div style="padding:10px;color:var(--accent-red);">'+data.erro+'</div>';return;}
+                const e=data.entrada, s=data.saida;
+                const isW = s.resultado==='WIN';
+                const cor = isW ? 'var(--accent-green)' : 'var(--accent-red)';
+                if(!window.replayScore) window.replayScore={wins:0,losses:0,totalPts:0,totalRS:0,ops:[]};
+                if(isW) window.replayScore.wins++; else window.replayScore.losses++;
+                window.replayScore.totalPts += s.pts;
+                window.replayScore.totalRS += s.resultado_rs;
+                window.replayScore.ops.push({tipo:e.tipo,hora:e.hora,resultado:s.resultado,pts:s.pts,rs:s.resultado_rs});
+                atualizarPlacarReplay();
+                if(window.replayVelas){
+                    const ei=window.replayVelas.velas.findIndex(v=>v.hora===s.hora);
+                    if(ei>=0){const er=document.getElementById('rRow'+ei);if(er)er.style.background=isW?'rgba(34,197,94,0.25)':'rgba(239,68,68,0.25)';}
+                }
+                let h='<div style="padding:12px;background:var(--card-bg);border:2px solid '+cor+';border-radius:8px;">';
+                h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">';
+                h+='<div style="font-size:18px;font-weight:800;color:'+cor+';">'+s.resultado+'</div>';
+                h+='<div style="font-size:20px;font-weight:800;color:'+cor+';">'+(s.pts>=0?'+':'')+s.pts+' pts</div>';
+                h+='<div style="font-size:16px;font-weight:700;color:'+cor+';">'+(s.resultado_rs>=0?'+':'')+'R$ '+s.resultado_rs.toFixed(2)+'</div></div>';
+                h+='<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;font-size:11px;">';
+                h+='<div style="padding:6px;background:var(--bg-secondary);border-radius:4px;"><div style="color:var(--text-muted);">Entrada</div><div style="font-weight:700;">'+e.tipo+' @ '+e.preco.toLocaleString('pt-BR')+'</div><div style="color:var(--text-muted);">'+e.hora+'</div></div>';
+                h+='<div style="padding:6px;background:var(--bg-secondary);border-radius:4px;"><div style="color:var(--text-muted);">Saida</div><div style="font-weight:700;">'+s.preco.toLocaleString('pt-BR')+'</div><div style="color:var(--text-muted);">'+s.hora+(s.fechamento_forcado?' (fim dia)':'')+'</div></div>';
+                h+='<div style="padding:6px;background:var(--bg-secondary);border-radius:4px;"><div style="color:var(--text-muted);">Config</div><div>Stop: '+e.stop_pts+'pts | Alvo: '+e.alvo_pts+'pts</div><div>RR 1:'+e.rr+' | '+s.velas_na_operacao+' velas</div></div></div>';
+                h+='<div style="margin-top:6px;font-size:11px;color:var(--text-muted);">Max a favor: +'+data.detalhes.max_favoravel_pts+'pts | Max contra: -'+data.detalhes.max_adverso_pts+'pts</div>';
+                const sc=window.replayScore;
+                if(sc.ops.length>1){
+                    h+='<div style="margin-top:8px;border-top:1px solid var(--border);padding-top:6px;"><div style="font-size:11px;font-weight:600;margin-bottom:4px;">Suas operacoes:</div>';
+                    sc.ops.forEach((op,i)=>{const oc=op.resultado==='WIN'?'var(--accent-green)':'var(--accent-red)';
+                        h+='<div style="font-size:10px;color:'+oc+';">#'+(i+1)+' '+op.tipo+' '+op.hora+' = '+op.resultado+' '+(op.pts>=0?'+':'')+op.pts+'pts (R$'+(op.rs>=0?'+':'')+op.rs.toFixed(2)+')</div>';
+                    });h+='</div>';}
+                h+='</div>';
+                rd.innerHTML=h;
+                rd.scrollIntoView({behavior:'smooth',block:'nearest'});
+            }).catch(err=>{rd.innerHTML='<div style="padding:10px;color:var(--accent-red);">Erro: '+err.message+'</div>';});
         }
         
-        html += `</div>`;
-        
-        // SINAIS GERADOS (resumo)
-        if (data.total_sinais > 0) {
-            html += `<div style="padding:10px;border-top:1px solid var(--border);">`;
-            html += `<div style="font-size:10px;color:var(--text-muted);">Total de sinais identificados: ${data.total_sinais} | Velas analisadas: ${m.total_velas}</div>`;
-            html += `</div>`;
-        }
-        
-        resultado.innerHTML = html;
-        resultado.style.display = 'block';
-        
-    } catch(e) {
-        resultado.innerHTML = `<div style="text-align:center;padding:20px;color:var(--accent-red);">Erro: ${e.message}</div>`;
-        resultado.style.display = 'block';
-    }
-    
-    loading.style.display = 'none';
-    btn.disabled = false;
-    btn.textContent = 'EXECUTAR REPLAY';
-}
+        function executarReplay()
 
 </script>
 </body>
