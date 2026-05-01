@@ -457,198 +457,204 @@ def gerar_sinais(
     vwap_atual: float = 0,
 ) -> list:
     """
-    Gera sinais com estratégia institucional.
-    Hierarquia: Contexto > Zonas de Preço > Fluxo > Execução.
-    Pullback em EMA 9/VWAP com candle de reversão + confluência.
+    Gera sinais CRUZANDO TODOS os indicadores simultaneamente.
+    Um sinal só é emitido se TODOS os indicadores concordam na mesma direção.
+    Checklist obrigatório:
+      1. Tendência (EMA 9/21 + VWAP)
+      2. RSI (não sobrecomprado para compra, não sobrevendido para venda)
+      3. MACD (histograma e cruzamento na direção)
+      4. Volume (pressão compradora/vendedora + acima da média)
+      5. Fibonacci (preço em zona favorável)
+      6. Anti-violinada (score baixo)
     """
     sinais = []
     preco = dados['close'].iloc[-1]
-    motivos_compra = []
-    motivos_venda = []
-    confianca_compra = 0
-    confianca_venda = 0
 
-    # === BLOQUEIO: Mercado lateralizado ===
+    # === BLOQUEIO TOTAL: Mercado lateralizado ===
     if lateralizacao and lateralizacao.get("lateral"):
         return []
 
-    # === FILTRO DE TENDÊNCIA (EMA 9/21 + VWAP) ===
-    if tendencia == "ALTA":
-        motivos_compra.append("Tendência de alta (EMA 9 > EMA 21, preço acima VWAP)")
-        confianca_compra += 15
-    elif tendencia == "BAIXA":
-        motivos_venda.append("Tendência de baixa (EMA 9 < EMA 21, preço abaixo VWAP)")
-        confianca_venda += 15
-    else:
-        confianca_compra -= 20
-        confianca_venda -= 20
-
-    # === PULLBACK + CANDLE DE REVERSÃO ===
-    if pullback_info and pullback_info.get("confirmado"):
-        zona = pullback_info.get("zona", "")
-        if tendencia == "ALTA":
-            motivos_compra.append(f"Pullback confirmado na {zona} com candle de reversão")
-            confianca_compra += 30
-        elif tendencia == "BAIXA":
-            motivos_venda.append(f"Pullback confirmado na {zona} com candle de reversão")
-            confianca_venda += 30
-    elif pullback_info and pullback_info.get("pullback"):
-        zona = pullback_info.get("zona", "")
-        if tendencia == "ALTA":
-            motivos_compra.append(f"Pullback na {zona} (aguardando confirmação)")
-            confianca_compra += 15
-        elif tendencia == "BAIXA":
-            motivos_venda.append(f"Pullback na {zona} (aguardando confirmação)")
-            confianca_venda += 15
-
-    # --- RSI ---
-    if rsi < 20:
-        motivos_compra.append(f"RSI sobrevendido ({rsi:.1f})")
-        confianca_compra += 20
-    elif rsi < 30:
-        motivos_compra.append(f"RSI em zona de compra ({rsi:.1f})")
-        confianca_compra += 10
-    elif rsi > 80:
-        motivos_venda.append(f"RSI sobrecomprado ({rsi:.1f})")
-        confianca_venda += 20
-    elif rsi > 70:
-        motivos_venda.append(f"RSI em zona de venda ({rsi:.1f})")
-        confianca_venda += 10
-
-    # --- MACD ---
-    if macd_linha > macd_sinal and macd_hist > 0:
-        motivos_compra.append("MACD cruzamento de alta")
-        confianca_compra += 20
-    elif macd_linha < macd_sinal and macd_hist < 0:
-        motivos_venda.append("MACD cruzamento de baixa")
-        confianca_venda += 20
-
-    # Histograma crescente/decrescente
-    if len(dados) >= 3:
-        hist_prev = dados['close'].iloc[-2] - dados['close'].iloc[-3]
-        if macd_hist > 0 and macd_hist > hist_prev:
-            motivos_compra.append("MACD histograma crescente")
-            confianca_compra += 10
-
-    # --- Fibonacci ---
-    fib = fibonacci
-    tolerancia_fib = abs(fib.nivel_0 - fib.nivel_100) * 0.02  # 2% de tolerância
-
-    zonas_compra_fib = [
-        (fib.nivel_618, "Fibonacci 61.8%"),
-        (fib.nivel_500, "Fibonacci 50.0%"),
-        (fib.nivel_382, "Fibonacci 38.2%"),
-    ]
-    zonas_venda_fib = [
-        (fib.nivel_236, "Fibonacci 23.6%"),
-    ]
-
-    if fib.tendencia == "ALTA":
-        for nivel, nome in zonas_compra_fib:
-            if abs(preco - nivel) < tolerancia_fib:
-                motivos_compra.append(f"Preço na zona de {nome} (retração em alta)")
-                confianca_compra += 25
-                break
-    else:
-        for nivel, nome in zonas_compra_fib:
-            if abs(preco - nivel) < tolerancia_fib:
-                motivos_venda.append(f"Preço na zona de {nome} (retração em baixa)")
-                confianca_venda += 25
-                break
-
-    # --- Volume ---
-    if volume.pressao == "COMPRADORES" and volume.volume_acima_media:
-        motivos_compra.append(f"Volume comprador acima da média (ratio: {volume.ratio_compra_venda})")
-        confianca_compra += 15
-    elif volume.pressao == "VENDEDORES" and volume.volume_acima_media:
-        motivos_venda.append(f"Volume vendedor acima da média (ratio: {volume.ratio_compra_venda})")
-        confianca_venda += 15
-
-    if volume.delta_acumulado > 0:
-        motivos_compra.append(f"Delta acumulado positivo ({volume.delta_acumulado:.0f})")
-        confianca_compra += 10
-    elif volume.delta_acumulado < 0:
-        motivos_venda.append(f"Delta acumulado negativo ({volume.delta_acumulado:.0f})")
-        confianca_venda += 10
-
-    # --- Penalidade por risco de violinada ---
+    # === BLOQUEIO: Risco de violinada alto ===
     if violinada_score > 60:
-        confianca_compra -= 30
-        confianca_venda -= 30
-        motivos_compra.append(f"ALERTA: Alto risco de violinada ({violinada_score:.0f}%)")
-        motivos_venda.append(f"ALERTA: Alto risco de violinada ({violinada_score:.0f}%)")
-    elif violinada_score > 40:
-        confianca_compra -= 15
-        confianca_venda -= 15
+        return []
 
-    # === ATR volatilidade (filtro) ===
+    # === CHECKLIST DE COMPRA - TODOS devem confirmar ===
+    compra_tendencia = (tendencia == "ALTA")
+    compra_rsi = (rsi < 70)  # Não sobrecomprado
+    compra_macd = (macd_linha > macd_sinal and macd_hist > 0)
+    compra_volume = (volume.pressao == "COMPRADORES" and volume.volume_acima_media)
+    compra_pullback = bool(pullback_info and pullback_info.get("confirmado") and tendencia == "ALTA")
+
+    # Fibonacci: preço em zona de retração favorável para compra
+    fib = fibonacci
+    tolerancia_fib = abs(fib.nivel_0 - fib.nivel_100) * 0.03
+    compra_fib = False
+    fib_zona_compra = ""
+    if fib.tendencia == "ALTA":
+        zonas = [
+            (fib.nivel_618, "61.8%"),
+            (fib.nivel_500, "50.0%"),
+            (fib.nivel_382, "38.2%"),
+        ]
+        for nivel, nome in zonas:
+            if abs(preco - nivel) < tolerancia_fib:
+                compra_fib = True
+                fib_zona_compra = nome
+                break
+        # Também aceita se preço está acima de 23.6% (tendência forte)
+        if preco > fib.nivel_236:
+            compra_fib = True
+            fib_zona_compra = "acima de 23.6% (tendência forte)"
+
+    # Cruzamento completo: TODOS os 5 indicadores principais devem confirmar
+    indicadores_compra = {
+        "tendencia": compra_tendencia,
+        "rsi": compra_rsi,
+        "macd": compra_macd,
+        "volume": compra_volume,
+        "fibonacci": compra_fib,
+    }
+    total_confirmados_compra = sum(1 for v in indicadores_compra.values() if v)
+
+    # === CHECKLIST DE VENDA - TODOS devem confirmar ===
+    venda_tendencia = (tendencia == "BAIXA")
+    venda_rsi = (rsi > 30)  # Não sobrevendido
+    venda_macd = (macd_linha < macd_sinal and macd_hist < 0)
+    venda_volume = (volume.pressao == "VENDEDORES" and volume.volume_acima_media)
+    venda_pullback = bool(pullback_info and pullback_info.get("confirmado") and tendencia == "BAIXA")
+
+    venda_fib = False
+    fib_zona_venda = ""
+    if fib.tendencia == "BAIXA":
+        zonas = [
+            (fib.nivel_382, "38.2%"),
+            (fib.nivel_500, "50.0%"),
+            (fib.nivel_618, "61.8%"),
+        ]
+        for nivel, nome in zonas:
+            if abs(preco - nivel) < tolerancia_fib:
+                venda_fib = True
+                fib_zona_venda = nome
+                break
+        if preco < fib.nivel_786:
+            venda_fib = True
+            fib_zona_venda = "abaixo de 78.6% (tendência forte)"
+
+    indicadores_venda = {
+        "tendencia": venda_tendencia,
+        "rsi": venda_rsi,
+        "macd": venda_macd,
+        "volume": venda_volume,
+        "fibonacci": venda_fib,
+    }
+    total_confirmados_venda = sum(1 for v in indicadores_venda.values() if v)
+
+    # === ATR para cálculo de stops ===
     atr = _calcular_atr(dados)
-    atr_medio_hist = calcular_atr_series(dados, 50).mean() if len(dados) >= 50 else atr
-    if atr < atr_medio_hist * 0.5:
-        confianca_compra -= 15
-        confianca_venda -= 15
-        motivos_compra.append("Baixa volatilidade (ATR reduzido)")
-        motivos_venda.append("Baixa volatilidade (ATR reduzido)")
 
-    # === GERAR SINAIS (stop técnico em estrutura de preço) ===
-    if confianca_compra >= 40 and len(motivos_compra) >= 2 and tendencia == "ALTA":
+    # === GERAR SINAL DE COMPRA (mínimo 4 de 5 indicadores) ===
+    if total_confirmados_compra >= 4 and compra_tendencia:
+        motivos = []
+        motivos.append(f"TENDENCIA: Alta confirmada (EMA 9 > EMA 21, preço > VWAP)")
+        if compra_rsi:
+            motivos.append(f"RSI: {rsi:.1f} - zona favorável para compra")
+        if compra_macd:
+            motivos.append(f"MACD: Cruzamento de alta (hist {macd_hist:.2f})")
+        if compra_volume:
+            motivos.append(f"VOLUME: Pressão compradora acima da média (ratio {volume.ratio_compra_venda:.2f})")
+        if compra_fib:
+            motivos.append(f"FIBONACCI: Preço na zona {fib_zona_compra}")
+        if compra_pullback:
+            motivos.append(f"PULLBACK: Confirmado com candle de reversão")
+
+        confianca = int((total_confirmados_compra / 5) * 100)
+        if compra_pullback:
+            confianca = min(confianca + 15, 100)
+        if violinada_score < 20:
+            confianca = min(confianca + 5, 100)
+
+        # Stop técnico
         ultimos_lows = dados['low'].tail(10)
         stop = round(float(ultimos_lows.min()), 2)
         risco = preco - stop
-        if risco <= 0: risco = atr * 2; stop = round(preco - risco, 2)
+        if risco <= 0:
+            risco = atr * 2
+            stop = round(preco - risco, 2)
+
         tp1 = round(preco + risco * 1.0, 2)
         tp2 = round(preco + risco * 2.0, 2)
         tp3 = round(preco + risco * 3.0, 2)
-
-        rr = 2.0
+        rr = round((risco * 2) / risco, 2) if risco > 0 else 2.0
 
         violinada_risco = "BAIXO" if violinada_score < 30 else ("MEDIO" if violinada_score < 60 else "ALTO")
 
         sinais.append(SinalEntrada(
             tipo="COMPRA",
             preco_entrada=round(preco, 2),
-            stop_loss=round(stop, 2),
-            take_profit_1=round(tp1, 2),
-            take_profit_2=round(tp2, 2),
-            take_profit_3=round(tp3, 2),
-            risco_retorno=round(rr, 2),
-            confianca=min(confianca_compra, 100),
-            motivos=motivos_compra,
+            stop_loss=stop,
+            take_profit_1=tp1,
+            take_profit_2=tp2,
+            take_profit_3=tp3,
+            risco_retorno=rr,
+            confianca=confianca,
+            motivos=motivos,
             fibonacci_zona=_zona_fibonacci_atual(preco, fibonacci),
             rsi_status="SOBREVENDIDO" if rsi < 20 else ("SOBRECOMPRADO" if rsi > 80 else "NEUTRO"),
             macd_status="ALTA" if macd_hist > 0 else "BAIXA",
             volume_status=volume.pressao,
-            violinada_risco=violinada_risco
+            violinada_risco=violinada_risco,
         ))
 
-    if confianca_venda >= 40 and len(motivos_venda) >= 2 and tendencia == "BAIXA":
+    # === GERAR SINAL DE VENDA (mínimo 4 de 5 indicadores) ===
+    if total_confirmados_venda >= 4 and venda_tendencia:
+        motivos = []
+        motivos.append(f"TENDENCIA: Baixa confirmada (EMA 9 < EMA 21, preço < VWAP)")
+        if venda_rsi:
+            motivos.append(f"RSI: {rsi:.1f} - zona favorável para venda")
+        if venda_macd:
+            motivos.append(f"MACD: Cruzamento de baixa (hist {macd_hist:.2f})")
+        if venda_volume:
+            motivos.append(f"VOLUME: Pressão vendedora acima da média (ratio {volume.ratio_compra_venda:.2f})")
+        if venda_fib:
+            motivos.append(f"FIBONACCI: Preço na zona {fib_zona_venda}")
+        if venda_pullback:
+            motivos.append(f"PULLBACK: Confirmado com candle de reversão")
+
+        confianca = int((total_confirmados_venda / 5) * 100)
+        if venda_pullback:
+            confianca = min(confianca + 15, 100)
+        if violinada_score < 20:
+            confianca = min(confianca + 5, 100)
+
         ultimos_highs = dados['high'].tail(10)
         stop = round(float(ultimos_highs.max()), 2)
         risco = stop - preco
-        if risco <= 0: risco = atr * 2; stop = round(preco + risco, 2)
+        if risco <= 0:
+            risco = atr * 2
+            stop = round(preco + risco, 2)
+
         tp1 = round(preco - risco * 1.0, 2)
         tp2 = round(preco - risco * 2.0, 2)
         tp3 = round(preco - risco * 3.0, 2)
-
-        rr = 2.0
+        rr = round((risco * 2) / risco, 2) if risco > 0 else 2.0
 
         violinada_risco = "BAIXO" if violinada_score < 30 else ("MEDIO" if violinada_score < 60 else "ALTO")
 
         sinais.append(SinalEntrada(
             tipo="VENDA",
             preco_entrada=round(preco, 2),
-            stop_loss=round(stop, 2),
-            take_profit_1=round(tp1, 2),
-            take_profit_2=round(tp2, 2),
-            take_profit_3=round(tp3, 2),
-            risco_retorno=round(rr, 2),
-            confianca=min(confianca_venda, 100),
-            motivos=motivos_venda,
+            stop_loss=stop,
+            take_profit_1=tp1,
+            take_profit_2=tp2,
+            take_profit_3=tp3,
+            risco_retorno=rr,
+            confianca=confianca,
+            motivos=motivos,
             fibonacci_zona=_zona_fibonacci_atual(preco, fibonacci),
             rsi_status="SOBREVENDIDO" if rsi < 20 else ("SOBRECOMPRADO" if rsi > 80 else "NEUTRO"),
             macd_status="ALTA" if macd_hist > 0 else "BAIXA",
             volume_status=volume.pressao,
-            violinada_risco=violinada_risco
+            violinada_risco=violinada_risco,
         ))
 
     return sinais
