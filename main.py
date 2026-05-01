@@ -365,10 +365,11 @@ async def login(req: LoginRequest):
 
 
 @app.get("/api/demo")
-async def get_demo():
+async def get_demo(ativo: str = Query("WIN", description="Ativo: WIN ou WDO")):
     """Gera simulação de operações de day trade para modo demo"""
+    ativo_upper = ativo.upper()
     operacoes = []
-    ativos_demo = ["WINM26", "WDOM26"]
+    ativos_demo = ["WINM26", "WDOM26"] if "WIN" in ativo_upper else ["WDOM26", "WINM26"]
     tipos = ["COMPRA", "VENDA"]
     total_resultado = 0
 
@@ -436,7 +437,11 @@ async def get_demo():
     losses = len(operacoes) - wins
     total_pts = sum(op["pts"] for op in operacoes)
 
+    data_hoje = datetime.now(BRT).strftime("%d/%m/%Y")
+
     return JSONResponse({
+        "ativo": ativo_upper,
+        "data": data_hoje,
         "operacoes": operacoes,
         "resumo": {
             "total": len(operacoes),
@@ -454,7 +459,7 @@ async def get_demo():
 
 
 def _calcular_tendencia_geral(painel: dict) -> str:
-    """Calcula tendencia geral baseada em multiplos timeframes"""
+    """Calcula tendência geral baseada em múltiplos timeframes"""
     pesos = {"5m": 1, "15m": 2, "1h": 3, "4h": 4, "1d": 5}
     score = 0
     total_peso = 0
@@ -462,4 +467,37 @@ def _calcular_tendencia_geral(painel: dict) -> str:
     for tf, peso in pesos.items():
         analise = painel.get(tf, {})
         if analise and "erro" not in analise:
-            tendencia = analise.g
+            tendencia = analise.get("tendencia", "LATERAL")
+            if tendencia == "ALTA":
+                score += peso
+            elif tendencia == "BAIXA":
+                score -= peso
+            total_peso += peso
+
+    if total_peso == 0:
+        return "INDEFINIDO"
+
+    ratio = score / total_peso
+    if ratio > 0.3:
+        return "ALTA"
+    elif ratio < -0.3:
+        return "BAIXA"
+    return "LATERAL"
+
+
+def _sinal_principal(painel: dict) -> dict:
+    """Extrai o sinal principal do timeframe de 5 minutos"""
+    analise_5m = painel.get("5m", {})
+    sinais = analise_5m.get("sinais", [])
+
+    if sinais:
+        melhor = max(sinais, key=lambda s: s.get("confianca", 0))
+        return melhor
+
+    return {"tipo": "NEUTRO", "confianca": 0, "motivos": ["Sem sinais claros no momento"]}
+
+
+if __name__ == "__main__":
+    import uvicorn
+    port = int(os.getenv("PORT", 8080))
+    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=True)
