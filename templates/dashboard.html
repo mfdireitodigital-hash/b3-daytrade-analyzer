@@ -3024,253 +3024,187 @@ async function simRealAnalisar() {
     const veredSub = document.getElementById('simRealVeredictoSub');
     veredEl.textContent = 'ANALISANDO...';
     veredEl.style.color = 'var(--accent-blue)';
-    veredSub.textContent = 'Coletando Triple Screen + Confluencia + Noticias + Heatmap...';
+    veredSub.textContent = 'Analisando pregao completo: abertura a fechamento, vela por vela...';
     
     try {
-        // Fetch all data in parallel
-        const [sinaisRes, notRes, heatRes, replayRes] = await Promise.all([
-            fetch('/api/sinais-ia?ativo=WIN').then(r => r.json()).catch(e => null),
+        // Fetch simulador-real + noticias in parallel
+        const [simRes, notRes] = await Promise.all([
+            fetch('/api/simulador-real?ativo=WIN').then(r => r.json()),
             fetch('/api/noticias-impacto').then(r => r.json()).catch(e => null),
-            fetch('/api/heatmap?ativo=WIN').then(r => r.json()).catch(e => null),
-            fetch('/api/replay-velas?ativo=WIN').then(r => r.json()).catch(e => null),
         ]);
         
+        if (simRes.erro) {
+            veredEl.textContent = 'ERRO';
+            veredEl.style.color = '#ef4444';
+            veredSub.textContent = simRes.erro;
+            return;
+        }
+        
+        const res = simRes.resumo;
+        const perf = simRes.performance;
+        const ops = simRes.operacoes;
+        const velas = simRes.velas;
+        
+        // Update subtitle
+        document.getElementById('simRealSubtitle').textContent = simRes.dia + ' | ' + simRes.contrato + ' | Pregao Completo: ' + res.total_velas + ' velas analisadas';
+        
         // Update price
-        const preco = sinaisRes?.preco_atual || 0;
-        document.getElementById('simRealPreco').textContent = preco ? preco.toLocaleString('pt-BR') : '--';
+        document.getElementById('simRealPreco').textContent = res.fechamento ? res.fechamento.toLocaleString('pt-BR') : '--';
         
-        // ---- TRIPLE SCREEN ----
-        const ts = sinaisRes?.triple_screen;
-        let tsHtml = '';
-        if (ts) {
-            const t1 = ts.tela1_tendencia;
-            const t2 = ts.tela2_sinal;
-            const t3 = ts.tela3_entrada;
-            const corT = d => d === 'ALTA' || d === 'COMPRA' ? '#22c55e' : d === 'BAIXA' || d === 'VENDA' ? '#ef4444' : '#888';
-            tsHtml += '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-top:4px;">';
-            tsHtml += '<div style="text-align:center;padding:6px;background:rgba(255,255,255,0.03);border-radius:4px;"><div style="font-size:9px;color:var(--text-muted);">TELA 1 (Tendencia)</div><div style="font-weight:800;color:' + corT(t1.direcao) + ';">' + t1.direcao + '</div><div style="font-size:9px;color:var(--text-muted);">' + (t1.detalhes||[]).join(', ') + '</div></div>';
-            tsHtml += '<div style="text-align:center;padding:6px;background:rgba(255,255,255,0.03);border-radius:4px;"><div style="font-size:9px;color:var(--text-muted);">TELA 2 (Sinal)</div><div style="font-weight:800;color:' + corT(t2.direcao) + ';">' + t2.direcao + '</div><div style="font-size:9px;color:var(--text-muted);">' + (t2.detalhes||[]).join(', ') + '</div></div>';
-            tsHtml += '<div style="text-align:center;padding:6px;background:rgba(255,255,255,0.03);border-radius:4px;"><div style="font-size:9px;color:var(--text-muted);">TELA 3 (Entrada)</div><div style="font-weight:800;color:' + corT(t3.direcao) + ';">' + t3.direcao + '</div><div style="font-size:9px;color:var(--text-muted);">' + (t3.detalhes||[]).join(', ') + '</div></div>';
-            tsHtml += '</div>';
-        }
-        document.getElementById('simRealTriple').innerHTML = tsHtml || 'Sem dados';
+        // ---- RESUMO DO DIA ----
+        const corVar = res.variacao_pct >= 0 ? '#22c55e' : '#ef4444';
+        const dirLabel = res.direcao === 'ALTA' ? 'DIA DE ALTA' : res.direcao === 'BAIXA' ? 'DIA DE BAIXA' : 'DIA NEUTRO';
         
-        // ---- CONFLUENCIA ----
-        const conf = sinaisRes?.confluencia;
-        let confHtml = '';
-        if (conf) {
-            confHtml += '<div style="font-size:14px;font-weight:900;margin-bottom:6px;color:' + (conf.score >= 5 ? '#22c55e' : conf.score >= 4 ? '#16a34a' : conf.score >= 3 ? '#ca8a04' : '#ef4444') + ';">' + conf.score + '/' + conf.total + ' pontos</div>';
-            (conf.checks || []).forEach(c => {
-                confHtml += '<div style="display:flex;align-items:center;gap:4px;margin:2px 0;"><span style="color:' + (c.status ? '#22c55e' : '#ef4444') + ';">' + (c.status ? '&#x2705;' : '&#x274C;') + '</span><span style="font-size:10px;">' + c.nome + '</span></div>';
-            });
+        document.getElementById('simRealStatus').innerHTML = `
+            <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+                <span style="background:${corVar};color:#fff;padding:3px 10px;border-radius:4px;font-size:11px;font-weight:800;">${dirLabel}</span>
+                <span style="font-size:12px;">Abertura: <strong>${res.abertura?.toLocaleString('pt-BR')}</strong></span>
+                <span style="font-size:12px;">Fechamento: <strong style="color:${corVar}">${res.fechamento?.toLocaleString('pt-BR')}</strong></span>
+                <span style="font-size:12px;">Variacao: <strong style="color:${corVar}">${res.variacao_pct >= 0 ? '+' : ''}${res.variacao_pct}%</strong></span>
+                <span style="font-size:12px;">Amplitude: <strong>${res.amplitude_pts}pts</strong></span>
+            </div>
+            <div style="display:flex;gap:12px;font-size:11px;color:var(--text-muted);">
+                <span>Operar: <strong style="color:#22c55e;">${res.velas_operar}</strong></span>
+                <span>Nao operar: <strong style="color:#ef4444;">${res.velas_nao_operar}</strong></span>
+            </div>
+        `;
+        
+        // ---- VEREDICTO (performance do dia) ----
+        if (perf.total_operacoes > 0) {
+            const corPerf = perf.total_rs >= 0 ? '#22c55e' : '#ef4444';
+            veredEl.innerHTML = perf.win_rate + '% WIN RATE';
+            veredEl.style.color = perf.win_rate >= 60 ? '#22c55e' : perf.win_rate >= 40 ? '#ca8a04' : '#ef4444';
+            veredSub.innerHTML = perf.wins + 'W / ' + perf.losses + 'L | ' + (perf.total_pts >= 0 ? '+' : '') + perf.total_pts + ' pts | <span style="color:' + corPerf + ';font-weight:800;">' + (perf.total_rs >= 0 ? '+' : '') + 'R$ ' + perf.total_rs.toFixed(2) + '</span> | ' + perf.total_operacoes + ' operacoes';
+            document.getElementById('simRealVeredicto').style.borderColor = perf.total_rs >= 0 ? '#22c55e' : '#ef4444';
+        } else {
+            veredEl.innerHTML = 'NENHUMA OPERACAO';
+            veredEl.style.color = '#ca8a04';
+            veredSub.textContent = 'Nenhum setup com score 4+ foi encontrado neste pregao.';
         }
-        document.getElementById('simRealConf').innerHTML = confHtml || 'Sem dados';
+        
+        // ---- TRIPLE SCREEN (from first valid signal or last candle) ----
+        const lastVela = velas[velas.length - 1];
+        let tsHtml = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;">';
+        tsHtml += '<div style="padding:4px 6px;background:rgba(255,255,255,0.03);border-radius:4px;font-size:10px;"><span style="color:var(--text-muted);">Tendencia Final:</span> <strong style="color:' + (lastVela.tendencia === 'ALTA' ? '#22c55e' : lastVela.tendencia === 'BAIXA' ? '#ef4444' : '#888') + '">' + lastVela.tendencia + '</strong></div>';
+        tsHtml += '<div style="padding:4px 6px;background:rgba(255,255,255,0.03);border-radius:4px;font-size:10px;"><span style="color:var(--text-muted);">RSI Final:</span> <strong>' + lastVela.rsi + '</strong></div>';
+        tsHtml += '<div style="padding:4px 6px;background:rgba(255,255,255,0.03);border-radius:4px;font-size:10px;"><span style="color:var(--text-muted);">EMA9/21:</span> <strong>' + (lastVela.ema9 > lastVela.ema21 ? 'ALTA' : 'BAIXA') + '</strong></div>';
+        tsHtml += '<div style="padding:4px 6px;background:rgba(255,255,255,0.03);border-radius:4px;font-size:10px;"><span style="color:var(--text-muted);">MACD:</span> <strong style="color:' + (lastVela.macd_hist > 0 ? '#22c55e' : '#ef4444') + '">' + lastVela.macd_hist + '</strong></div>';
+        tsHtml += '</div>';
+        document.getElementById('simRealTriple').innerHTML = tsHtml;
+        
+        // ---- TIMELINE DO DIA (visual) ----
+        let confHtml = '<div style="font-size:10px;color:var(--text-muted);margin-bottom:4px;">Timeline do pregao (verde=operar, vermelho=nao operar):</div>';
+        confHtml += '<div style="display:flex;gap:1px;height:20px;border-radius:4px;overflow:hidden;">';
+        velas.forEach(v => {
+            const cor = v.decisao === 'OPERAR' ? '#22c55e' : v.score >= 3 ? '#ca8a04' : '#ef444450';
+            confHtml += '<div title="' + v.hora + ' Score:' + v.score + ' ' + v.decisao + '" style="flex:1;background:' + cor + ';min-width:2px;cursor:pointer;"></div>';
+        });
+        confHtml += '</div>';
+        confHtml += '<div style="display:flex;justify-content:space-between;font-size:9px;color:var(--text-muted);margin-top:2px;"><span>09:00</span><span>12:00</span><span>15:00</span><span>18:00</span></div>';
+        document.getElementById('simRealConf').innerHTML = confHtml;
         
         // ---- NOTICIAS ----
         let newsHtml = '';
-        let newsSeguro = true;
         if (notRes && !notRes.erro) {
-            if (notRes.alertas > 0) {
-                newsSeguro = false;
-                newsHtml += '<div style="color:#ef4444;font-weight:800;font-size:12px;margin-bottom:4px;">&#x26A0; ' + notRes.alertas + ' EVENTO(S) NA ZONA DE IMPACTO</div>';
-                (notRes.alerta_eventos || []).forEach(a => {
-                    newsHtml += '<div style="font-size:10px;padding:3px 0;border-bottom:1px solid rgba(255,255,255,0.05);">' + a.moeda + ' | ' + a.evento + ' | ' + a.hora + ' (' + (a.minutos >= 0 ? 'em ' + a.minutos + 'min' : 'ha ' + Math.abs(a.minutos) + 'min') + ')</div>';
+            const total = (notRes.proximos?.length || 0) + (notRes.passados?.length || 0);
+            if (total > 0) {
+                newsHtml += '<div style="font-size:10px;color:var(--text-muted);margin-bottom:4px;">' + total + ' eventos de 3 estrelas esta semana</div>';
+                const passados = (notRes.passados || []).slice(0, 4);
+                passados.forEach(p => {
+                    const cor = p.surpresa === 'ACIMA' ? '#22c55e' : p.surpresa === 'ABAIXO' ? '#ef4444' : '#888';
+                    newsHtml += '<div style="font-size:10px;padding:2px 0;border-bottom:1px solid rgba(255,255,255,0.03);">';
+                    newsHtml += '<span style="color:var(--text-muted);">' + p.hora + '</span> ';
+                    newsHtml += '<span>' + p.moeda + '</span> ';
+                    newsHtml += '<span style="font-weight:600;">' + p.evento + '</span> ';
+                    if (p.surpresa) newsHtml += '<span style="color:' + cor + ';font-weight:700;">' + p.surpresa + '</span>';
+                    newsHtml += '</div>';
                 });
-                newsHtml += '<div style="color:#ef4444;font-size:10px;font-weight:700;margin-top:4px;">NAO OPERE ATE DIGERIR O DADO</div>';
             } else {
-                newsHtml += '<div style="color:#22c55e;font-weight:700;">&#x2705; Sem noticias de impacto proximas</div>';
-                const prox = (notRes.proximos || []).slice(0, 3);
-                if (prox.length > 0) {
-                    newsHtml += '<div style="margin-top:4px;font-size:10px;color:var(--text-muted);">Proximos:</div>';
-                    prox.forEach(p => {
-                        newsHtml += '<div style="font-size:10px;">' + p.hora + ' ' + p.moeda + ' ' + p.evento + '</div>';
-                    });
-                }
+                newsHtml = '<div style="color:#22c55e;font-size:11px;">Sem noticias de impacto relevantes.</div>';
             }
-            // Update safety bar
-            updateSafetyBar(newsSeguro, notRes);
+            updateSafetyBar(notRes.alertas === 0, notRes);
         }
         document.getElementById('simRealNews').innerHTML = newsHtml || 'Sem dados';
         
-        // ---- HEATMAP ----
-        let heatHtml = '';
-        if (heatRes && heatRes.slots) {
-            const now = new Date();
-            const utc2 = now.getTime() + now.getTimezoneOffset() * 60000;
-            const brt2 = new Date(utc2 - 3 * 3600000);
-            const horaAtual = brt2.getHours() + ':' + String(brt2.getMinutes()).padStart(2,'0');
-            const sorted = [...heatRes.slots].sort((a,b) => b.volatilidade - a.volatilidade);
-            const top3 = sorted.slice(0, 3);
-            heatHtml += '<div style="font-size:10px;color:var(--text-muted);margin-bottom:4px;">Melhores horarios (maior volatilidade):</div>';
-            top3.forEach((s, i) => {
-                const cor = s.volatilidade >= 70 ? '#ef4444' : s.volatilidade >= 50 ? '#ea580c' : '#ca8a04';
-                heatHtml += '<div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid rgba(255,255,255,0.05);"><span style="font-weight:700;">#' + (i+1) + ' ' + s.hora + '</span><span style="color:' + cor + ';font-weight:700;">' + s.volatilidade + '%</span></div>';
-            });
-        }
-        document.getElementById('simRealHeat').innerHTML = heatHtml || 'Sem dados';
+        // ---- HEATMAP from actual data ----
+        let heatHtml = '<div style="font-size:10px;color:var(--text-muted);margin-bottom:4px;">Horarios com mais oportunidades (score 4+):</div>';
+        const horaMap = {};
+        velas.forEach(v => {
+            const h = v.hora.split(':')[0];
+            if (!horaMap[h]) horaMap[h] = {total: 0, operar: 0};
+            horaMap[h].total++;
+            if (v.decisao === 'OPERAR') horaMap[h].operar++;
+        });
+        const horaEntries = Object.entries(horaMap).sort((a,b) => b[1].operar - a[1].operar);
+        horaEntries.forEach(([h, data]) => {
+            const pct = Math.round(data.operar / data.total * 100);
+            const cor = pct >= 50 ? '#22c55e' : pct >= 25 ? '#ca8a04' : '#ef4444';
+            heatHtml += '<div style="display:flex;justify-content:space-between;align-items:center;padding:2px 0;font-size:10px;">';
+            heatHtml += '<span style="font-weight:700;">' + h + ':00</span>';
+            heatHtml += '<div style="flex:1;margin:0 8px;height:6px;background:#333;border-radius:3px;"><div style="height:100%;width:' + pct + '%;background:' + cor + ';border-radius:3px;"></div></div>';
+            heatHtml += '<span style="color:' + cor + ';font-weight:700;">' + pct + '%</span>';
+            heatHtml += '</div>';
+        });
+        document.getElementById('simRealHeat').innerHTML = heatHtml;
         
-        // ---- ESCALA DE CONFIANCA ----
-        const escala = sinaisRes?.escala_confianca;
-        if (escala) {
-            const bars = document.getElementById('simRealEscala').children;
-            const cores = ['#ef4444','#ea580c','#ca8a04','#16a34a','#22c55e'];
-            for (let i = 0; i < 5; i++) {
-                bars[i].style.background = i < escala.nota ? cores[i] : '#333';
-            }
-        }
-        
-        // ---- VEREDICTO FINAL ----
-        const sinal = sinaisRes?.sinais?.[0];
-        const confScore = conf?.score || 0;
-        
-        if (!newsSeguro) {
-            veredEl.textContent = '&#x26D4; NAO OPERE';
-            veredEl.innerHTML = '&#x26D4; NAO OPERE';
-            veredEl.style.color = '#ef4444';
-            veredSub.textContent = 'Noticia de alto impacto na zona de 15 minutos. Aguarde o mercado digerir.';
-            document.getElementById('simRealVeredicto').style.borderColor = '#ef4444';
-        } else if (sinal && sinal.tipo !== 'NEUTRO' && confScore >= 4) {
-            const isCompra = sinal.tipo === 'COMPRA';
-            veredEl.innerHTML = (isCompra ? '&#x2B06;' : '&#x2B07;') + ' ' + sinal.tipo;
-            veredEl.style.color = isCompra ? '#22c55e' : '#ef4444';
-            veredSub.textContent = sinal.setup + ' | Confianca: ' + (escala?.nota || '?') + '/5 (' + (escala?.label || '') + ') | R:R ' + (sinal.rr || '?') + ' | Stop ' + (sinal.stop_pts||'?') + 'pts | Alvo ' + (sinal.alvo_pts||'?') + 'pts';
-            document.getElementById('simRealVeredicto').style.borderColor = isCompra ? '#22c55e' : '#ef4444';
-        } else if (confScore >= 3) {
-            veredEl.innerHTML = '&#x23F3; AGUARDAR';
-            veredEl.style.color = '#ca8a04';
-            veredSub.textContent = 'Confluencia ' + confScore + '/7 - setup fraco. Aguarde alinhamento de 4+ pontos para entrar.';
-            document.getElementById('simRealVeredicto').style.borderColor = '#ca8a04';
-        } else {
-            veredEl.innerHTML = '&#x26D4; NAO OPERE';
-            veredEl.style.color = '#ef4444';
-            veredSub.textContent = 'Confluencia ' + confScore + '/7 - sem setup valido. Sem confluencia = sem trade. (Douglas: cada momento e unico)';
-            document.getElementById('simRealVeredicto').style.borderColor = '#ef4444';
+        // ---- ESCALA DE CONFIANCA (media do dia) ----
+        const avgScore = velas.reduce((s, v) => s + v.confianca, 0) / velas.length;
+        const avgConf = Math.round(avgScore);
+        const bars = document.getElementById('simRealEscala').children;
+        const cores = ['#ef4444','#ea580c','#ca8a04','#16a34a','#22c55e'];
+        for (let i = 0; i < 5; i++) {
+            bars[i].style.background = i < avgConf ? cores[i] : '#333';
         }
         
-        // ---- OPERACOES RECOMENDADAS (replay do dia anterior quando fechado) ----
+        // ---- OPERACOES RECOMENDADAS ----
         let opsHtml = '';
-        if (replayRes && replayRes.velas && replayRes.velas.length > 0) {
-            // Analyze each candle for best entries
-            const velas = replayRes.velas;
-            let bestOps = [];
+        if (ops.length > 0) {
+            opsHtml += '<div style="font-size:10px;color:var(--text-muted);margin-bottom:8px;">Operacoes que o Simulador teria feito no pregao de ' + simRes.dia + ':</div>';
             
-            for (let i = 5; i < velas.length - 5; i++) {
-                const v = velas[i];
-                const prevVelas = velas.slice(Math.max(0, i-5), i);
+            ops.forEach((op, idx) => {
+                const isWin = op.resultado === 'WIN';
+                const cor = op.tipo === 'COMPRA' ? '#22c55e' : '#ef4444';
+                const resCor = isWin ? '#22c55e' : '#ef4444';
                 
-                // Check for setup conditions
-                let score = 0;
-                let tipo = null;
-                let motivos = [];
+                opsHtml += '<div style="background:rgba(255,255,255,0.02);border:1px solid ' + cor + '30;border-left:3px solid ' + cor + ';border-radius:6px;padding:10px 12px;margin-bottom:6px;">';
                 
-                // RSI extremes
-                if (v.rsi && v.rsi < 30) { score += 2; tipo = 'COMPRA'; motivos.push('RSI sobrevendido (' + v.rsi + ')'); }
-                else if (v.rsi && v.rsi > 70) { score += 2; tipo = 'VENDA'; motivos.push('RSI sobrecomprado (' + v.rsi + ')'); }
-                
-                // EMA alignment
-                if (v.ema9 && v.ema21) {
-                    if (v.ema9 > v.ema21 && v.close > v.ema9) { score += 1; if(!tipo) tipo = 'COMPRA'; motivos.push('EMA9 > EMA21 + preco acima'); }
-                    else if (v.ema9 < v.ema21 && v.close < v.ema9) { score += 1; if(!tipo) tipo = 'VENDA'; motivos.push('EMA9 < EMA21 + preco abaixo'); }
-                }
-                
-                // Tendencia
-                if (v.tendencia === 'ALTA' && tipo === 'COMPRA') { score += 1; motivos.push('Tendencia ALTA'); }
-                else if (v.tendencia === 'BAIXA' && tipo === 'VENDA') { score += 1; motivos.push('Tendencia BAIXA'); }
-                
-                // MACD histogram reversal
-                if (v.macd_hist !== null && i > 0 && velas[i-1].macd_hist !== null) {
-                    if (v.macd_hist > 0 && velas[i-1].macd_hist <= 0) { score += 1; if(!tipo) tipo = 'COMPRA'; motivos.push('MACD virou positivo'); }
-                    else if (v.macd_hist < 0 && velas[i-1].macd_hist >= 0) { score += 1; if(!tipo) tipo = 'VENDA'; motivos.push('MACD virou negativo'); }
-                }
-                
-                if (score >= 3 && tipo) {
-                    bestOps.push({idx: i, hora: v.hora, tipo: tipo, score: score, preco: v.close, motivos: motivos, rsi: v.rsi, tend: v.tendencia});
-                }
-            }
-            
-            // Sort by score descending, take top entries
-            bestOps.sort((a,b) => b.score - a.score);
-            const topOps = bestOps.slice(0, 8);
-            
-            if (topOps.length > 0) {
-                opsHtml += '<div style="font-size:10px;color:var(--text-muted);margin-bottom:6px;">Dia: ' + replayRes.dia + ' | ' + replayRes.contrato + ' | Analisadas ' + velas.length + ' velas | ' + bestOps.length + ' setups encontrados</div>';
-                
-                topOps.forEach((op, idx) => {
-                    const isCompra = op.tipo === 'COMPRA';
-                    const cor = isCompra ? '#22c55e' : '#ef4444';
-                    const stopPts = 150;
-                    const alvoPts = 300;
-                    const stopPrice = isCompra ? op.preco - stopPts : op.preco + stopPts;
-                    const alvoPrice = isCompra ? op.preco + alvoPts : op.preco - alvoPts;
-                    
-                    // Simulate: walk forward to see result
-                    let resultado = 'ABERTO';
-                    let resCor = '#888';
-                    let precoSaida = 0;
-                    let horaSaida = '';
-                    
-                    for (let j = op.idx + 1; j < velas.length; j++) {
-                        const fv = velas[j];
-                        if (isCompra) {
-                            if (fv.low <= stopPrice) { resultado = 'LOSS'; resCor = '#ef4444'; precoSaida = stopPrice; horaSaida = fv.hora; break; }
-                            if (fv.high >= alvoPrice) { resultado = 'WIN'; resCor = '#22c55e'; precoSaida = alvoPrice; horaSaida = fv.hora; break; }
-                        } else {
-                            if (fv.high >= stopPrice) { resultado = 'LOSS'; resCor = '#ef4444'; precoSaida = stopPrice; horaSaida = fv.hora; break; }
-                            if (fv.low <= alvoPrice) { resultado = 'WIN'; resCor = '#22c55e'; precoSaida = alvoPrice; horaSaida = fv.hora; break; }
-                        }
-                    }
-                    if (resultado === 'ABERTO') {
-                        const lastV = velas[velas.length - 1];
-                        precoSaida = lastV.close;
-                        horaSaida = lastV.hora;
-                        const pts = isCompra ? precoSaida - op.preco : op.preco - precoSaida;
-                        resultado = pts > 0 ? 'WIN' : 'LOSS';
-                        resCor = pts > 0 ? '#22c55e' : '#ef4444';
-                    }
-                    
-                    const pts = isCompra ? precoSaida - op.preco : op.preco - precoSaida;
-                    const rs = pts * 0.20;
-                    
-                    opsHtml += '<div style="background:rgba(255,255,255,0.02);border:1px solid ' + cor + '30;border-left:3px solid ' + cor + ';border-radius:6px;padding:10px 12px;margin-bottom:6px;">';
-                    opsHtml += '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;">';
-                    opsHtml += '<div style="display:flex;align-items:center;gap:8px;">';
-                    opsHtml += '<span style="font-size:11px;font-weight:800;color:' + cor + ';background:' + cor + '15;padding:2px 8px;border-radius:4px;">' + op.tipo + '</span>';
-                    opsHtml += '<span style="font-weight:700;font-size:13px;">' + op.hora + '</span>';
-                    opsHtml += '<span style="font-size:11px;color:var(--text-muted);">@ ' + op.preco.toLocaleString('pt-BR') + '</span>';
-                    opsHtml += '<span style="font-size:10px;color:var(--accent-blue);">Score ' + op.score + '</span>';
-                    opsHtml += '</div>';
-                    opsHtml += '<div style="display:flex;align-items:center;gap:8px;">';
-                    opsHtml += '<span style="font-size:18px;font-weight:900;color:' + resCor + ';">' + resultado + '</span>';
-                    opsHtml += '<span style="font-size:12px;font-weight:700;color:' + resCor + ';">' + (pts >= 0 ? '+' : '') + pts.toFixed(0) + 'pts</span>';
-                    opsHtml += '<span style="font-size:11px;color:' + resCor + ';">' + (rs >= 0 ? '+' : '') + 'R$ ' + rs.toFixed(2) + '</span>';
-                    opsHtml += '<span style="font-size:10px;color:var(--text-muted);">saida ' + horaSaida + '</span>';
-                    opsHtml += '</div></div>';
-                    opsHtml += '<div style="font-size:10px;color:var(--text-muted);margin-top:4px;">' + op.motivos.join(' | ') + '</div>';
-                    opsHtml += '</div>';
-                });
-                
-                // Summary
-                const wins = topOps.filter(o => {
-                    const isC = o.tipo === 'COMPRA';
-                    let res = 'ABERTO';
-                    for (let j = o.idx + 1; j < velas.length; j++) {
-                        if (isC && velas[j].low <= (o.preco - 150)) { res = 'LOSS'; break; }
-                        if (isC && velas[j].high >= (o.preco + 300)) { res = 'WIN'; break; }
-                        if (!isC && velas[j].high >= (o.preco + 150)) { res = 'LOSS'; break; }
-                        if (!isC && velas[j].low <= (o.preco - 300)) { res = 'WIN'; break; }
-                    }
-                    return res === 'WIN';
-                }).length;
-                
-                opsHtml += '<div style="background:var(--bg-card);border:1px solid var(--border);border-radius:6px;padding:10px;margin-top:8px;display:flex;justify-content:space-around;text-align:center;">';
-                opsHtml += '<div><div style="font-size:10px;color:var(--text-muted);">Operacoes</div><div style="font-size:18px;font-weight:800;">' + topOps.length + '</div></div>';
-                opsHtml += '<div><div style="font-size:10px;color:var(--text-muted);">Win Rate</div><div style="font-size:18px;font-weight:800;color:#22c55e;">' + Math.round(wins/topOps.length*100) + '%</div></div>';
+                // Header
+                opsHtml += '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;">';
+                opsHtml += '<div style="display:flex;align-items:center;gap:8px;">';
+                opsHtml += '<span style="font-size:11px;font-weight:800;color:' + cor + ';background:' + cor + '15;padding:2px 8px;border-radius:4px;">' + op.tipo + '</span>';
+                opsHtml += '<span style="font-weight:700;font-size:13px;font-family:monospace;">' + op.hora_entrada + '</span>';
+                opsHtml += '<span style="font-size:11px;color:var(--text-muted);">@ ' + op.preco_entrada.toLocaleString('pt-BR') + '</span>';
+                opsHtml += '<span style="font-size:10px;color:var(--accent-blue);">Confianca ' + op.confianca + '/5 (' + op.conf_label + ')</span>';
                 opsHtml += '</div>';
-            } else {
-                opsHtml = '<div style="text-align:center;padding:16px;color:var(--text-muted);">Nenhum setup com score 3+ encontrado no pregao anterior.</div>';
-            }
+                opsHtml += '<div style="display:flex;align-items:center;gap:8px;">';
+                opsHtml += '<span style="font-size:20px;font-weight:900;color:' + resCor + ';">' + op.resultado + '</span>';
+                opsHtml += '<span style="font-size:13px;font-weight:800;color:' + resCor + ';">' + (op.pts >= 0 ? '+' : '') + op.pts + 'pts</span>';
+                opsHtml += '<span style="font-size:12px;color:' + resCor + ';">' + (op.resultado_rs >= 0 ? '+' : '') + 'R$ ' + op.resultado_rs.toFixed(2) + '</span>';
+                opsHtml += '</div></div>';
+                
+                // Details
+                opsHtml += '<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin-top:6px;font-size:10px;">';
+                opsHtml += '<div style="text-align:center;padding:3px;background:rgba(255,255,255,0.03);border-radius:3px;"><div style="color:var(--text-muted);font-size:9px;">Stop</div><div>' + op.stop_pts + 'pts</div></div>';
+                opsHtml += '<div style="text-align:center;padding:3px;background:rgba(255,255,255,0.03);border-radius:3px;"><div style="color:var(--text-muted);font-size:9px;">Alvo</div><div>' + op.alvo_pts + 'pts</div></div>';
+                opsHtml += '<div style="text-align:center;padding:3px;background:rgba(255,255,255,0.03);border-radius:3px;"><div style="color:var(--text-muted);font-size:9px;">R:R</div><div>' + op.rr + '</div></div>';
+                opsHtml += '<div style="text-align:center;padding:3px;background:rgba(255,255,255,0.03);border-radius:3px;"><div style="color:var(--text-muted);font-size:9px;">Saida</div><div>' + op.hora_saida + '</div></div>';
+                opsHtml += '<div style="text-align:center;padding:3px;background:rgba(255,255,255,0.03);border-radius:3px;"><div style="color:var(--text-muted);font-size:9px;">Velas</div><div>' + op.velas_na_op + '</div></div>';
+                opsHtml += '</div>';
+                
+                // Motivos
+                opsHtml += '<div style="font-size:10px;color:var(--text-muted);margin-top:4px;">' + op.motivos.join(' | ') + '</div>';
+                opsHtml += '</div>';
+            });
+            
+            // Summary bar
+            opsHtml += '<div style="background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:12px;margin-top:8px;display:flex;justify-content:space-around;text-align:center;flex-wrap:wrap;gap:8px;">';
+            opsHtml += '<div><div style="font-size:10px;color:var(--text-muted);">Operacoes</div><div style="font-size:20px;font-weight:800;">' + perf.total_operacoes + '</div></div>';
+            opsHtml += '<div><div style="font-size:10px;color:var(--text-muted);">Win Rate</div><div style="font-size:20px;font-weight:800;color:' + (perf.win_rate >= 60 ? '#22c55e' : '#ca8a04') + ';">' + perf.win_rate + '%</div></div>';
+            opsHtml += '<div><div style="font-size:10px;color:var(--text-muted);">Total Pts</div><div style="font-size:20px;font-weight:800;color:' + (perf.total_pts >= 0 ? '#22c55e' : '#ef4444') + ';">' + (perf.total_pts >= 0 ? '+' : '') + perf.total_pts + '</div></div>';
+            opsHtml += '<div><div style="font-size:10px;color:var(--text-muted);">Resultado</div><div style="font-size:20px;font-weight:800;color:' + (perf.total_rs >= 0 ? '#22c55e' : '#ef4444') + ';">' + (perf.total_rs >= 0 ? '+' : '') + 'R$ ' + perf.total_rs.toFixed(2) + '</div></div>';
+            opsHtml += '</div>';
         } else {
-            opsHtml = '<div style="text-align:center;padding:16px;color:var(--text-muted);">Sem dados de replay disponiveis.</div>';
+            opsHtml = '<div style="text-align:center;padding:24px;color:var(--text-muted);">Nenhum setup com score 4+ encontrado neste pregao. Dia sem oportunidades claras.</div>';
         }
         document.getElementById('simRealOps').innerHTML = opsHtml;
         

@@ -2239,6 +2239,308 @@ async def get_noticias_impacto():
         return JSONResponse({"erro": str(e), "proximos": [], "passados": []}, status_code=500)
 
 
+
+
+# =====================================================
+# SIMULADOR REAL - ANALISE COMPLETA DO PREGAO ANTERIOR
+# =====================================================
+
+@app.get("/api/simulador-real")
+async def simulador_real(ativo: str = Query("WIN")):
+    """Analise completa do pregao anterior: vela por vela com decisoes de operar/nao operar"""
+    try:
+        from datetime import timezone, timedelta
+        BRT_tz = timezone(timedelta(hours=-3))
+        ativo = ativo.upper()
+        ticker = "^BVSP" if ativo == "WIN" else "USDBRL=X"
+        valor_ponto = 0.20 if ativo == "WIN" else 10.00
+        
+        from data_provider import obter_contrato_vigente as _ocv
+        contrato_info = _ocv(ativo)
+        contrato_nome = contrato_info.get('ticker_b3', ativo)
+        
+        # Get 5 days of data
+        dados = yf.download(ticker, period="5d", interval="5m", progress=False)
+        if dados.empty:
+            return JSONResponse({"erro": "Sem dados do yfinance"})
+        
+        if isinstance(dados.columns, pd.MultiIndex):
+            dados.columns = dados.columns.get_level_values(0)
+        dados.columns = [c.lower() for c in dados.columns]
+        dados.index = dados.index.tz_convert(BRT_tz)
+        
+        hoje = datetime.now(BRT_tz).date()
+        dates = sorted(set(dados.index.date))
+        dia_anterior = None
+        for d in reversed(dates):
+            if d < hoje:
+                dia_anterior = d
+                break
+        if not dia_anterior:
+            return JSONResponse({"erro": "Dia anterior nao encontrado"})
+        
+        day_indices = [i for i, d in enumerate(dados.index.date) if d == dia_anterior]
+        if not day_indices:
+            return JSONResponse({"erro": "Sem velas do dia anterior"})
+        
+        from analysis_engine import calcular_rsi, calcular_macd, calcular_atr_series
+        
+        # ---- ANALYZE EVERY CANDLE ----
+        velas_analisadas = []
+        operacoes_recomendadas = []
+        posicao_aberta = None  # track open position to avoid overlapping
+        
+        for pos_idx in day_indices:
+            w = dados.iloc[max(0, pos_idx - 100):pos_idx + 1]
+            vela = dados.iloc[pos_idx]
+            ts = dados.index[pos_idx]
+            hora = ts.strftime("%H:%M")
+            hora_int = ts.hour
+            minuto = ts.minute
+            
+            o = float(vela['open']); h = float(vela['high'])
+            l = float(vela['low']); c = float(vela['close'])
+            vol = int(vela.get('volume', 0))
+            
+            # Calculate indicators
+            rsi_v = 50; macd_h = 0; ema9 = 0; ema21 = 0; ema50 = 0; atr_v = 150
+            tend = "LATERAL"
+            
+            if len(w) >= 20:
+                try:
+                    rsi_s = calcular_rsi(w)
+                    rsi_v = round(float(rsi_s.iloc[-1]), 1)
+                    ml, ms, mh = calcular_macd(w)
+                    macd_h = round(float(mh.iloc[-1]), 1)
+                    ema9 = round(float(w['close'].ewm(span=9, adjust=False).mean().iloc[-1]), 2)
+                    ema21 = round(float(w['close'].ewm(span=21, adjust=False).mean().iloc[-1]), 2)
+                    ema50 = round(float(w['close'].ewm(span=50, adjust=False).mean().iloc[-1]), 2) if len(w) >= 50 else 0
+                    atr_s = calcular_atr_series(w)
+                    atr_v = round(float(atr_s.iloc[-1]), 1) if len(atr_s) > 0 else 150
+                    
+                    if ema9 > ema21 and c > ema9: tend = "ALTA"
+                    elif ema9 < ema21 and c < ema9: tend = "BAIXA"
+                    elif ema9 > ema21: tend = "ALTA"
+                    elif ema9 < ema21: tend = "BAIXA"
+                except: pass
+            
+            # ---- SCORING SYSTEM ----
+            score = 0
+            motivos_operar = []
+            motivos_nao_operar = []
+            tipo_sinal = None
+            
+            # 1. Horario (heatmap logic)
+            bom_horario = hora_int in [9, 10, 14, 15, 16]
+            horario_ruim = hora_int in [12, 13, 17]  # almoco + final
+            if hora_int == 9 and minuto < 15:
+                horario_ruim = True  # primeiros 15min sao caos
+                motivos_nao_operar.append("Primeiros 15min do pregao - volatilidade caotica")
+            if bom_horario and not horario_ruim:
+                score += 1
+                motivos_operar.append(f"Horario forte ({hora})")
+            elif horario_ruim:
+                motivos_nao_operar.append(f"Horario fraco ({hora}) - evitar")
+            
+            # 2. RSI extremos
+            if rsi_v < 30:
+                score += 2; tipo_sinal = "COMPRA"
+                motivos_operar.append(f"RSI sobrevendido ({rsi_v})")
+            elif rsi_v > 70:
+                score += 2; tipo_sinal = "VENDA"
+                motivos_operar.append(f"RSI sobrecomprado ({rsi_v})")
+            elif 40 <= rsi_v <= 60:
+                motivos_nao_operar.append(f"RSI neutro ({rsi_v}) - sem forca")
+            
+            # 3. EMA alignment
+            if ema9 > 0 and ema21 > 0:
+                if ema9 > ema21 and c > ema9:
+                    score += 1
+                    if not tipo_sinal: tipo_sinal = "COMPRA"
+                    motivos_operar.append("EMA9 > EMA21 + preco acima")
+                elif ema9 < ema21 and c < ema9:
+                    score += 1
+                    if not tipo_sinal: tipo_sinal = "VENDA"
+                    motivos_operar.append("EMA9 < EMA21 + preco abaixo")
+                else:
+                    motivos_nao_operar.append("EMAs sem alinhamento claro")
+            
+            # 4. Tendencia confirmada
+            if tend == "ALTA" and tipo_sinal == "COMPRA":
+                score += 1; motivos_operar.append("Tendencia ALTA confirmada")
+            elif tend == "BAIXA" and tipo_sinal == "VENDA":
+                score += 1; motivos_operar.append("Tendencia BAIXA confirmada")
+            elif tend == "LATERAL":
+                motivos_nao_operar.append("Mercado LATERAL - sem tendencia")
+            
+            # 5. MACD histogram
+            if macd_h > 0 and tipo_sinal == "COMPRA":
+                score += 1; motivos_operar.append(f"MACD histograma positivo ({macd_h})")
+            elif macd_h < 0 and tipo_sinal == "VENDA":
+                score += 1; motivos_operar.append(f"MACD histograma negativo ({macd_h})")
+            
+            # 6. ATR (volatilidade minima)
+            if atr_v > 80:
+                score += 1; motivos_operar.append(f"ATR {atr_v} - volatilidade suficiente")
+            else:
+                motivos_nao_operar.append(f"ATR {atr_v} - volatilidade baixa")
+            
+            # DECISAO
+            operar = score >= 4 and tipo_sinal is not None and not horario_ruim
+            decisao = "OPERAR" if operar else "NAO OPERAR"
+            
+            # Confianca (Bellafiore)
+            if score >= 6: confianca = 5; conf_label = "A+ SETUP"
+            elif score >= 5: confianca = 4; conf_label = "BOM"
+            elif score >= 4: confianca = 3; conf_label = "OK"
+            elif score >= 3: confianca = 2; conf_label = "DUVIDOSO"
+            else: confianca = 1; conf_label = "SEM SETUP"
+            
+            vela_info = {
+                "idx": len(velas_analisadas),
+                "hora": hora,
+                "open": round(o, 2), "high": round(h, 2),
+                "low": round(l, 2), "close": round(c, 2),
+                "rsi": rsi_v, "macd_hist": macd_h,
+                "ema9": ema9, "ema21": ema21,
+                "atr": atr_v, "tendencia": tend,
+                "score": score, "decisao": decisao,
+                "tipo_sinal": tipo_sinal,
+                "confianca": confianca, "conf_label": conf_label,
+                "motivos_operar": motivos_operar,
+                "motivos_nao_operar": motivos_nao_operar,
+            }
+            velas_analisadas.append(vela_info)
+            
+            # SIMULATE recommended operations
+            if operar and tipo_sinal and posicao_aberta is None:
+                stop_pts = round(atr_v * 1.5)
+                stop_pts = max(round(stop_pts / 5) * 5, 50)  # round to tick, min 50
+                alvo_pts = round(stop_pts * 2)
+                
+                is_compra = tipo_sinal == "COMPRA"
+                stop_price = round(c - stop_pts, 2) if is_compra else round(c + stop_pts, 2)
+                alvo_price = round(c + alvo_pts, 2) if is_compra else round(c - alvo_pts, 2)
+                
+                # Walk forward
+                resultado = None
+                preco_saida = 0
+                hora_saida = ""
+                velas_na_op = 0
+                
+                future_start = day_indices.index(pos_idx) + 1
+                for fi in range(future_start, len(day_indices)):
+                    fv = dados.iloc[day_indices[fi]]
+                    fh = float(fv['high']); fl = float(fv['low'])
+                    fc = float(fv['close'])
+                    f_hora = dados.index[day_indices[fi]].strftime("%H:%M")
+                    velas_na_op += 1
+                    
+                    if is_compra:
+                        if fl <= stop_price:
+                            resultado = "LOSS"; preco_saida = stop_price; hora_saida = f_hora; break
+                        if fh >= alvo_price:
+                            resultado = "WIN"; preco_saida = alvo_price; hora_saida = f_hora; break
+                    else:
+                        if fh >= stop_price:
+                            resultado = "LOSS"; preco_saida = stop_price; hora_saida = f_hora; break
+                        if fl <= alvo_price:
+                            resultado = "WIN"; preco_saida = alvo_price; hora_saida = f_hora; break
+                
+                if resultado is None:
+                    last_v = dados.iloc[day_indices[-1]]
+                    preco_saida = float(last_v['close'])
+                    hora_saida = dados.index[day_indices[-1]].strftime("%H:%M")
+                    pts_f = (preco_saida - c) if is_compra else (c - preco_saida)
+                    resultado = "WIN" if pts_f > 0 else "LOSS"
+                
+                pts = round((preco_saida - c) if is_compra else (c - preco_saida), 1)
+                rs = round(pts * valor_ponto, 2)
+                
+                operacoes_recomendadas.append({
+                    "tipo": tipo_sinal,
+                    "hora_entrada": hora,
+                    "preco_entrada": round(c, 2),
+                    "stop_loss": stop_price,
+                    "take_profit": alvo_price,
+                    "stop_pts": stop_pts,
+                    "alvo_pts": alvo_pts,
+                    "rr": f"1:{round(alvo_pts/stop_pts, 1)}",
+                    "hora_saida": hora_saida,
+                    "preco_saida": round(preco_saida, 2),
+                    "resultado": resultado,
+                    "pts": pts,
+                    "resultado_rs": rs,
+                    "velas_na_op": velas_na_op,
+                    "score": score,
+                    "confianca": confianca,
+                    "conf_label": conf_label,
+                    "motivos": motivos_operar,
+                })
+                
+                # Block next entries until this one resolves (skip forward)
+                posicao_aberta = {"close_idx": future_start + velas_na_op}
+            
+            # Check if position closed
+            if posicao_aberta:
+                current_day_idx = day_indices.index(pos_idx) if pos_idx in day_indices else 0
+                if current_day_idx >= posicao_aberta.get("close_idx", 0):
+                    posicao_aberta = None
+        
+        # ---- RESUMO DO DIA ----
+        first_v = velas_analisadas[0] if velas_analisadas else {}
+        last_v = velas_analisadas[-1] if velas_analisadas else {}
+        abertura = first_v.get("open", 0)
+        fechamento = last_v.get("close", 0)
+        variacao = round((fechamento / abertura - 1) * 100, 2) if abertura else 0
+        high_dia = max(v["high"] for v in velas_analisadas) if velas_analisadas else 0
+        low_dia = min(v["low"] for v in velas_analisadas) if velas_analisadas else 0
+        amplitude = round(high_dia - low_dia, 0)
+        
+        total_ops = len(operacoes_recomendadas)
+        wins = sum(1 for op in operacoes_recomendadas if op["resultado"] == "WIN")
+        losses = total_ops - wins
+        win_rate = round(wins / total_ops * 100) if total_ops > 0 else 0
+        total_pts = sum(op["pts"] for op in operacoes_recomendadas)
+        total_rs = sum(op["resultado_rs"] for op in operacoes_recomendadas)
+        
+        velas_operar = sum(1 for v in velas_analisadas if v["decisao"] == "OPERAR")
+        velas_nao = sum(1 for v in velas_analisadas if v["decisao"] == "NAO OPERAR")
+        
+        return JSONResponse({
+            "dia": dia_anterior.strftime("%d/%m/%Y"),
+            "ativo": ativo,
+            "contrato": contrato_nome,
+            "valor_ponto": valor_ponto,
+            "resumo": {
+                "abertura": abertura,
+                "fechamento": fechamento,
+                "variacao_pct": variacao,
+                "direcao": "ALTA" if variacao > 0 else "BAIXA" if variacao < 0 else "NEUTRO",
+                "high": high_dia,
+                "low": low_dia,
+                "amplitude_pts": amplitude,
+                "total_velas": len(velas_analisadas),
+                "velas_operar": velas_operar,
+                "velas_nao_operar": velas_nao,
+            },
+            "performance": {
+                "total_operacoes": total_ops,
+                "wins": wins,
+                "losses": losses,
+                "win_rate": win_rate,
+                "total_pts": round(total_pts, 1),
+                "total_rs": round(total_rs, 2),
+            },
+            "operacoes": operacoes_recomendadas,
+            "velas": velas_analisadas,
+            "timestamp": datetime.now(BRT_tz).strftime("%H:%M:%S"),
+        })
+    except Exception as e:
+        logger.error(f"Erro simulador-real: {e}")
+        import traceback; traceback.print_exc()
+        return JSONResponse({"erro": str(e)}, status_code=500)
+
 @app.get("/api/heatmap")
 async def get_heatmap(ativo: str = Query("WIN")):
     """Heatmap de melhores horarios para operar - baseado em volatilidade historica"""
