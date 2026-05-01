@@ -43,6 +43,7 @@ app_state = {
     "auto_refresh_task": None,
     "usando_cache": False,
     "cache_data_pregao": None,
+    "preco_realtime": {},
 }
 
 TIMEFRAMES = ["5m", "15m", "1h", "4h", "1d"]
@@ -189,6 +190,15 @@ async def atualizar_analises():
 async def auto_refresh_loop():
     while True:
         try:
+            # Sempre atualizar preço em tempo real via HG Brasil
+            try:
+                precos_rt = await app_state["provider"].obter_preco_realtime()
+                if precos_rt:
+                    app_state["preco_realtime"] = precos_rt
+                    logger.info(f"Preço realtime atualizado via HG Brasil")
+            except Exception as e:
+                logger.error(f"Erro preço realtime: {e}")
+
             if mercado_aberto():
                 await atualizar_analises()
                 logger.info("Mercado aberto - dados atualizados")
@@ -217,6 +227,15 @@ async def lifespan(app: FastAPI):
     else:
         logger.info("Sem cache disponível, tentando buscar dados históricos...")
         await atualizar_analises()
+
+    # Buscar preço realtime na inicialização
+    try:
+        precos_rt = await app_state["provider"].obter_preco_realtime()
+        if precos_rt:
+            app_state["preco_realtime"] = precos_rt
+            logger.info(f"Preço realtime inicial: {precos_rt}")
+    except Exception:
+        pass
 
     app_state["auto_refresh_task"] = asyncio.create_task(auto_refresh_loop())
     logger.info("Auto-refresh iniciado (intervalo: 5 minutos)")
@@ -271,6 +290,7 @@ async def get_analise(
         "usando_cache": app_state["usando_cache"],
         "cache_data_pregao": app_state["cache_data_pregao"],
         "mercado_aberto": mercado_aberto(),
+        "preco_realtime": app_state.get("preco_realtime", {}).get(ativo, {}),
     })
 
 
@@ -353,7 +373,8 @@ async def get_status():
         "contratos_vigentes": contratos,
         "timeframes": TIMEFRAMES,
         "intervalo_refresh": "5 minutos",
-        "versao": "3.0.0",
+        "versao": "3.1.0",
+        "fontes_dados": ["yfinance (candles OHLCV)", "HG Brasil (preço tempo real)"],
         "mercado_aberto": mercado_aberto(),
         "usando_cache": app_state["usando_cache"],
         "cache_data_pregao": app_state["cache_data_pregao"],
@@ -664,6 +685,21 @@ async def get_demo(ativo: str = Query("WIN"), contratos: int = Query(1)):
             "valor_ponto": valor_pt,
         }
     })
+
+
+
+@app.get("/api/preco-realtime")
+async def get_preco_realtime():
+    """Retorna preço em tempo real via HG Brasil API"""
+    try:
+        precos = await app_state["provider"].obter_preco_realtime()
+        return JSONResponse({
+            "precos": precos,
+            "fonte": "HG Brasil API (tempo real)",
+            "timestamp": datetime.now(BRT).strftime("%Y-%m-%d %H:%M:%S"),
+        })
+    except Exception as e:
+        return JSONResponse({"erro": str(e)}, status_code=500)
 
 
 def _calcular_tendencia_geral(painel: dict) -> str:
