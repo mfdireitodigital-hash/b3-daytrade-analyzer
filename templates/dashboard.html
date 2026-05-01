@@ -4,33 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>ANALISE B3 - 24/7 - MINI-INDICE & MINI-DOLAR</title>
-    <script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js">
-// =====================================================
-// REAL-TIME PRICE (HG Brasil - every 30s)
-// =====================================================
-async function atualizarPrecoRealtime() {
-    try {
-        const res = await fetch('/api/preco-realtime');
-        const data = await res.json();
-        if (data.precos && data.precos[state.ativo]) {
-            const rt = data.precos[state.ativo];
-            const el = document.getElementById('precoDisplay');
-            if (el && rt.preco) {
-                el.textContent = rt.preco.toLocaleString('pt-BR');
-                const pc = document.getElementById('precoChange');
-                if (pc && rt.variacao !== undefined) {
-                    pc.textContent = (rt.variacao >= 0 ? '+' : '') + rt.variacao.toFixed(2) + '%';
-                    pc.className = 'preco-change ' + (rt.variacao >= 0 ? 'up' : 'down');
-                }
-            }
-        }
-    } catch(e) {}
-}
-
-// Refresh preço a cada 30 segundos
-setInterval(atualizarPrecoRealtime, 30000);
-
-</script>
+    <script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         :root {
@@ -250,6 +224,91 @@ setInterval(atualizarPrecoRealtime, 30000);
         .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid var(--border); border-top-color: var(--accent-green); border-radius: 50%; animation: spin 0.8s linear infinite; vertical-align: middle; margin-right: 8px; }
         @keyframes spin { to { transform: rotate(360deg); } }
 
+
+        /* CENTRO DE TREINAMENTO - PAPER TRADING */
+        .pt-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.85); z-index: 5000; display: none; overflow-y: auto; }
+        .pt-overlay.active { display: block; }
+        .pt-container { max-width: 1100px; margin: 20px auto; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+        .pt-header { padding: 14px 20px; background: linear-gradient(135deg, #1a1f2e 0%, #0d1117 100%); border-bottom: 2px solid var(--accent-green); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; }
+        .pt-title { font-size: 18px; font-weight: 700; color: var(--accent-green); letter-spacing: 1px; }
+        .pt-title-sub { font-size: 11px; color: var(--text-muted); letter-spacing: 0.5px; }
+        .pt-close { padding: 6px 16px; background: var(--accent-red); border: none; border-radius: 6px; color: #fff; cursor: pointer; font-size: 12px; font-weight: 600; }
+        .pt-tabs { display: flex; border-bottom: 1px solid var(--border); background: var(--bg-card); }
+        .pt-tab { padding: 10px 20px; cursor: pointer; border-bottom: 2px solid transparent; color: var(--text-secondary); font-weight: 500; font-size: 13px; transition: all 0.2s; }
+        .pt-tab:hover { color: var(--text-primary); }
+        .pt-tab.active { color: var(--accent-green); border-bottom-color: var(--accent-green); background: rgba(34,197,94,0.05); }
+        .pt-content { padding: 16px 20px; }
+        .pt-tab-content { display: none; }
+        .pt-tab-content.active { display: block; }
+
+        /* Balance Bar */
+        .pt-balance-bar { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; margin-bottom: 16px; flex-wrap: wrap; gap: 10px; }
+        .pt-balance-item { text-align: center; }
+        .pt-balance-label { font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
+        .pt-balance-value { font-size: 20px; font-weight: 700; font-family: monospace; }
+        .pt-balance-value.positive { color: var(--accent-green); }
+        .pt-balance-value.negative { color: var(--accent-red); }
+
+        /* Trading Panel */
+        .pt-trading-panel { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px; }
+        .pt-trade-side { background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
+        .pt-trade-side.buy { border-top: 3px solid var(--accent-green); }
+        .pt-trade-side.sell { border-top: 3px solid var(--accent-red); }
+        .pt-trade-btn { width: 100%; padding: 14px; border: none; border-radius: 8px; font-size: 16px; font-weight: 700; cursor: pointer; letter-spacing: 1px; transition: all 0.2s; }
+        .pt-trade-btn.buy { background: var(--accent-green); color: #000; }
+        .pt-trade-btn.buy:hover { background: #16a34a; transform: scale(1.02); }
+        .pt-trade-btn.sell { background: var(--accent-red); color: #fff; }
+        .pt-trade-btn.sell:hover { background: #dc2626; transform: scale(1.02); }
+        .pt-trade-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+        .pt-input-group { margin: 10px 0; }
+        .pt-input-group label { display: block; font-size: 11px; color: var(--text-muted); margin-bottom: 4px; text-transform: uppercase; }
+        .pt-input-group input { width: 100%; padding: 10px; background: var(--bg-primary); border: 1px solid var(--border); border-radius: 6px; color: var(--text-primary); font-size: 14px; font-family: monospace; outline: none; }
+        .pt-input-group input:focus { border-color: var(--accent-green); }
+        .pt-price-live { font-size: 24px; font-weight: 700; font-family: monospace; text-align: center; padding: 10px 0; }
+        .pt-price-live.buy-price { color: var(--accent-green); }
+        .pt-price-live.sell-price { color: var(--accent-red); }
+
+        /* Positions Table */
+        .pt-positions { margin-bottom: 16px; }
+        .pt-pos-header { font-size: 12px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; }
+        .pt-pos-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+        .pt-pos-table th { background: var(--bg-card); padding: 8px 10px; text-align: left; font-size: 10px; color: var(--text-muted); text-transform: uppercase; border-bottom: 1px solid var(--border); }
+        .pt-pos-table td { padding: 8px 10px; border-bottom: 1px solid var(--border); font-family: monospace; }
+        .pt-pos-table tr:hover { background: var(--bg-hover); }
+        .pt-close-pos { padding: 4px 10px; background: var(--accent-orange); border: none; border-radius: 4px; color: #000; cursor: pointer; font-size: 11px; font-weight: 600; }
+        .pt-close-pos:hover { background: #d97706; }
+
+        /* History Table */
+        .pt-hist-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+        .pt-hist-table th { background: var(--bg-card); padding: 8px; text-align: left; font-size: 10px; color: var(--text-muted); text-transform: uppercase; border-bottom: 1px solid var(--border); }
+        .pt-hist-table td { padding: 7px 8px; border-bottom: 1px solid var(--border); }
+
+        /* Admin Add Money */
+        .pt-admin-box { background: rgba(59,130,246,0.05); border: 1px solid var(--accent-blue); border-radius: 8px; padding: 12px 16px; margin-bottom: 12px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+        .pt-admin-box label { font-size: 12px; color: var(--accent-blue); font-weight: 600; white-space: nowrap; }
+        .pt-admin-box input { padding: 8px 12px; background: var(--bg-primary); border: 1px solid var(--border); border-radius: 6px; color: var(--text-primary); font-size: 14px; font-family: monospace; width: 180px; outline: none; }
+        .pt-admin-box button { padding: 8px 16px; background: var(--accent-blue); border: none; border-radius: 6px; color: #fff; cursor: pointer; font-weight: 600; font-size: 12px; }
+
+        /* Market Status */
+        .pt-market-status { display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px; border-radius: 20px; font-size: 11px; font-weight: 600; }
+        .pt-market-status.open { background: rgba(34,197,94,0.15); color: var(--accent-green); }
+        .pt-market-status.closed { background: rgba(239,68,68,0.15); color: var(--accent-red); }
+
+        /* Daily Report */
+        .pt-report-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin-bottom: 12px; }
+        .pt-report-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 12px; }
+        .pt-report-stat { text-align: center; padding: 10px; background: var(--bg-primary); border-radius: 6px; }
+        .pt-report-stat-value { font-size: 20px; font-weight: 700; font-family: monospace; }
+        .pt-report-stat-label { font-size: 10px; color: var(--text-muted); margin-top: 4px; text-transform: uppercase; }
+
+        .pt-empty { text-align: center; padding: 40px 20px; color: var(--text-muted); font-size: 13px; }
+        .pt-empty-icon { font-size: 40px; margin-bottom: 10px; opacity: 0.3; }
+
+        @media (max-width: 768px) {
+            .pt-trading-panel { grid-template-columns: 1fr; }
+            .pt-container { margin: 10px; }
+            .pt-balance-bar { flex-direction: column; }
+        }
         @media (max-width: 768px) {
             .main-grid { grid-template-columns: 1fr; }
             .sidebar { max-height: none; }
@@ -279,22 +338,140 @@ setInterval(atualizarPrecoRealtime, 30000);
     </div>
 </div>
 
-<!-- DEMO OVERLAY -->
-<div class="demo-overlay" id="demoOverlay">
-    <div class="demo-container">
-        <div class="demo-header">
-            <div class="demo-title">MODO DEMO - Simulacao do Dia</div>
-            <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
-                <select id="demoAtivo" style="padding:8px 12px; background:var(--bg-card); border:1px solid var(--border); color:var(--text-primary); border-radius:6px; font-size:13px;">
+<!-- CENTRO DE TREINAMENTO - PAPER TRADING -->
+<div class="pt-overlay" id="ptOverlay">
+    <div class="pt-container">
+        <div class="pt-header">
+            <div>
+                <div class="pt-title">CENTRO DE TREINAMENTO</div>
+                <div class="pt-title-sub">Paper Trading - Simulador em Tempo Real</div>
+            </div>
+            <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+                <div class="pt-market-status" id="ptMarketStatus">
+                    <div class="status-dot"></div>
+                    <span>Verificando...</span>
+                </div>
+                <select id="ptAtivo" style="padding:8px 12px; background:var(--bg-card); border:1px solid var(--border); color:var(--text-primary); border-radius:6px; font-size:13px;" onchange="ptTrocarAtivo()">
                     <option value="WIN">Mini-Indice (WIN)</option>
                     <option value="WDO">Mini-Dolar (WDO)</option>
                 </select>
-                <button class="btn btn-primary" onclick="carregarDemo()">Simular</button>
-                <button class="demo-close" onclick="fecharDemo()">Fechar</button>
+                <button class="pt-close" onclick="fecharPaperTrading()">FECHAR</button>
             </div>
         </div>
-        <div id="demoContent">
-            <div class="loading"><span class="spinner"></span> Selecione um ativo e clique em Simular</div>
+
+        <div class="pt-tabs">
+            <div class="pt-tab active" onclick="ptMudarTab('trading')">OPERAR</div>
+            <div class="pt-tab" onclick="ptMudarTab('historico')">HISTORICO</div>
+            <div class="pt-tab" onclick="ptMudarTab('relatorio')">RELATORIO DO DIA</div>
+        </div>
+
+        <div class="pt-content">
+            <!-- TAB: OPERAR (Trading) -->
+            <div class="pt-tab-content active" id="ptTabTrading">
+                <!-- Balance Bar -->
+                <div class="pt-balance-bar">
+                    <div class="pt-balance-item">
+                        <div class="pt-balance-label">Saldo Disponivel</div>
+                        <div class="pt-balance-value positive" id="ptSaldo">R$ 0,00</div>
+                    </div>
+                    <div class="pt-balance-item">
+                        <div class="pt-balance-label">Em Posicoes</div>
+                        <div class="pt-balance-value" id="ptEmPosicao" style="color:var(--accent-orange)">R$ 0,00</div>
+                    </div>
+                    <div class="pt-balance-item">
+                        <div class="pt-balance-label">P&L do Dia</div>
+                        <div class="pt-balance-value" id="ptPnlDia">R$ 0,00</div>
+                    </div>
+                    <div class="pt-balance-item">
+                        <div class="pt-balance-label">P&L Total</div>
+                        <div class="pt-balance-value" id="ptPnlTotal">R$ 0,00</div>
+                    </div>
+                </div>
+
+                <!-- Admin: Add Money -->
+                <div class="pt-admin-box" id="ptAdminBox" style="display:none;">
+                    <label>ADICIONAR DINHEIRO DEMONSTRACAO:</label>
+                    <input type="number" id="ptAddMoney" placeholder="Valor em R$" step="1000" min="0">
+                    <button onclick="ptAdicionarDinheiro()">ADICIONAR</button>
+                    <button onclick="ptResetarConta()" style="background:var(--accent-red);">RESETAR CONTA</button>
+                </div>
+
+                <!-- Trading Panel -->
+                <div class="pt-trading-panel">
+                    <div class="pt-trade-side buy">
+                        <div class="pt-price-live buy-price" id="ptPrecoBuy">--</div>
+                        <div class="pt-input-group">
+                            <label>Contratos</label>
+                            <input type="number" id="ptQtdBuy" value="1" min="1" max="999">
+                        </div>
+                        <div class="pt-input-group">
+                            <label>Stop Loss (pts)</label>
+                            <input type="number" id="ptStopBuy" placeholder="Ex: 150" step="5">
+                        </div>
+                        <div class="pt-input-group">
+                            <label>Take Profit (pts)</label>
+                            <input type="number" id="ptAlvoBuy" placeholder="Ex: 300" step="5">
+                        </div>
+                        <button class="pt-trade-btn buy" id="ptBtnBuy" onclick="ptComprar()">COMPRAR</button>
+                    </div>
+                    <div class="pt-trade-side sell">
+                        <div class="pt-price-live sell-price" id="ptPrecoSell">--</div>
+                        <div class="pt-input-group">
+                            <label>Contratos</label>
+                            <input type="number" id="ptQtdSell" value="1" min="1" max="999">
+                        </div>
+                        <div class="pt-input-group">
+                            <label>Stop Loss (pts)</label>
+                            <input type="number" id="ptStopSell" placeholder="Ex: 150" step="5">
+                        </div>
+                        <div class="pt-input-group">
+                            <label>Take Profit (pts)</label>
+                            <input type="number" id="ptAlvoSell" placeholder="Ex: 300" step="5">
+                        </div>
+                        <button class="pt-trade-btn sell" id="ptBtnSell" onclick="ptVender()">VENDER</button>
+                    </div>
+                </div>
+
+                <!-- Open Positions -->
+                <div class="pt-positions">
+                    <div class="pt-pos-header">
+                        <span>POSICOES ABERTAS (<span id="ptPosCount">0</span>)</span>
+                        <button class="btn" onclick="ptFecharTodas()" style="font-size:10px;padding:4px 10px;">Fechar Todas</button>
+                    </div>
+                    <div id="ptPosTable">
+                        <div class="pt-empty">
+                            <div class="pt-empty-icon">$</div>
+                            Nenhuma posicao aberta. Clique COMPRAR ou VENDER para iniciar.
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- TAB: HISTORICO -->
+            <div class="pt-tab-content" id="ptTabHistorico">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
+                    <div style="font-size:14px;font-weight:600;">Historico de Operacoes</div>
+                    <div style="display:flex;gap:8px;">
+                        <select id="ptHistFiltro" onchange="ptRenderHistorico()" style="padding:6px 10px;background:var(--bg-card);border:1px solid var(--border);color:var(--text-primary);border-radius:6px;font-size:12px;">
+                            <option value="today">Hoje</option>
+                            <option value="week">Esta Semana</option>
+                            <option value="all">Todas</option>
+                        </select>
+                        <button class="btn" onclick="ptLimparHistorico()" style="font-size:10px;padding:4px 10px;border-color:var(--accent-red);color:var(--accent-red);">Limpar</button>
+                    </div>
+                </div>
+                <div id="ptHistContent">
+                    <div class="pt-empty">Nenhuma operacao registrada ainda.</div>
+                </div>
+            </div>
+
+            <!-- TAB: RELATORIO -->
+            <div class="pt-tab-content" id="ptTabRelatorio">
+                <div style="font-size:14px;font-weight:600;margin-bottom:12px;">Relatorio do Dia</div>
+                <div id="ptReportContent">
+                    <div class="pt-empty">Opere durante o dia para gerar o relatorio.</div>
+                </div>
+            </div>
         </div>
     </div>
 </div>
@@ -346,7 +523,7 @@ setInterval(atualizarPrecoRealtime, 30000);
                 <input type="number" id="numContratos" min="1" max="999" value="1" onchange="atualizarContratos()">
                 <span class="contrato-valor" id="valorContrato">R$ 0.20/pt</span>
             </div>
-            <button class="btn btn-demo" onclick="abrirDemo()">DEMO</button>
+            <button class="btn btn-demo" onclick="abrirPaperTrading()" style="border-color:var(--accent-green);color:var(--accent-green);font-weight:700;">TREINAMENTO</button>
             <button class="btn btn-primary" onclick="forcarAtualizacao()">ATUALIZAR</button>
             <div class="user-badge">
                 <strong id="headerUser">--</strong>
@@ -637,79 +814,516 @@ function atualizarContratos() {
 }
 
 // =====================================================
-// DEMO MODE
+// CENTRO DE TREINAMENTO - PAPER TRADING SYSTEM
 // =====================================================
-function abrirDemo() { document.getElementById('demoOverlay').classList.add('active'); }
-function fecharDemo() { document.getElementById('demoOverlay').classList.remove('active'); }
 
-async function carregarDemo() {
-    const ativo = document.getElementById('demoAtivo').value;
-    const content = document.getElementById('demoContent');
-    content.innerHTML = '<div class="loading"><span class="spinner"></span> Simulando operacoes...</div>';
+// Paper Trading State
+let ptState = {
+    ativo: 'WIN',
+    precoAtual: 0,
+    positions: [],   // Open positions
+    history: [],      // Closed trades
+    balance: 0,       // Available balance
+    pnlDia: 0,
+    pnlTotal: 0,
+    updateInterval: null,
+};
+
+// Contract specs for P&L calculation
+const PT_SPECS = {
+    WIN: { tick: 5, valorPonto: 0.20, nome: 'Mini-Indice' },
+    WDO: { tick: 0.5, valorPonto: 10.00, nome: 'Mini-Dolar' },
+};
+
+// ---- LocalStorage Keys ----
+function ptKey(suffix) {
+    return 'pt_' + currentUserName + '_' + suffix;
+}
+
+function ptSalvar() {
     try {
-        const res = await fetch('/api/demo?ativo=' + ativo + '&contratos=' + state.numContratos);
-        const data = await res.json();
-        renderizarDemo(data);
-    } catch (e) {
-        content.innerHTML = '<div style="text-align:center; color:var(--accent-red); padding:40px;">Erro ao carregar simulacao</div>';
+        localStorage.setItem(ptKey('balance'), JSON.stringify(ptState.balance));
+        localStorage.setItem(ptKey('positions'), JSON.stringify(ptState.positions));
+        localStorage.setItem(ptKey('history'), JSON.stringify(ptState.history));
+    } catch(e) { console.error('PT save error:', e); }
+}
+
+function ptCarregar() {
+    try {
+        const b = localStorage.getItem(ptKey('balance'));
+        ptState.balance = b ? JSON.parse(b) : 0;
+        const p = localStorage.getItem(ptKey('positions'));
+        ptState.positions = p ? JSON.parse(p) : [];
+        const h = localStorage.getItem(ptKey('history'));
+        ptState.history = h ? JSON.parse(h) : [];
+    } catch(e) {
+        ptState.balance = 0;
+        ptState.positions = [];
+        ptState.history = [];
     }
 }
 
-function renderizarDemo(data) {
-    const content = document.getElementById('demoContent');
-    const r = data.resumo;
-    const saldoColor = r.saldo_pontos >= 0 ? 'var(--accent-green)' : 'var(--accent-red)';
-    const finColor = r.saldo_financeiro >= 0 ? 'var(--accent-green)' : 'var(--accent-red)';
+// ---- Open / Close ----
+function abrirPaperTrading() {
+    ptCarregar();
+    document.getElementById('ptOverlay').classList.add('active');
+    document.getElementById('ptAtivo').value = state.ativo;
+    ptState.ativo = state.ativo;
+    // Show admin box for admin users
+    if (currentUserAdmin) {
+        document.getElementById('ptAdminBox').style.display = 'flex';
+    }
+    ptAtualizarPreco();
+    ptAtualizarUI();
+    // Start live updates every 5 seconds
+    if (ptState.updateInterval) clearInterval(ptState.updateInterval);
+    ptState.updateInterval = setInterval(ptTickUpdate, 5000);
+}
 
-    let html = '<div style="text-align:center; margin-bottom:16px;">';
-    html += '<div style="font-size:14px;font-weight:700;">' + (data.contrato||data.ativo) + '</div>';
-    html += '<div style="font-size:12px;color:var(--text-muted);">' + data.data + ' | ' + r.contratos + ' contrato(s) | R$ ' + r.valor_ponto + '/pt</div>';
-    html += '</div>';
+function fecharPaperTrading() {
+    document.getElementById('ptOverlay').classList.remove('active');
+    if (ptState.updateInterval) {
+        clearInterval(ptState.updateInterval);
+        ptState.updateInterval = null;
+    }
+}
 
-    html += '<div class="demo-summary">';
-    html += '<div class="demo-stat"><div class="demo-stat-value">' + r.total + '</div><div class="demo-stat-label">Operacoes</div></div>';
-    html += '<div class="demo-stat"><div class="demo-stat-value" style="color:var(--accent-green)">' + r.wins + '</div><div class="demo-stat-label">Wins</div></div>';
-    html += '<div class="demo-stat"><div class="demo-stat-value" style="color:var(--accent-red)">' + r.losses + '</div><div class="demo-stat-label">Losses</div></div>';
-    html += '<div class="demo-stat"><div class="demo-stat-value" style="color:' + (r.taxa_acerto>=50?'var(--accent-green)':'var(--accent-red)') + '">' + r.taxa_acerto + '%</div><div class="demo-stat-label">Acerto</div></div>';
-    html += '<div class="demo-stat"><div class="demo-stat-value" style="color:' + saldoColor + '">' + (r.saldo_pontos>0?'+':'') + r.saldo_pontos + '</div><div class="demo-stat-label">Pontos</div></div>';
-    html += '<div class="demo-stat"><div class="demo-stat-value" style="color:' + finColor + '">R$ ' + r.saldo_financeiro.toLocaleString('pt-BR') + '</div><div class="demo-stat-label">Financeiro</div></div>';
-    html += '</div>';
+function ptTrocarAtivo() {
+    ptState.ativo = document.getElementById('ptAtivo').value;
+    ptAtualizarPreco();
+    ptAtualizarUI();
+}
 
-    // RELATÓRIO DE ENTRADAS E SAÍDAS
-    html += '<div style="font-size:13px;font-weight:700;margin-bottom:10px;color:var(--text-primary);border-bottom:1px solid var(--border);padding-bottom:6px;">RELATORIO DE ENTRADAS E SAIDAS</div>';
-    html += '<div style="overflow-x:auto;"><table class="demo-ops-table"><thead><tr><th>#</th><th>Horario</th><th>Ativo</th><th>Tipo</th><th>Entrada</th><th>Stop</th><th>Alvo</th><th>Saida</th><th>Pts</th><th>R/R</th><th>CTs</th><th>Resultado</th><th>Status</th></tr></thead><tbody>';
-    data.operacoes.forEach(op => {
-        const isWin = op.resultado > 0;
-        const resColor = isWin ? 'var(--accent-green)' : 'var(--accent-red)';
+function ptMudarTab(tab) {
+    document.querySelectorAll('.pt-tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.pt-tab-content').forEach(c => c.classList.remove('active'));
+    event.target.classList.add('active');
+    document.getElementById('ptTab' + tab.charAt(0).toUpperCase() + tab.slice(1)).classList.add('active');
+    if (tab === 'historico') ptRenderHistorico();
+    if (tab === 'relatorio') ptRenderRelatorio();
+}
+
+// ---- Market Status ----
+function ptCheckMarket() {
+    const now = new Date();
+    // Convert to BRT (UTC-3)
+    const utc = now.getTime() + now.getTimezoneOffset() * 60000;
+    const brt = new Date(utc - 3 * 3600000);
+    const h = brt.getHours();
+    const d = brt.getDay();
+    const isOpen = d >= 1 && d <= 5 && h >= 9 && h < 18;
+    const el = document.getElementById('ptMarketStatus');
+    if (isOpen) {
+        el.className = 'pt-market-status open';
+        el.innerHTML = '<div class="status-dot online"></div><span>MERCADO ABERTO</span>';
+    } else {
+        el.className = 'pt-market-status closed';
+        el.innerHTML = '<div class="status-dot offline"></div><span>MERCADO FECHADO</span>';
+    }
+    return isOpen;
+}
+
+// ---- Price Updates ----
+async function ptAtualizarPreco() {
+    ptCheckMarket();
+    try {
+        const res = await fetch('/api/preco-realtime');
+        const data = await res.json();
+        if (data.precos && data.precos[ptState.ativo]) {
+            ptState.precoAtual = data.precos[ptState.ativo].preco;
+        }
+    } catch(e) {}
+    // Fallback: use analysis price
+    if (!ptState.precoAtual && state.analise) {
+        const a = state.analise.analise || state.analise;
+        ptState.precoAtual = a.preco_atual || 0;
+    }
+    const fmt = ptState.precoAtual ? ptState.precoAtual.toLocaleString('pt-BR') : '--';
+    document.getElementById('ptPrecoBuy').textContent = fmt;
+    document.getElementById('ptPrecoSell').textContent = fmt;
+}
+
+// ---- Live Tick (every 5s) ----
+async function ptTickUpdate() {
+    await ptAtualizarPreco();
+    ptCheckPositions();
+    ptAtualizarUI();
+}
+
+// ---- Check Positions for Stop/Take Profit ----
+function ptCheckPositions() {
+    if (!ptState.precoAtual || ptState.positions.length === 0) return;
+    const toClose = [];
+    ptState.positions.forEach((pos, idx) => {
+        const spec = PT_SPECS[pos.ativo] || PT_SPECS.WIN;
+        const priceDiff = pos.tipo === 'COMPRA'
+            ? ptState.precoAtual - pos.entrada
+            : pos.entrada - ptState.precoAtual;
+
+        // Check Stop Loss
+        if (pos.stopPts && priceDiff <= -Math.abs(pos.stopPts)) {
+            toClose.push({ idx, reason: 'STOP LOSS', price: ptState.precoAtual });
+        }
+        // Check Take Profit
+        else if (pos.alvoPts && priceDiff >= Math.abs(pos.alvoPts)) {
+            toClose.push({ idx, reason: 'TAKE PROFIT', price: ptState.precoAtual });
+        }
+    });
+    // Close from last to first to avoid index shifting
+    toClose.sort((a, b) => b.idx - a.idx).forEach(c => {
+        ptFecharPosicao(c.idx, c.price, c.reason);
+    });
+}
+
+// ---- Balance Management (Admin) ----
+function ptAdicionarDinheiro() {
+    const input = document.getElementById('ptAddMoney');
+    const valor = parseFloat(input.value);
+    if (!valor || valor <= 0) return;
+    ptState.balance += valor;
+    ptSalvar();
+    ptAtualizarUI();
+    input.value = '';
+}
+
+function ptResetarConta() {
+    if (!confirm('Resetar toda a conta paper trading? Isso apaga saldo, posicoes e historico.')) return;
+    ptState.balance = 0;
+    ptState.positions = [];
+    ptState.history = [];
+    ptState.pnlDia = 0;
+    ptState.pnlTotal = 0;
+    ptSalvar();
+    ptAtualizarUI();
+}
+
+// ---- Execute Trade ----
+function ptComprar() { ptExecutarTrade('COMPRA'); }
+function ptVender() { ptExecutarTrade('VENDA'); }
+
+function ptExecutarTrade(tipo) {
+    if (!ptState.precoAtual || ptState.precoAtual <= 0) {
+        alert('Preco nao disponivel. Aguarde a atualizacao.');
+        return;
+    }
+    if (ptState.balance <= 0) {
+        alert('Saldo insuficiente! Adicione dinheiro demonstracao primeiro.');
+        return;
+    }
+    const isBuy = tipo === 'COMPRA';
+    const qtd = parseInt(document.getElementById(isBuy ? 'ptQtdBuy' : 'ptQtdSell').value) || 1;
+    const stopPts = parseFloat(document.getElementById(isBuy ? 'ptStopBuy' : 'ptStopSell').value) || 0;
+    const alvoPts = parseFloat(document.getElementById(isBuy ? 'ptAlvoBuy' : 'ptAlvoSell').value) || 0;
+    const spec = PT_SPECS[ptState.ativo] || PT_SPECS.WIN;
+
+    // Calculate margin requirement (simplified: 20% of notional)
+    const margin = ptState.ativo === 'WIN'
+        ? qtd * 100  // R$100 per mini contract margin
+        : qtd * 150; // R$150 per WDO contract
+
+    if (margin > ptState.balance) {
+        alert('Margem insuficiente! Necessario R$ ' + margin.toLocaleString('pt-BR') + ' para ' + qtd + ' contrato(s).');
+        return;
+    }
+
+    const now = new Date();
+    const position = {
+        id: Date.now(),
+        ativo: ptState.ativo,
+        tipo: tipo,
+        entrada: ptState.precoAtual,
+        contratos: qtd,
+        stopPts: stopPts,
+        alvoPts: alvoPts,
+        stopPrice: isBuy ? ptState.precoAtual - stopPts : ptState.precoAtual + stopPts,
+        alvoPrice: isBuy ? ptState.precoAtual + alvoPts : ptState.precoAtual - alvoPts,
+        margem: margin,
+        abertura: now.toISOString(),
+        horaAbertura: now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+    };
+
+    ptState.positions.push(position);
+    ptState.balance -= margin;
+    ptSalvar();
+    ptAtualizarUI();
+}
+
+// ---- Close Position ----
+function ptFecharPosicao(idx, precoSaida, motivo) {
+    if (idx < 0 || idx >= ptState.positions.length) return;
+    const pos = ptState.positions[idx];
+    const spec = PT_SPECS[pos.ativo] || PT_SPECS.WIN;
+    precoSaida = precoSaida || ptState.precoAtual;
+    motivo = motivo || 'MANUAL';
+
+    const priceDiff = pos.tipo === 'COMPRA'
+        ? precoSaida - pos.entrada
+        : pos.entrada - precoSaida;
+
+    const pontosResult = Math.round(priceDiff * 100) / 100;
+    const financeiro = pontosResult * spec.valorPonto * pos.contratos;
+
+    const now = new Date();
+    const trade = {
+        id: pos.id,
+        ativo: pos.ativo,
+        tipo: pos.tipo,
+        entrada: pos.entrada,
+        saida: precoSaida,
+        contratos: pos.contratos,
+        stopPts: pos.stopPts,
+        alvoPts: pos.alvoPts,
+        pontos: pontosResult,
+        financeiro: Math.round(financeiro * 100) / 100,
+        motivo: motivo,
+        horaAbertura: pos.horaAbertura,
+        horaFechamento: now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+        data: now.toLocaleDateString('pt-BR'),
+        dataISO: now.toISOString().split('T')[0],
+        win: financeiro >= 0,
+    };
+
+    ptState.history.unshift(trade);
+    // Return margin + P&L to balance
+    ptState.balance += pos.margem + financeiro;
+    ptState.positions.splice(idx, 1);
+    ptSalvar();
+    ptAtualizarUI();
+}
+
+function ptFecharPosicaoManual(idx) {
+    ptFecharPosicao(idx, ptState.precoAtual, 'MANUAL');
+}
+
+function ptFecharTodas() {
+    if (ptState.positions.length === 0) return;
+    if (!confirm('Fechar todas as ' + ptState.positions.length + ' posicoes abertas?')) return;
+    while (ptState.positions.length > 0) {
+        ptFecharPosicao(0, ptState.precoAtual, 'FECHAMENTO GERAL');
+    }
+}
+
+// ---- Update UI ----
+function ptAtualizarUI() {
+    const spec = PT_SPECS[ptState.ativo] || PT_SPECS.WIN;
+
+    // Calculate P&L
+    let emPosicao = 0;
+    let pnlAberto = 0;
+    ptState.positions.forEach(pos => {
+        emPosicao += pos.margem;
+        if (ptState.precoAtual) {
+            const diff = pos.tipo === 'COMPRA'
+                ? ptState.precoAtual - pos.entrada
+                : pos.entrada - ptState.precoAtual;
+            const posSpec = PT_SPECS[pos.ativo] || PT_SPECS.WIN;
+            pnlAberto += diff * posSpec.valorPonto * pos.contratos;
+        }
+    });
+
+    // Daily P&L from history
+    const hoje = new Date().toISOString().split('T')[0];
+    let pnlDia = ptState.history
+        .filter(t => t.dataISO === hoje)
+        .reduce((sum, t) => sum + t.financeiro, 0);
+    pnlDia += pnlAberto;
+
+    // Total P&L
+    let pnlTotal = ptState.history.reduce((sum, t) => sum + t.financeiro, 0) + pnlAberto;
+
+    // Update balance display
+    document.getElementById('ptSaldo').textContent = 'R$ ' + ptState.balance.toLocaleString('pt-BR', { minimumFractionDigits: 2 });
+    document.getElementById('ptSaldo').className = 'pt-balance-value ' + (ptState.balance >= 0 ? 'positive' : 'negative');
+    document.getElementById('ptEmPosicao').textContent = 'R$ ' + emPosicao.toLocaleString('pt-BR', { minimumFractionDigits: 2 });
+    
+    const pnlDiaEl = document.getElementById('ptPnlDia');
+    pnlDiaEl.textContent = (pnlDia >= 0 ? '+' : '') + 'R$ ' + pnlDia.toLocaleString('pt-BR', { minimumFractionDigits: 2 });
+    pnlDiaEl.className = 'pt-balance-value ' + (pnlDia >= 0 ? 'positive' : 'negative');
+    
+    const pnlTotalEl = document.getElementById('ptPnlTotal');
+    pnlTotalEl.textContent = (pnlTotal >= 0 ? '+' : '') + 'R$ ' + pnlTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 });
+    pnlTotalEl.className = 'pt-balance-value ' + (pnlTotal >= 0 ? 'positive' : 'negative');
+
+    // Render positions
+    ptRenderPositions();
+}
+
+function ptRenderPositions() {
+    const container = document.getElementById('ptPosTable');
+    document.getElementById('ptPosCount').textContent = ptState.positions.length;
+
+    if (ptState.positions.length === 0) {
+        container.innerHTML = '<div class="pt-empty"><div class="pt-empty-icon">$</div>Nenhuma posicao aberta. Clique COMPRAR ou VENDER para iniciar.</div>';
+        return;
+    }
+
+    let html = '<div style="overflow-x:auto;"><table class="pt-pos-table"><thead><tr>';
+    html += '<th>Ativo</th><th>Tipo</th><th>CTs</th><th>Entrada</th><th>Stop</th><th>Alvo</th><th>Atual</th><th>P&L Pts</th><th>P&L R$</th><th>Hora</th><th></th>';
+    html += '</tr></thead><tbody>';
+
+    ptState.positions.forEach((pos, idx) => {
+        const spec = PT_SPECS[pos.ativo] || PT_SPECS.WIN;
+        const diff = pos.tipo === 'COMPRA'
+            ? ptState.precoAtual - pos.entrada
+            : pos.entrada - ptState.precoAtual;
+        const pnl = diff * spec.valorPonto * pos.contratos;
+        const isPositive = pnl >= 0;
+        const color = isPositive ? 'var(--accent-green)' : 'var(--accent-red)';
+
         html += '<tr>';
-        html += '<td>' + op.id + '</td>';
-        html += '<td style="white-space:nowrap">' + op.horario + '</td>';
-        html += '<td>' + op.ativo + '</td>';
-        html += '<td><span class="tag ' + (op.tipo==='COMPRA'?'tag-green':'tag-red') + '">' + op.tipo + '</span></td>';
-        html += '<td style="font-family:monospace">' + op.entrada.toLocaleString('pt-BR') + '</td>';
-        html += '<td style="font-family:monospace;color:var(--accent-red)">' + op.stop.toLocaleString('pt-BR') + '</td>';
-        html += '<td style="font-family:monospace;color:var(--accent-green)">' + op.alvo.toLocaleString('pt-BR') + '</td>';
-        html += '<td style="font-family:monospace">' + op.saida.toLocaleString('pt-BR') + '</td>';
-        html += '<td style="font-family:monospace;color:' + resColor + '">' + (op.pts>0?'+':'') + op.pts + '</td>';
-        html += '<td>' + op.rr + '</td>';
-        html += '<td>' + op.contratos + '</td>';
-        html += '<td style="color:' + resColor + ';font-weight:700;font-family:monospace">' + (op.resultado>0?'+R$ ':'-R$ ') + Math.abs(op.resultado).toLocaleString('pt-BR') + '</td>';
-        html += '<td><span class="tag ' + (isWin?'tag-green':'tag-red') + '">' + op.status + '</span></td>';
+        html += '<td>' + pos.ativo + '</td>';
+        html += '<td><span class="tag ' + (pos.tipo==='COMPRA'?'tag-green':'tag-red') + '">' + pos.tipo + '</span></td>';
+        html += '<td>' + pos.contratos + '</td>';
+        html += '<td>' + pos.entrada.toLocaleString('pt-BR') + '</td>';
+        html += '<td style="color:var(--accent-red)">' + (pos.stopPts ? pos.stopPrice.toLocaleString('pt-BR') : '--') + '</td>';
+        html += '<td style="color:var(--accent-green)">' + (pos.alvoPts ? pos.alvoPrice.toLocaleString('pt-BR') : '--') + '</td>';
+        html += '<td>' + (ptState.precoAtual ? ptState.precoAtual.toLocaleString('pt-BR') : '--') + '</td>';
+        html += '<td style="color:' + color + ';font-weight:700">' + (diff >= 0 ? '+' : '') + diff.toFixed(1) + '</td>';
+        html += '<td style="color:' + color + ';font-weight:700">' + (pnl >= 0 ? '+' : '') + 'R$ ' + pnl.toLocaleString('pt-BR', {minimumFractionDigits:2}) + '</td>';
+        html += '<td style="font-size:11px">' + pos.horaAbertura + '</td>';
+        html += '<td><button class="pt-close-pos" onclick="ptFecharPosicaoManual(' + idx + ')">FECHAR</button></td>';
+        html += '</tr>';
+    });
+
+    html += '</tbody></table></div>';
+    container.innerHTML = html;
+}
+
+// ---- History ----
+function ptRenderHistorico() {
+    const container = document.getElementById('ptHistContent');
+    const filtro = document.getElementById('ptHistFiltro').value;
+    let trades = [...ptState.history];
+
+    if (filtro === 'today') {
+        const hoje = new Date().toISOString().split('T')[0];
+        trades = trades.filter(t => t.dataISO === hoje);
+    } else if (filtro === 'week') {
+        const weekAgo = new Date();
+        weekAgo.setDate(weekAgo.getDate() - 7);
+        const wISO = weekAgo.toISOString().split('T')[0];
+        trades = trades.filter(t => t.dataISO >= wISO);
+    }
+
+    if (trades.length === 0) {
+        container.innerHTML = '<div class="pt-empty">Nenhuma operacao no periodo selecionado.</div>';
+        return;
+    }
+
+    // Summary
+    const wins = trades.filter(t => t.win).length;
+    const losses = trades.length - wins;
+    const totalPnl = trades.reduce((s, t) => s + t.financeiro, 0);
+    const totalPts = trades.reduce((s, t) => s + t.pontos, 0);
+
+    let html = '<div class="pt-report-grid" style="margin-bottom:16px;">';
+    html += '<div class="pt-report-stat"><div class="pt-report-stat-value">' + trades.length + '</div><div class="pt-report-stat-label">Total</div></div>';
+    html += '<div class="pt-report-stat"><div class="pt-report-stat-value" style="color:var(--accent-green)">' + wins + '</div><div class="pt-report-stat-label">Wins</div></div>';
+    html += '<div class="pt-report-stat"><div class="pt-report-stat-value" style="color:var(--accent-red)">' + losses + '</div><div class="pt-report-stat-label">Losses</div></div>';
+    html += '<div class="pt-report-stat"><div class="pt-report-stat-value" style="color:' + (trades.length > 0 ? (wins/trades.length*100>=50?'var(--accent-green)':'var(--accent-red)') : 'var(--text-muted)') + '">' + (trades.length > 0 ? (wins/trades.length*100).toFixed(0) : '0') + '%</div><div class="pt-report-stat-label">Acerto</div></div>';
+    html += '<div class="pt-report-stat"><div class="pt-report-stat-value" style="color:' + (totalPnl>=0?'var(--accent-green)':'var(--accent-red)') + '">' + (totalPnl>=0?'+':'') + 'R$ ' + totalPnl.toLocaleString('pt-BR', {minimumFractionDigits:2}) + '</div><div class="pt-report-stat-label">Resultado</div></div>';
+    html += '</div>';
+
+    html += '<div style="overflow-x:auto;"><table class="pt-hist-table"><thead><tr>';
+    html += '<th>Data</th><th>Ativo</th><th>Tipo</th><th>CTs</th><th>Entrada</th><th>Saida</th><th>Pts</th><th>R$</th><th>Motivo</th><th>Status</th>';
+    html += '</tr></thead><tbody>';
+
+    trades.forEach(t => {
+        const color = t.win ? 'var(--accent-green)' : 'var(--accent-red)';
+        html += '<tr>';
+        html += '<td style="white-space:nowrap">' + t.data + '</td>';
+        html += '<td>' + t.ativo + '</td>';
+        html += '<td><span class="tag ' + (t.tipo==='COMPRA'?'tag-green':'tag-red') + '">' + t.tipo + '</span></td>';
+        html += '<td>' + t.contratos + '</td>';
+        html += '<td style="font-family:monospace">' + t.entrada.toLocaleString('pt-BR') + '</td>';
+        html += '<td style="font-family:monospace">' + t.saida.toLocaleString('pt-BR') + '</td>';
+        html += '<td style="font-family:monospace;color:' + color + '">' + (t.pontos>=0?'+':'') + t.pontos.toFixed(1) + '</td>';
+        html += '<td style="font-family:monospace;font-weight:700;color:' + color + '">' + (t.financeiro>=0?'+':'') + 'R$ ' + t.financeiro.toLocaleString('pt-BR', {minimumFractionDigits:2}) + '</td>';
+        html += '<td style="font-size:10px">' + t.motivo + '</td>';
+        html += '<td><span class="tag ' + (t.win?'tag-green':'tag-red') + '">' + (t.win?'WIN':'LOSS') + '</span></td>';
+        html += '</tr>';
+    });
+
+    html += '</tbody></table></div>';
+    container.innerHTML = html;
+}
+
+function ptLimparHistorico() {
+    if (!confirm('Limpar todo o historico de operacoes?')) return;
+    ptState.history = [];
+    ptSalvar();
+    ptRenderHistorico();
+    ptAtualizarUI();
+}
+
+// ---- Daily Report ----
+function ptRenderRelatorio() {
+    const container = document.getElementById('ptReportContent');
+    const hoje = new Date().toISOString().split('T')[0];
+    const trades = ptState.history.filter(t => t.dataISO === hoje);
+
+    if (trades.length === 0) {
+        container.innerHTML = '<div class="pt-empty">Nenhuma operacao finalizada hoje. Opere e feche posicoes para gerar o relatorio.</div>';
+        return;
+    }
+
+    const wins = trades.filter(t => t.win).length;
+    const losses = trades.length - wins;
+    const totalPnl = trades.reduce((s, t) => s + t.financeiro, 0);
+    const totalPts = trades.reduce((s, t) => s + t.pontos, 0);
+    const avgWin = wins > 0 ? trades.filter(t=>t.win).reduce((s,t)=>s+t.financeiro,0)/wins : 0;
+    const avgLoss = losses > 0 ? trades.filter(t=>!t.win).reduce((s,t)=>s+t.financeiro,0)/losses : 0;
+    const maxWin = trades.length > 0 ? Math.max(...trades.map(t=>t.financeiro)) : 0;
+    const maxLoss = trades.length > 0 ? Math.min(...trades.map(t=>t.financeiro)) : 0;
+
+    let html = '<div class="pt-report-card">';
+    html += '<div style="text-align:center;margin-bottom:16px;">';
+    html += '<div style="font-size:16px;font-weight:700;">RELATORIO - ' + new Date().toLocaleDateString('pt-BR') + '</div>';
+    html += '<div style="font-size:12px;color:var(--text-muted);">' + ptState.ativo + ' | Saldo: R$ ' + ptState.balance.toLocaleString('pt-BR', {minimumFractionDigits:2}) + '</div>';
+    html += '</div>';
+
+    html += '<div class="pt-report-grid">';
+    html += '<div class="pt-report-stat"><div class="pt-report-stat-value">' + trades.length + '</div><div class="pt-report-stat-label">Operacoes</div></div>';
+    html += '<div class="pt-report-stat"><div class="pt-report-stat-value" style="color:var(--accent-green)">' + wins + '</div><div class="pt-report-stat-label">Wins</div></div>';
+    html += '<div class="pt-report-stat"><div class="pt-report-stat-value" style="color:var(--accent-red)">' + losses + '</div><div class="pt-report-stat-label">Losses</div></div>';
+    html += '<div class="pt-report-stat"><div class="pt-report-stat-value" style="color:' + (wins/trades.length*100>=50?'var(--accent-green)':'var(--accent-red)') + '">' + (wins/trades.length*100).toFixed(0) + '%</div><div class="pt-report-stat-label">Taxa Acerto</div></div>';
+    html += '<div class="pt-report-stat"><div class="pt-report-stat-value" style="color:' + (totalPts>=0?'var(--accent-green)':'var(--accent-red)') + '">' + (totalPts>=0?'+':'') + totalPts.toFixed(1) + '</div><div class="pt-report-stat-label">Pontos</div></div>';
+    html += '<div class="pt-report-stat"><div class="pt-report-stat-value" style="color:' + (totalPnl>=0?'var(--accent-green)':'var(--accent-red)') + '">' + (totalPnl>=0?'+':'') + 'R$ ' + totalPnl.toLocaleString('pt-BR', {minimumFractionDigits:2}) + '</div><div class="pt-report-stat-label">Resultado</div></div>';
+    html += '</div>';
+
+    // Stats extras
+    html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:16px;font-size:12px;">';
+    html += '<div class="stat-row"><span class="stat-label">Maior Win</span><span style="color:var(--accent-green);font-weight:700;font-family:monospace">+R$ ' + maxWin.toLocaleString('pt-BR', {minimumFractionDigits:2}) + '</span></div>';
+    html += '<div class="stat-row"><span class="stat-label">Maior Loss</span><span style="color:var(--accent-red);font-weight:700;font-family:monospace">R$ ' + maxLoss.toLocaleString('pt-BR', {minimumFractionDigits:2}) + '</span></div>';
+    html += '<div class="stat-row"><span class="stat-label">Media Win</span><span style="color:var(--accent-green);font-family:monospace">+R$ ' + avgWin.toLocaleString('pt-BR', {minimumFractionDigits:2}) + '</span></div>';
+    html += '<div class="stat-row"><span class="stat-label">Media Loss</span><span style="color:var(--accent-red);font-family:monospace">R$ ' + avgLoss.toLocaleString('pt-BR', {minimumFractionDigits:2}) + '</span></div>';
+    html += '</div>';
+    html += '</div>';
+
+    // Trade list
+    html += '<div style="margin-top:16px;font-size:13px;font-weight:600;margin-bottom:8px;">Detalhamento das Operacoes</div>';
+    html += '<div style="overflow-x:auto;"><table class="pt-hist-table"><thead><tr>';
+    html += '<th>#</th><th>Tipo</th><th>CTs</th><th>Entrada</th><th>Saida</th><th>Abertura</th><th>Fechamento</th><th>Pts</th><th>R$</th><th>Motivo</th>';
+    html += '</tr></thead><tbody>';
+
+    trades.forEach((t, i) => {
+        const color = t.win ? 'var(--accent-green)' : 'var(--accent-red)';
+        html += '<tr>';
+        html += '<td>' + (i+1) + '</td>';
+        html += '<td><span class="tag ' + (t.tipo==='COMPRA'?'tag-green':'tag-red') + '">' + t.tipo + '</span></td>';
+        html += '<td>' + t.contratos + '</td>';
+        html += '<td style="font-family:monospace">' + t.entrada.toLocaleString('pt-BR') + '</td>';
+        html += '<td style="font-family:monospace">' + t.saida.toLocaleString('pt-BR') + '</td>';
+        html += '<td>' + t.horaAbertura + '</td>';
+        html += '<td>' + t.horaFechamento + '</td>';
+        html += '<td style="font-family:monospace;color:' + color + '">' + (t.pontos>=0?'+':'') + t.pontos.toFixed(1) + '</td>';
+        html += '<td style="font-family:monospace;font-weight:700;color:' + color + '">' + (t.financeiro>=0?'+':'') + 'R$ ' + t.financeiro.toLocaleString('pt-BR', {minimumFractionDigits:2}) + '</td>';
+        html += '<td style="font-size:10px">' + t.motivo + '</td>';
         html += '</tr>';
     });
     html += '</tbody></table></div>';
 
-    // MOTIVOS (indicadores cruzados)
-    html += '<div style="margin-top:20px;"><div style="font-size:12px;color:var(--text-muted);text-transform:uppercase;margin-bottom:10px;font-weight:600;">Indicadores Cruzados por Operacao</div>';
-    data.operacoes.forEach(op => {
-        html += '<div style="font-size:11px;padding:6px 0;border-bottom:1px solid var(--border);display:flex;gap:8px;align-items:flex-start;">';
-        html += '<span class="tag ' + (op.tipo==='COMPRA'?'tag-green':'tag-red') + '" style="min-width:60px;text-align:center;flex-shrink:0;">#' + op.id + ' ' + op.tipo + '</span>';
-        html += '<span style="color:var(--text-secondary);flex:1">' + op.motivo + '</span>';
-        html += '<span class="tag ' + (op.win?'tag-green':'tag-red') + '" style="flex-shrink:0">' + op.status + '</span>';
-        html += '</div>';
-    });
-    html += '</div>';
-    content.innerHTML = html;
+    container.innerHTML = html;
 }
 
 // =====================================================
