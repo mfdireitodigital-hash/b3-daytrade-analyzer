@@ -2,13 +2,6 @@
 B3 Day Trade Analyzer - API Principal
 FastAPI backend com análise automática a cada 5 minutos.
 Cache persistente: mostra dados do último pregão fora do horário.
-
-Endpoints:
-  GET /              → Dashboard web
-  GET /api/analise   → Análise completa (ativo, timeframe)
-  GET /api/painel    → Painel multi-timeframe
-  GET /api/sinais    → Sinais ativos de entrada
-  GET /api/status    → Status do sistema
 """
 
 import os
@@ -38,14 +31,11 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Fuso horário de Brasília (UTC-3)
 BRT = timezone(timedelta(hours=-3))
 
-# Caminho do cache persistente
 APP_DIR = Path(os.path.dirname(os.path.abspath(__file__)))
 CACHE_FILE = APP_DIR / "cache_analises.json"
 
-# Estado global da aplicação
 app_state = {
     "ultima_atualizacao": None,
     "analises": {},
@@ -58,10 +48,7 @@ app_state = {
 TIMEFRAMES = ["5m", "15m", "1h", "4h", "1d"]
 ATIVOS = ["WIN", "WDO"]
 
-# Arquivo de usuários persistente
 USERS_FILE = APP_DIR / "usuarios.json"
-
-# Usuários admin (podem criar novos users)
 ADMIN_USERS = ["fabianodomingues", "fabiodomingues"]
 
 
@@ -70,14 +57,12 @@ def _hash_senha(senha: str) -> str:
 
 
 def carregar_usuarios() -> dict:
-    """Carrega usuários do arquivo JSON ou cria com defaults"""
     try:
         if USERS_FILE.exists():
             with open(USERS_FILE, "r") as f:
                 return json.load(f)
     except Exception:
         pass
-    # Defaults
     users = {
         "fabianodomingues": {"senha_hash": _hash_senha("123@mudar"), "admin": True},
         "fabiodomingues": {"senha_hash": _hash_senha("123@mudar"), "admin": True},
@@ -87,7 +72,6 @@ def carregar_usuarios() -> dict:
 
 
 def salvar_usuarios(users: dict):
-    """Salva usuários no arquivo JSON"""
     try:
         with open(USERS_FILE, "w") as f:
             json.dump(users, f, ensure_ascii=False, indent=2)
@@ -113,7 +97,6 @@ class AlterarSenhaRequest(BaseModel):
 
 
 def converter_numpy(obj):
-    """Converte tipos numpy para tipos Python nativos para serialização JSON"""
     if isinstance(obj, dict):
         return {k: converter_numpy(v) for k, v in obj.items()}
     elif isinstance(obj, (list, tuple)):
@@ -130,7 +113,6 @@ def converter_numpy(obj):
 
 
 def mercado_aberto() -> bool:
-    """Verifica se o mercado B3 está aberto (9:00-18:00 BRT, seg-sex)"""
     agora = datetime.now(BRT)
     if agora.weekday() >= 5:
         return False
@@ -140,7 +122,6 @@ def mercado_aberto() -> bool:
 
 
 def salvar_cache(analises: dict, timestamp: str):
-    """Salva análises bem-sucedidas em arquivo JSON para persistência"""
     try:
         cache_data = {
             "timestamp": timestamp,
@@ -155,7 +136,6 @@ def salvar_cache(analises: dict, timestamp: str):
 
 
 def carregar_cache() -> bool:
-    """Carrega análises do cache em disco. Retorna True se carregou."""
     try:
         if CACHE_FILE.exists():
             with open(CACHE_FILE, "r", encoding="utf-8") as f:
@@ -172,7 +152,6 @@ def carregar_cache() -> bool:
 
 
 async def atualizar_analises():
-    """Atualiza todas as análises para todos os ativos e timeframes"""
     provider = app_state["provider"]
     resultados = {}
     tem_dados_validos = False
@@ -208,7 +187,6 @@ async def atualizar_analises():
 
 
 async def auto_refresh_loop():
-    """Loop de atualização automática - inteligente com horário de mercado"""
     while True:
         try:
             if mercado_aberto():
@@ -225,7 +203,6 @@ async def auto_refresh_loop():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Startup e shutdown do app"""
     source = os.getenv("DATA_SOURCE", "yfinance")
     app_state["provider"] = DataProvider(source=source)
     logger.info(f"Data provider inicializado: {source}")
@@ -253,7 +230,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="ANALISE B3 - 24/7",
     description="ANALISE TECNICA EM TEMPO REAL - MINI-INDICE E MINI-DOLAR DA B3",
-    version="2.0.0",
+    version="3.0.0",
     lifespan=lifespan
 )
 
@@ -264,16 +241,14 @@ templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
 
 @app.get("/", response_class=HTMLResponse)
 async def dashboard(request: Request):
-    """Página principal do dashboard"""
     return templates.TemplateResponse("dashboard.html", {"request": request})
 
 
 @app.get("/api/analise")
 async def get_analise(
-    ativo: str = Query("WIN", description="Ativo: WIN ou WDO"),
-    timeframe: str = Query("5m", description="Timeframe: 5m, 15m, 1h, 4h, 1d")
+    ativo: str = Query("WIN"),
+    timeframe: str = Query("5m")
 ):
-    """Retorna análise completa para um ativo e timeframe"""
     ativo = ativo.upper()
     if ativo not in ATIVOS:
         return JSONResponse({"erro": f"Ativo inválido. Use: {ATIVOS}"}, status_code=400)
@@ -300,16 +275,12 @@ async def get_analise(
 
 
 @app.get("/api/painel")
-async def get_painel(
-    ativo: str = Query("WIN", description="Ativo: WIN ou WDO")
-):
-    """Retorna painel multi-timeframe completo para um ativo"""
+async def get_painel(ativo: str = Query("WIN")):
     ativo = ativo.upper()
     if ativo not in ATIVOS:
         return JSONResponse({"erro": f"Ativo inválido"}, status_code=400)
 
     painel = app_state["analises"].get(ativo, {})
-
     resumo = {
         "ativo": ativo,
         "tendencia_geral": _calcular_tendencia_geral(painel),
@@ -341,13 +312,9 @@ async def get_painel(
 
 
 @app.get("/api/sinais")
-async def get_sinais(
-    ativo: str = Query("WIN", description="Ativo: WIN ou WDO")
-):
-    """Retorna sinais ativos de entrada - foco no timeframe de 5 minutos"""
+async def get_sinais(ativo: str = Query("WIN")):
     ativo = ativo.upper()
     analise_5m = app_state["analises"].get(ativo, {}).get("5m", {})
-
     sinais = analise_5m.get("sinais", [])
 
     confirmacoes = {}
@@ -372,15 +339,21 @@ async def get_sinais(
 
 @app.get("/api/status")
 async def get_status():
-    """Status do sistema"""
+    # Include contract info
+    contratos = {}
+    for ativo in ATIVOS:
+        c = obter_contrato_vigente(ativo)
+        contratos[ativo] = c.get("ticker_b3", ativo)
+
     return JSONResponse({
         "status": "online",
         "ultima_atualizacao": app_state["ultima_atualizacao"],
         "data_source": os.getenv("DATA_SOURCE", "yfinance"),
         "ativos_monitorados": ATIVOS,
+        "contratos_vigentes": contratos,
         "timeframes": TIMEFRAMES,
         "intervalo_refresh": "5 minutos",
-        "versao": "2.0.0",
+        "versao": "3.0.0",
         "mercado_aberto": mercado_aberto(),
         "usando_cache": app_state["usando_cache"],
         "cache_data_pregao": app_state["cache_data_pregao"],
@@ -389,7 +362,6 @@ async def get_status():
 
 @app.post("/api/forcar-atualizacao")
 async def forcar_atualizacao():
-    """Força uma atualização imediata de todas as análises"""
     await atualizar_analises()
     return JSONResponse({
         "mensagem": "Análises atualizadas com sucesso",
@@ -399,25 +371,22 @@ async def forcar_atualizacao():
 
 @app.post("/api/login")
 async def login(req: LoginRequest):
-    """Autenticação de usuários"""
     usuario = req.usuario.strip().lower()
     senha = req.senha.strip()
     users = carregar_usuarios()
     if usuario in users:
         user_data = users[usuario]
-        # Suporte legacy (senha em texto) e novo (hash)
         if isinstance(user_data, dict):
             if user_data.get("senha_hash") == _hash_senha(senha):
                 is_admin = user_data.get("admin", False)
                 return JSONResponse({"sucesso": True, "usuario": usuario, "admin": is_admin, "mensagem": "Login realizado com sucesso"})
-        elif user_data == senha:  # legacy
+        elif user_data == senha:
             return JSONResponse({"sucesso": True, "usuario": usuario, "admin": usuario in ADMIN_USERS, "mensagem": "Login realizado com sucesso"})
     return JSONResponse({"sucesso": False, "mensagem": "Usuário ou senha inválidos"}, status_code=401)
 
 
 @app.post("/api/usuarios/criar")
 async def criar_usuario(req: CriarUsuarioRequest):
-    """Cria novo usuário (apenas admins)"""
     admin = req.admin_user.strip().lower()
     users = carregar_usuarios()
     user_data = users.get(admin, {})
@@ -434,19 +403,16 @@ async def criar_usuario(req: CriarUsuarioRequest):
 
 @app.post("/api/usuarios/alterar-senha")
 async def alterar_senha(req: AlterarSenhaRequest):
-    """Altera senha do próprio usuário"""
     usuario = req.usuario.strip().lower()
     users = carregar_usuarios()
     if usuario not in users:
         return JSONResponse({"sucesso": False, "mensagem": "Usuário não encontrado"}, status_code=404)
     user_data = users[usuario]
-    # Verificar senha atual
     if isinstance(user_data, dict):
         if user_data.get("senha_hash") != _hash_senha(req.senha_atual.strip()):
             return JSONResponse({"sucesso": False, "mensagem": "Senha atual incorreta"}, status_code=401)
     elif user_data != req.senha_atual.strip():
         return JSONResponse({"sucesso": False, "mensagem": "Senha atual incorreta"}, status_code=401)
-    # Atualizar
     users[usuario] = {"senha_hash": _hash_senha(req.senha_nova.strip()), "admin": user_data.get("admin", usuario in ADMIN_USERS) if isinstance(user_data, dict) else usuario in ADMIN_USERS}
     salvar_usuarios(users)
     return JSONResponse({"sucesso": True, "mensagem": "Senha alterada com sucesso"})
@@ -454,10 +420,9 @@ async def alterar_senha(req: AlterarSenhaRequest):
 
 @app.get("/api/candles")
 async def get_candles(
-    ativo: str = Query("WIN", description="Ativo: WIN ou WDO"),
-    timeframe: str = Query("5m", description="Timeframe")
+    ativo: str = Query("WIN"),
+    timeframe: str = Query("5m")
 ):
-    """Retorna dados OHLCV para gráficos de velas"""
     ativo = ativo.upper()
     if ativo not in ATIVOS:
         return JSONResponse({"erro": "Ativo inválido"}, status_code=400)
@@ -473,7 +438,6 @@ async def get_candles(
 
 @app.get("/api/contrato")
 async def get_contrato(ativo: str = Query("WIN")):
-    """Retorna informações do contrato vigente"""
     ativo = ativo.upper()
     contrato = obter_contrato_vigente(ativo)
     return JSONResponse(contrato)
@@ -482,140 +446,194 @@ async def get_contrato(ativo: str = Query("WIN")):
 @app.get("/api/simulacao-capital")
 async def get_simulacao_capital(
     ativo: str = Query("WIN"),
-    timeframe: str = Query("5m")
+    timeframe: str = Query("5m"),
+    contratos: int = Query(1, description="Quantidade de contratos do usuário")
 ):
-    """Simula resultado financeiro para diferentes quantidades de contratos"""
+    """Simula resultado financeiro para a quantidade de contratos definida pelo usuário"""
     ativo = ativo.upper()
     analise = app_state["analises"].get(ativo, {}).get(timeframe, {})
     contrato_info = app_state["provider"].get_contrato_info(ativo)
-    valor_pt = contrato_info.get("valor_tick", 0.20)
 
-    # Pegar sinais do dia
+    # Valores corretos B3
+    if ativo == "WIN":
+        valor_pt = 0.20  # R$ 0.20 por ponto por contrato de mini-índice
+    else:
+        valor_pt = 10.00  # R$ 10.00 por ponto por contrato de mini-dólar
+
+    tick = contrato_info.get("tick", 5 if ativo == "WIN" else 0.5)
+
+    # Pegar sinais e ATR
     sinais = analise.get("sinais", [])
-    
-    # Se nao tem sinais formais, estimar baseado no ATR e tendencia
     atr = analise.get("atr", 100 if ativo == "WIN" else 8)
-    tendencia = analise.get("tendencia", "LATERAL")
-    rsi = analise.get("rsi", 50)
-    
-    resultados = []
-    for n_contratos in [1, 2, 3, 5, 10, 20, 50]:
-        if sinais:
-            # Usar sinais reais
-            total_pts = 0
-            ops = 0
-            for sinal in sinais:
-                pts = sinal.get("pts_estimados", 0)
-                if pts == 0:
-                    pts = atr * 0.5
-                total_pts += pts
-                ops += 1
-        else:
-            # Estimativa baseada em ATR e condicoes de mercado
-            # Simular 3-6 operacoes tipicas baseado na volatilidade
-            import random
-            random.seed(hash(f"{ativo}_{datetime.now(BRT).strftime('%Y%m%d')}"))
-            n_ops = random.randint(4, 8)
-            total_pts = 0
-            ops = n_ops
-            taxa_acerto = 0.60  # 60% conservador
-            if tendencia != "LATERAL":
-                taxa_acerto = 0.65
-            for i in range(n_ops):
-                # Alvo tipico: 0.5-1.5x ATR, Stop tipico: 0.3-0.8x ATR
-                alvo_pts = atr * random.uniform(0.4, 1.2)
-                stop_pts = atr * random.uniform(0.3, 0.6)
-                if random.random() < taxa_acerto:
-                    total_pts += alvo_pts
-                else:
-                    total_pts -= stop_pts
-            total_pts = round(total_pts, 1)
-        
-        resultado_fin = round(total_pts * valor_pt * n_contratos, 2)
-        resultados.append({
-            "contratos": n_contratos,
-            "pontos": round(total_pts, 1),
-            "resultado": resultado_fin,
-            "operacoes": ops,
-        })
+
+    total_pts = 0
+    ops = 0
+
+    if sinais:
+        for sinal in sinais:
+            pts = sinal.get("pts_estimados", 0)
+            if pts == 0:
+                pts = atr * 0.5
+            total_pts += pts
+            ops += 1
+    else:
+        # Estimativa baseada em ATR
+        random.seed(hash(f"{ativo}_{datetime.now(BRT).strftime('%Y%m%d')}"))
+        n_ops = random.randint(4, 8)
+        taxa_acerto = 0.60
+        tendencia = analise.get("tendencia", "LATERAL")
+        if tendencia != "LATERAL":
+            taxa_acerto = 0.65
+        for i in range(n_ops):
+            alvo_pts = atr * random.uniform(0.4, 1.2)
+            stop_pts = atr * random.uniform(0.3, 0.6)
+            if random.random() < taxa_acerto:
+                total_pts += alvo_pts
+            else:
+                total_pts -= stop_pts
+            ops += 1
+
+    # Cálculo para a quantidade do usuário
+    n = max(1, contratos)
+    resultado_fin = round(total_pts * valor_pt * n, 2)
 
     return JSONResponse({
         "ativo": ativo,
         "contrato": contrato_info.get("ticker_b3", ativo),
+        "contratos": n,
         "valor_ponto": valor_pt,
-        "simulacoes": resultados,
+        "tick": tick,
+        "pontos_estimados": round(total_pts, 1),
+        "resultado_financeiro": resultado_fin,
+        "operacoes_estimadas": ops,
+        "info_contrato": {
+            "nome": contrato_info.get("nome", ativo),
+            "tick": tick,
+            "valor_tick": valor_pt,
+            "explicacao": f"Cada ponto = R$ {valor_pt:.2f} por contrato. {n} contrato(s) = R$ {valor_pt * n:.2f}/ponto"
+        }
     })
 
 
 @app.get("/api/demo")
-async def get_demo(ativo: str = Query("WIN", description="Ativo: WIN ou WDO")):
+async def get_demo(ativo: str = Query("WIN"), contratos: int = Query(1)):
     """Gera simulação de operações de day trade para modo demo"""
     ativo_upper = ativo.upper()
+    n_contratos = max(1, contratos)
+
+    # Pegar preço real da análise
+    analise_5m = app_state["analises"].get(ativo_upper, {}).get("5m", {})
+    preco_real = analise_5m.get("preco_atual", 0)
+    atr_real = analise_5m.get("atr", 0)
+
+    contrato_info = obter_contrato_vigente(ativo_upper)
+    ticker_b3 = contrato_info["ticker_b3"]
+
+    if ativo_upper == "WIN":
+        valor_pt = 0.20
+        if preco_real == 0:
+            preco_real = 130000
+        if atr_real == 0:
+            atr_real = 150
+    else:
+        valor_pt = 10.00
+        if preco_real == 0:
+            preco_real = 5700
+        if atr_real == 0:
+            atr_real = 12
+
     operacoes = []
-    contrato_win = obter_contrato_vigente("WIN")["ticker_b3"]
-    contrato_wdo = obter_contrato_vigente("WDO")["ticker_b3"]
-    ativos_demo = [contrato_win, contrato_wdo] if "WIN" in ativo_upper else [contrato_wdo, contrato_win]
-    tipos = ["COMPRA", "VENDA"]
     total_resultado = 0
+    random.seed(hash(f"demo_{ativo_upper}_{datetime.now(BRT).strftime('%Y%m%d')}"))
 
-    for i in range(random.randint(5, 10)):
-        ativo = random.choice(ativos_demo)
-        tipo = random.choice(tipos)
-        if "WIN" in ativo:
-            entrada = round(random.uniform(125000, 130000), 0)
-            variacao = random.uniform(-200, 300)
-        else:
-            entrada = round(random.uniform(5600, 5900), 1)
-            variacao = random.uniform(-15, 20)
+    # Horários operacionais B3 realistas
+    horarios_entrada = [
+        "09:18", "09:35", "09:52", "10:15", "10:42",
+        "11:05", "11:28", "14:10", "14:38", "15:05",
+        "15:32", "16:00", "16:25"
+    ]
 
-        saida = round(entrada + variacao, 1)
-        pts = round(variacao, 1)
-        valor_pt = 0.20 if "WIN" in ativo else 10.0
-        contratos = random.randint(1, 5)
-        resultado = round(pts * valor_pt * contratos, 2)
-        total_resultado += resultado
-        win = resultado > 0
-        hora_base = 9 + i
-        if hora_base > 17:
-            hora_base = 17
+    n_ops = random.randint(5, 10)
+    tipos_motivos = {
+        "COMPRA": [
+            "RSI sobrevendido + MACD alta + Volume comprador + Pullback EMA 9",
+            "Fibonacci 61.8% + MACD cruzamento alta + Volume acima media",
+            "Teste VWAP com rejeição + RSI favorável + MACD positivo",
+            "Pullback EMA 21 + Volume comprador crescente + Fibonacci 50%",
+            "Rompimento resistência + MACD hist crescente + Volume alto",
+        ],
+        "VENDA": [
+            "RSI sobrecomprado + MACD baixa + Volume vendedor + Rejeição VWAP",
+            "Fibonacci 38.2% baixa + MACD cruzamento baixa + Volume alto",
+            "Teste resistência com rejeição + RSI zona venda + MACD negativo",
+            "Pullback EMA 9 em baixa + Volume vendedor + Fibonacci 50%",
+            "Rompimento suporte + MACD hist decrescente + Pressão vendedora",
+        ]
+    }
 
-        # Calcular stop e alvo para exibicao
-        atr_ref = 100 if "WIN" in ativo else 8
-        stop_dist = round(random.uniform(0.3, 0.8) * atr_ref, 1)
-        alvo_dist = round(random.uniform(1.0, 2.5) * stop_dist, 1)
+    for i in range(n_ops):
+        tipo = random.choice(["COMPRA", "VENDA"])
+        variacao_entrada = random.uniform(-atr_real * 1.5, atr_real * 1.5)
+        entrada = round(preco_real + variacao_entrada, 1 if ativo_upper == "WDO" else 0)
+
+        stop_dist = round(atr_real * random.uniform(0.5, 1.0), 1)
+        alvo_dist = round(stop_dist * random.uniform(2.0, 3.0), 1)
+
         if tipo == "COMPRA":
             stop = round(entrada - stop_dist, 1)
             alvo = round(entrada + alvo_dist, 1)
         else:
             stop = round(entrada + stop_dist, 1)
             alvo = round(entrada - alvo_dist, 1)
-        rr_val = round(alvo_dist / stop_dist, 1) if stop_dist > 0 else 1.0
-        horario = f"{hora_base:02d}:{random.randint(0,59):02d}"
+
+        # Resultado: 60% taxa de acerto
+        win = random.random() < 0.60
+        if win:
+            pts = round(random.uniform(alvo_dist * 0.6, alvo_dist), 1)
+            if tipo == "COMPRA":
+                saida = round(entrada + pts, 1)
+            else:
+                saida = round(entrada - pts, 1)
+        else:
+            pts = -stop_dist
+            if tipo == "COMPRA":
+                saida = round(entrada - stop_dist, 1)
+            else:
+                saida = round(entrada + stop_dist, 1)
+
+        resultado = round(pts * valor_pt * n_contratos, 2)
+        total_resultado += resultado
+
+        horario_idx = min(i, len(horarios_entrada) - 1)
+        horario = horarios_entrada[horario_idx]
+
+        # Horário de saída (5-25 min depois)
+        h_parts = horario.split(":")
+        h_min = int(h_parts[0]) * 60 + int(h_parts[1]) + random.randint(5, 25)
+        h_saida = f"{h_min // 60:02d}:{h_min % 60:02d}"
+
+        rr_val = round(alvo_dist / stop_dist, 1) if stop_dist > 0 else 2.0
+        motivo = random.choice(tipos_motivos[tipo])
 
         operacoes.append({
             "id": i + 1,
-            "ativo": ativo,
+            "ativo": ticker_b3,
             "tipo": tipo,
             "entrada": entrada,
             "stop": stop,
             "alvo": alvo,
             "saida": saida,
-            "pts": pts,
+            "pts": round(pts, 1),
             "rr": f"{rr_val}:1",
-            "contratos": contratos,
+            "contratos": n_contratos,
             "resultado": resultado,
-            "win": win,
-            "status": "WIN" if win else "LOSS",
-            "hora": horario,
-            "horario": horario,
-            "motivo": random.choice([
-                "Pullback na EMA 9 com volume",
-                "Rompimento de resistencia com VWAP",
-                "Divergencia RSI + suporte",
-                "Sinal MACD com confirmacao",
-                "Teste de VWAP com rejeicao",
-                "Fibonacci 61.8% com volume",
-            ]),
+            "win": resultado > 0,
+            "status": "WIN" if resultado > 0 else "LOSS",
+            "hora_entrada": horario,
+            "hora_saida": h_saida,
+            "horario": f"{horario} → {h_saida}",
+            "motivo": motivo,
+            "indicadores_cruzados": "Todos os 5 indicadores confirmaram" if resultado > 0 else "4 de 5 indicadores confirmaram",
         })
 
     wins = sum(1 for op in operacoes if op["win"])
@@ -626,7 +644,10 @@ async def get_demo(ativo: str = Query("WIN", description="Ativo: WIN ou WDO")):
 
     return JSONResponse({
         "ativo": ativo_upper,
+        "contrato": ticker_b3,
         "data": data_hoje,
+        "contratos_operados": n_contratos,
+        "valor_ponto": valor_pt,
         "operacoes": operacoes,
         "resumo": {
             "total": len(operacoes),
@@ -639,64 +660,13 @@ async def get_demo(ativo: str = Query("WIN", description="Ativo: WIN ou WDO")):
             "resultado_total": round(total_resultado, 2),
             "melhor_op": round(max((op["resultado"] for op in operacoes), default=0), 2),
             "pior_op": round(min((op["resultado"] for op in operacoes), default=0), 2),
+            "contratos": n_contratos,
+            "valor_ponto": valor_pt,
         }
     })
 
 
-
-@app.get("/api/correlacao")
-async def get_correlacao():
-    """Correlação WIN/WDO em tempo real"""
-    from analysis_engine import analisar_correlacao_ativos
-    try:
-        provider = app_state["provider"]
-        dados_win = await provider.obter_dados("WIN", "5m")
-        dados_wdo = await provider.obter_dados("WDO", "5m")
-        resultado = analisar_correlacao_ativos(dados_win, dados_wdo)
-        return resultado
-    except Exception as e:
-        return {"disponivel": False, "erro": str(e)}
-
-
-@app.get("/api/zero-loss")
-async def get_zero_loss(
-    ativo: str = Query("WIN"),
-    entrada: float = Query(0),
-    atual: float = Query(0),
-    alvo: float = Query(0),
-    stop: float = Query(0),
-    tipo: str = Query("COMPRA"),
-):
-    """Calcula proteção Zero Loss para uma posição"""
-    from analysis_engine import ZeroLossProtection, calcular_atr_series
-    try:
-        provider = app_state["provider"]
-        dados = await provider.obter_dados(ativo, "5m")
-        atr = float(calcular_atr_series(dados).iloc[-1]) if len(dados) > 14 else 100
-        
-        zlp = ZeroLossProtection(ativo)
-        resultado = zlp.gestao_posicao_completa(entrada, atual, alvo, stop, atr, tipo)
-        resultado["ativo"] = ativo
-        resultado["atr_atual"] = round(atr, 2)
-        return resultado
-    except Exception as e:
-        return {"erro": str(e)}
-
-
-@app.get("/api/absorcao")
-async def get_absorcao(ativo: str = Query("WIN")):
-    """Detecta absorção no ativo"""
-    from analysis_engine import detectar_absorcao
-    try:
-        provider = app_state["provider"]
-        dados = await provider.obter_dados(ativo, "5m")
-        return detectar_absorcao(dados)
-    except Exception as e:
-        return {"erro": str(e)}
-
-
 def _calcular_tendencia_geral(painel: dict) -> str:
-    """Calcula tendência geral baseada em múltiplos timeframes"""
     pesos = {"5m": 1, "15m": 2, "1h": 3, "4h": 4, "1d": 5}
     score = 0
     total_peso = 0
@@ -723,7 +693,6 @@ def _calcular_tendencia_geral(painel: dict) -> str:
 
 
 def _sinal_principal(painel: dict) -> dict:
-    """Extrai o sinal principal do timeframe de 5 minutos"""
     analise_5m = painel.get("5m", {})
     sinais = analise_5m.get("sinais", [])
 
