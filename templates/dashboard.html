@@ -2020,11 +2020,14 @@ async function simInit() {
                 window.simVelas = data;
                 const m = data.mercado;
                 const corVar = m.variacao_pct >= 0 ? '#22c55e' : '#ef4444';
+                const direcao = m.variacao_pct >= 0 ? 'DIA DE ALTA' : 'DIA DE BAIXA';
+                const corDir = m.variacao_pct >= 0 ? '#22c55e' : '#ef4444';
                 document.getElementById('simDiaLabel').innerHTML = 
                     '<span style="color:var(--accent-blue);">'+data.dia+'</span> '+data.contrato+
-                    ' | Open: '+m.abertura.toLocaleString('pt-BR')+' Close: <span style="color:'+corVar+';">'+m.fechamento.toLocaleString('pt-BR')+'</span>'+
+                    ' | <span style="background:'+corDir+';color:#fff;padding:1px 6px;border-radius:3px;font-size:10px;font-weight:800;">'+direcao+'</span>'+
+                    ' | '+m.abertura.toLocaleString('pt-BR')+' &rarr; <span style="color:'+corVar+';">'+m.fechamento.toLocaleString('pt-BR')+'</span>'+
                     ' (<span style="color:'+corVar+';">'+(m.variacao_pct>=0?'+':'')+m.variacao_pct+'%</span>)'+
-                    ' | Amplitude: '+m.amplitude_pts.toLocaleString('pt-BR')+' pts';
+                    ' | Amp: '+m.amplitude_pts.toLocaleString('pt-BR')+'pts';
                 simRenderTabela(data.velas);
                 simUpdatePlacar();
             }).catch(e=>{document.getElementById('simDiaLabel').textContent='Erro: '+e.message;});
@@ -2059,8 +2062,8 @@ async function simInit() {
                 t += '<td style="padding:5px 4px;text-align:center;color:'+cR+';">'+(v.rsi!=null?v.rsi:'-')+'</td>';
                 t += '<td style="padding:5px 4px;text-align:center;">';
                 if(!last){
-                    t += '<button onclick="simGo('+i+\',\\\'COMPRA\\\'\')" style="padding:3px 10px;background:#16a34a;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:11px;font-weight:800;margin-right:3px;">COMPRA</button>';
-                    t += '<button onclick="simGo('+i+\',\\\'VENDA\\\'\')" style="padding:3px 10px;background:#dc2626;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:11px;font-weight:800;">VENDA</button>';
+                    t += '<button onclick="simGo('+i+',&quot;COMPRA&quot;)" style="padding:3px 10px;background:#16a34a;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:11px;font-weight:800;margin-right:3px;">COMPRA</button>';
+                    t += '<button onclick="simGo('+i+',&quot;VENDA&quot;)" style="padding:3px 10px;background:#dc2626;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:11px;font-weight:800;">VENDA</button>';
                 } else {
                     t += '<span style="color:var(--text-muted);font-size:10px;">Fechamento</span>';
                 }
@@ -2099,6 +2102,31 @@ async function simInit() {
                 sc.ops.push({tipo:e.tipo,hora:e.hora,preco:e.preco,resultado:s.resultado,pts:s.pts,rs:s.resultado_rs,horaSaida:s.hora,velas:s.velas_na_operacao});
                 simUpdatePlacar();
                 simUpdateHist();
+                // Also save to paper trading history for historico/relatorio tabs
+                if(window.ptState) {
+                    ptState.history.push({
+                        id: Date.now(),
+                        tipo: e.tipo,
+                        ativo: 'WIN',
+                        contrato: window.simVelas ? window.simVelas.contrato : 'WINM26',
+                        entrada: e.preco,
+                        saida: s.preco,
+                        pts: s.pts,
+                        resultado: s.resultado_rs,
+                        status: s.resultado === 'WIN' ? 'gain' : 'loss',
+                        horaEntrada: e.hora,
+                        horaSaida: s.hora,
+                        contratos: parseInt(document.getElementById('simCtrsInput').value)||1,
+                        dataISO: new Date().toISOString().split('T')[0],
+                        origem: 'replay'
+                    });
+                    ptState.pnlTotal += s.resultado_rs;
+                    ptState.pnlDia += s.resultado_rs;
+                    document.getElementById('ptPnlTotal').textContent = (ptState.pnlTotal >= 0 ? '+' : '') + 'R$ ' + ptState.pnlTotal.toFixed(2);
+                    document.getElementById('ptPnlDia').textContent = (ptState.pnlDia >= 0 ? '+' : '') + 'R$ ' + ptState.pnlDia.toFixed(2);
+                    document.getElementById('ptPnlTotal').style.color = ptState.pnlTotal >= 0 ? 'var(--accent-green)' : 'var(--accent-red)';
+                    document.getElementById('ptPnlDia').style.color = ptState.pnlDia >= 0 ? 'var(--accent-green)' : 'var(--accent-red)';
+                }
                 
                 // Highlight exit row
                 if(window.simVelas){
@@ -2109,13 +2137,28 @@ async function simInit() {
                 // Show result
                 rd.style.border = '2px solid '+cor;
                 rd.style.background = w?'rgba(34,197,94,0.06)':'rgba(239,68,68,0.06)';
-                rd.innerHTML = 
-                    '<span style="font-size:20px;font-weight:900;color:'+cor+';margin-right:12px;">'+s.resultado+'</span>'+
-                    '<span style="font-size:11px;color:var(--text-muted);">'+e.tipo+' @ '+e.preco.toLocaleString('pt-BR')+' ('+e.hora+')</span>'+
-                    '<span style="font-size:16px;font-weight:800;color:'+cor+';margin:0 12px;">'+(s.pts>=0?'+':'')+s.pts+' pts</span>'+
-                    '<span style="font-size:14px;font-weight:700;color:'+cor+';">'+(s.resultado_rs>=0?'+':'')+'R$ '+s.resultado_rs.toFixed(2)+'</span>'+
-                    '<span style="font-size:10px;color:var(--text-muted);margin-left:12px;">Saida: '+s.hora+' ('+s.velas_na_operacao+' velas)'+
-                    (s.fechamento_forcado?' [fim dia]':'')+'</span>';
+                let rhtml = '<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">';
+                rhtml += '<span style="font-size:22px;font-weight:900;color:'+cor+';">'+s.resultado+'</span>';
+                rhtml += '<span style="font-size:16px;font-weight:800;color:'+cor+';">'+(s.pts>=0?'+':'')+s.pts+' pts</span>';
+                rhtml += '<span style="font-size:14px;font-weight:700;color:'+cor+';">'+(s.resultado_rs>=0?'+':'')+'R$ '+s.resultado_rs.toFixed(2)+'</span>';
+                rhtml += '</div>';
+                rhtml += '<div style="font-size:11px;margin-top:4px;color:var(--text-muted);">';
+                rhtml += 'Entrada: '+e.tipo+' @ <b>'+e.preco.toLocaleString('pt-BR')+'</b> as <b>'+e.hora+'</b>';
+                rhtml += ' | Stop: '+e.stop_loss.toLocaleString('pt-BR')+' | Alvo: '+e.take_profit.toLocaleString('pt-BR');
+                rhtml += '</div>';
+                rhtml += '<div style="font-size:11px;color:var(--text-muted);">';
+                rhtml += 'Saida: <b>'+s.preco.toLocaleString('pt-BR')+'</b> as <b>'+s.hora+'</b> ('+s.velas_na_operacao+' velas)'+(s.fechamento_forcado?' [fechamento forcado]':'');
+                rhtml += ' | Max favor: +'+data.detalhes.max_favoravel_pts+'pts | Max contra: -'+data.detalhes.max_adverso_pts+'pts';
+                rhtml += '</div>';
+                if(data.detalhes.caminho && data.detalhes.caminho.length > 0) {
+                    rhtml += '<div style="font-size:10px;margin-top:4px;color:var(--text-muted);border-top:1px solid var(--border);padding-top:4px;">Caminho: ';
+                    data.detalhes.caminho.forEach(c => {
+                        const cc = c.close > e.preco ? '#22c55e' : '#ef4444';
+                        rhtml += '<span style="color:'+cc+';">'+c.hora+'('+c.close.toLocaleString('pt-BR')+') </span>';
+                    });
+                    rhtml += '</div>';
+                }
+                rd.innerHTML = rhtml;
             }).catch(err=>{rd.innerHTML='<span style="color:#ef4444;">Erro: '+err.message+'</span>';});
         }
         
