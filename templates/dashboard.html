@@ -633,6 +633,42 @@
                 <div class="section-title">Suportes & Resistencias</div>
                 <div id="srSection"><div class="loading"><span class="spinner"></span> Carregando...</div></div>
             </div>
+            <div class="sidebar-section">
+                <div class="section-title">Bollinger Bands (20,2)</div>
+                <div id="bollingerSection"><div class="loading"><span class="spinner"></span> Carregando...</div></div>
+            </div>
+            <div class="sidebar-section">
+                <div class="section-title">Estocastico (14,3)</div>
+                <div id="stochSection"><div class="loading"><span class="spinner"></span> Carregando...</div></div>
+            </div>
+            <div class="sidebar-section">
+                <div class="section-title">ADX / DI+ / DI- (14)</div>
+                <div id="adxSection"><div class="loading"><span class="spinner"></span> Carregando...</div></div>
+            </div>
+            <div class="sidebar-section">
+                <div class="section-title">OBV (On-Balance Volume)</div>
+                <div id="obvSection"><div class="loading"><span class="spinner"></span> Carregando...</div></div>
+            </div>
+            <div class="sidebar-section">
+                <div class="section-title">Ichimoku Cloud</div>
+                <div id="ichimokuSection"><div class="loading"><span class="spinner"></span> Carregando...</div></div>
+            </div>
+            <div class="sidebar-section">
+                <div class="section-title">Pivot Points</div>
+                <div id="pivotSection"><div class="loading"><span class="spinner"></span> Carregando...</div></div>
+            </div>
+            <div class="sidebar-section">
+                <div class="section-title">VWAP Bands</div>
+                <div id="vwapBandsSection"><div class="loading"><span class="spinner"></span> Carregando...</div></div>
+            </div>
+            <div class="sidebar-section">
+                <div class="section-title">Book de Ofertas (DOM)</div>
+                <div id="bookSection"><div class="loading"><span class="spinner"></span> Carregando...</div></div>
+            </div>
+            <div class="sidebar-section">
+                <div class="section-title">Tape Reading (Times & Trades)</div>
+                <div id="tapeSection"><div class="loading"><span class="spinner"></span> Carregando...</div></div>
+            </div>
         </div>
     </div>
 </div>
@@ -920,6 +956,11 @@ function ptCheckMarket() {
         el.className = 'pt-market-status closed';
         el.innerHTML = '<div class="status-dot offline"></div><span>MERCADO FECHADO</span>';
     }
+    // Enable/disable trade buttons based on market
+    const btnBuy = document.getElementById('ptBtnBuy');
+    const btnSell = document.getElementById('ptBtnSell');
+    if (btnBuy) btnBuy.disabled = !isOpen;
+    if (btnSell) btnSell.disabled = !isOpen;
     return isOpen;
 }
 
@@ -1386,7 +1427,7 @@ function trocarTimeframe(tf) {
     carregarDados();
 }
 
-function forcarAtualizacao() { state.countdownSeconds = 300; carregarDados(); carregarSimulacao(); }
+function forcarAtualizacao() { state.countdownSeconds = 300; carregarDados(); carregarSimulacao(); atualizarBook(); atualizarTape(); }
 
 async function carregarDados() {
     const sd = document.getElementById('statusDot');
@@ -1439,6 +1480,15 @@ function atualizarUI() {
         atualizarViolinada(a);
         atualizarSinais(a);
         atualizarSR(a);
+        atualizarBollinger(a);
+        atualizarStoch(a);
+        atualizarADX(a);
+        atualizarOBV(a);
+        atualizarIchimoku(a);
+        atualizarPivot(a);
+        atualizarVwapBands(a);
+        atualizarBook();
+        atualizarTape();
     }
 }
 
@@ -1657,6 +1707,199 @@ function atualizarSR(a) {
     else h += '<div style="color:var(--text-muted)">--</div>';
     h += '</div>';
     el.innerHTML = h;
+}
+
+
+// =====================================================
+// NEW INDICATORS
+// =====================================================
+
+function atualizarBollinger(a) {
+    const el = document.getElementById('bollingerSection');
+    const b = a.bollinger || {};
+    if (!b.upper) { el.innerHTML = '<div style="font-size:12px;color:var(--text-muted)">--</div>'; return; }
+    const statusTag = b.status === 'SQUEEZE' ? 'tag-yellow' : b.status === 'SOBRECOMPRADO' ? 'tag-red' : b.status === 'SOBREVENDIDO' ? 'tag-green' : 'tag-blue';
+    el.innerHTML = '<div style="display:grid;gap:4px;font-size:12px;">' +
+        '<div class="stat-row"><span class="stat-label">Superior</span><span style="color:var(--accent-red);font-family:monospace">' + b.upper.toLocaleString('pt-BR') + '</span></div>' +
+        '<div class="stat-row"><span class="stat-label">Media (SMA20)</span><span style="font-family:monospace">' + b.middle.toLocaleString('pt-BR') + '</span></div>' +
+        '<div class="stat-row"><span class="stat-label">Inferior</span><span style="color:var(--accent-green);font-family:monospace">' + b.lower.toLocaleString('pt-BR') + '</span></div>' +
+        '<div class="stat-row"><span class="stat-label">Largura</span><span style="font-family:monospace">' + b.width.toFixed(2) + '%</span></div>' +
+        '<div class="stat-row"><span class="stat-label">%B</span><span style="font-family:monospace">' + b.percent_b.toFixed(1) + '%</span></div>' +
+        '<div class="stat-row"><span class="stat-label">Status</span><span class="tag ' + statusTag + '">' + b.status + '</span></div>' +
+        '</div>';
+}
+
+function atualizarStoch(a) {
+    const el = document.getElementById('stochSection');
+    const s = a.estocastico || {};
+    const statusTag = s.status === 'SOBRECOMPRADO' ? 'tag-red' : s.status === 'SOBREVENDIDO' ? 'tag-green' : s.status && s.status.includes('ALTA') ? 'tag-green' : s.status && s.status.includes('BAIXA') ? 'tag-red' : 'tag-blue';
+    el.innerHTML = '<div style="display:grid;gap:4px;font-size:12px;">' +
+        '<div class="stat-row"><span class="stat-label">%K</span><span style="font-weight:700;font-family:monospace;color:var(--accent-blue)">' + (s.k||0).toFixed(1) + '</span></div>' +
+        '<div class="stat-row"><span class="stat-label">%D</span><span style="font-weight:700;font-family:monospace;color:var(--accent-orange)">' + (s.d||0).toFixed(1) + '</span></div>' +
+        '<div class="stat-row"><span class="stat-label">Status</span><span class="tag ' + statusTag + '">' + (s.status||'--') + '</span></div>' +
+        '<div style="height:6px;background:var(--bg-hover);border-radius:3px;overflow:hidden;margin-top:4px;"><div style="height:100%;width:' + (s.k||50) + '%;background:' + ((s.k||50) > 80 ? 'var(--accent-red)' : (s.k||50) < 20 ? 'var(--accent-green)' : 'var(--accent-blue)') + ';border-radius:3px;"></div></div>' +
+        '</div>';
+}
+
+function atualizarADX(a) {
+    const el = document.getElementById('adxSection');
+    const d = a.adx || {};
+    const forcaTag = d.forca === 'MUITO_FORTE' ? 'tag-green' : d.forca === 'FORTE' ? 'tag-green' : d.forca === 'MODERADO' ? 'tag-yellow' : 'tag-red';
+    const statusTag = d.status === 'ALTA' ? 'tag-green' : d.status === 'BAIXA' ? 'tag-red' : 'tag-blue';
+    el.innerHTML = '<div style="display:grid;gap:4px;font-size:12px;">' +
+        '<div class="stat-row"><span class="stat-label">ADX</span><span style="font-weight:700;font-family:monospace">' + (d.adx||0).toFixed(1) + '</span></div>' +
+        '<div class="stat-row"><span class="stat-label">DI+</span><span style="color:var(--accent-green);font-family:monospace">' + (d.di_plus||0).toFixed(1) + '</span></div>' +
+        '<div class="stat-row"><span class="stat-label">DI-</span><span style="color:var(--accent-red);font-family:monospace">' + (d.di_minus||0).toFixed(1) + '</span></div>' +
+        '<div class="stat-row"><span class="stat-label">Forca</span><span class="tag ' + forcaTag + '">' + (d.forca||'--') + '</span></div>' +
+        '<div class="stat-row"><span class="stat-label">Direcao</span><span class="tag ' + statusTag + '">' + (d.status||'--') + '</span></div>' +
+        '</div>';
+}
+
+function atualizarOBV(a) {
+    const el = document.getElementById('obvSection');
+    const o = a.obv || {};
+    const statusTag = o.status === 'ALTA' ? 'tag-green' : 'tag-red';
+    const divTag = o.divergencia === 'ALTA' ? 'tag-green' : o.divergencia === 'BAIXA' ? 'tag-red' : 'tag-blue';
+    el.innerHTML = '<div style="display:grid;gap:4px;font-size:12px;">' +
+        '<div class="stat-row"><span class="stat-label">OBV</span><span style="font-family:monospace">' + (o.obv||0).toLocaleString('pt-BR') + '</span></div>' +
+        '<div class="stat-row"><span class="stat-label">SMA(20)</span><span style="font-family:monospace">' + (o.obv_sma||0).toLocaleString('pt-BR') + '</span></div>' +
+        '<div class="stat-row"><span class="stat-label">Tendencia</span><span class="tag ' + statusTag + '">' + (o.status||'--') + '</span></div>' +
+        '<div class="stat-row"><span class="stat-label">Divergencia</span><span class="tag ' + divTag + '">' + (o.divergencia||'NENHUMA') + '</span></div>' +
+        '</div>';
+}
+
+function atualizarIchimoku(a) {
+    const el = document.getElementById('ichimokuSection');
+    const ic = a.ichimoku || {};
+    if (!ic.tenkan) { el.innerHTML = '<div style="font-size:12px;color:var(--text-muted)">Dados insuficientes (min 52 candles)</div>'; return; }
+    const statusTag = (ic.status||'').includes('ALTA') ? 'tag-green' : (ic.status||'').includes('BAIXA') ? 'tag-red' : 'tag-yellow';
+    const nuvemTag = ic.nuvem === 'ALTA' ? 'tag-green' : ic.nuvem === 'BAIXA' ? 'tag-red' : 'tag-yellow';
+    el.innerHTML = '<div style="display:grid;gap:4px;font-size:12px;">' +
+        '<div class="stat-row"><span class="stat-label">Tenkan (9)</span><span style="color:#2196f3;font-family:monospace">' + ic.tenkan.toLocaleString('pt-BR') + '</span></div>' +
+        '<div class="stat-row"><span class="stat-label">Kijun (26)</span><span style="color:#e91e63;font-family:monospace">' + ic.kijun.toLocaleString('pt-BR') + '</span></div>' +
+        '<div class="stat-row"><span class="stat-label">Senkou A</span><span style="color:var(--accent-green);font-family:monospace">' + ic.senkou_a.toLocaleString('pt-BR') + '</span></div>' +
+        '<div class="stat-row"><span class="stat-label">Senkou B</span><span style="color:var(--accent-red);font-family:monospace">' + ic.senkou_b.toLocaleString('pt-BR') + '</span></div>' +
+        '<div class="stat-row"><span class="stat-label">Nuvem</span><span class="tag ' + nuvemTag + '">' + (ic.nuvem||'--') + '</span></div>' +
+        '<div class="stat-row"><span class="stat-label">Status</span><span class="tag ' + statusTag + '">' + (ic.status||'--') + '</span></div>' +
+        '</div>';
+}
+
+function atualizarPivot(a) {
+    const el = document.getElementById('pivotSection');
+    const p = a.pivot_points || {};
+    if (!p.pivot) { el.innerHTML = '<div style="font-size:12px;color:var(--text-muted)">--</div>'; return; }
+    const posTag = (p.posicao||'').includes('ACIMA') ? 'tag-green' : 'tag-red';
+    el.innerHTML = '<div style="display:grid;gap:3px;font-size:11px;font-family:monospace;">' +
+        '<div style="display:flex;justify-content:space-between;padding:2px 0;border-bottom:1px solid var(--border);"><span style="color:var(--accent-red);font-weight:600">R3</span><span>' + p.r3.toLocaleString('pt-BR') + '</span></div>' +
+        '<div style="display:flex;justify-content:space-between;padding:2px 0;border-bottom:1px solid var(--border);"><span style="color:var(--accent-red)">R2</span><span>' + p.r2.toLocaleString('pt-BR') + '</span></div>' +
+        '<div style="display:flex;justify-content:space-between;padding:2px 0;border-bottom:1px solid var(--border);"><span style="color:var(--accent-red)">R1</span><span>' + p.r1.toLocaleString('pt-BR') + '</span></div>' +
+        '<div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid var(--border);background:var(--bg-hover);margin:2px -4px;padding-left:4px;padding-right:4px;border-radius:3px;"><span style="color:var(--accent-yellow);font-weight:700">PIVOT</span><span style="font-weight:700">' + p.pivot.toLocaleString('pt-BR') + '</span></div>' +
+        '<div style="display:flex;justify-content:space-between;padding:2px 0;border-bottom:1px solid var(--border);"><span style="color:var(--accent-green)">S1</span><span>' + p.s1.toLocaleString('pt-BR') + '</span></div>' +
+        '<div style="display:flex;justify-content:space-between;padding:2px 0;border-bottom:1px solid var(--border);"><span style="color:var(--accent-green)">S2</span><span>' + p.s2.toLocaleString('pt-BR') + '</span></div>' +
+        '<div style="display:flex;justify-content:space-between;padding:2px 0;"><span style="color:var(--accent-green);font-weight:600">S3</span><span>' + p.s3.toLocaleString('pt-BR') + '</span></div>' +
+        '<div class="stat-row" style="margin-top:6px;"><span class="stat-label" style="font-family:sans-serif">Posicao</span><span class="tag ' + posTag + '">' + (p.posicao||'--') + '</span></div>' +
+        '</div>';
+}
+
+function atualizarVwapBands(a) {
+    const el = document.getElementById('vwapBandsSection');
+    const v = a.vwap_bands || {};
+    if (!v.vwap) { el.innerHTML = '<div style="font-size:12px;color:var(--text-muted)">--</div>'; return; }
+    const posTag = (v.posicao||'').includes('ACIMA') ? 'tag-green' : 'tag-red';
+    el.innerHTML = '<div style="display:grid;gap:4px;font-size:12px;">' +
+        '<div class="stat-row"><span class="stat-label">Banda +2σ</span><span style="color:var(--accent-red);font-family:monospace">' + v.upper_2.toLocaleString('pt-BR') + '</span></div>' +
+        '<div class="stat-row"><span class="stat-label">Banda +1σ</span><span style="color:var(--accent-orange);font-family:monospace">' + v.upper_1.toLocaleString('pt-BR') + '</span></div>' +
+        '<div class="stat-row"><span class="stat-label">VWAP</span><span style="color:var(--accent-yellow);font-weight:700;font-family:monospace">' + v.vwap.toLocaleString('pt-BR') + '</span></div>' +
+        '<div class="stat-row"><span class="stat-label">Banda -1σ</span><span style="color:var(--accent-orange);font-family:monospace">' + v.lower_1.toLocaleString('pt-BR') + '</span></div>' +
+        '<div class="stat-row"><span class="stat-label">Banda -2σ</span><span style="color:var(--accent-green);font-family:monospace">' + v.lower_2.toLocaleString('pt-BR') + '</span></div>' +
+        '<div class="stat-row"><span class="stat-label">Posicao</span><span class="tag ' + posTag + '">' + (v.posicao||'--') + '</span></div>' +
+        '</div>';
+}
+
+// =====================================================
+// BOOK DE OFERTAS (DOM)
+// =====================================================
+async function atualizarBook() {
+    try {
+        const res = await fetch('/api/book?ativo=' + state.ativo);
+        const data = await res.json();
+        const el = document.getElementById('bookSection');
+        if (data.erro) { el.innerHTML = '<div style="font-size:12px;color:var(--text-muted)">' + data.erro + '</div>'; return; }
+        
+        const maxQtd = Math.max(...data.compra.map(n=>n.quantidade), ...data.venda.map(n=>n.quantidade));
+        let h = '<div style="font-size:11px;">';
+        
+        // Header
+        h += '<div style="display:grid;grid-template-columns:1fr 80px 80px 1fr;gap:2px;font-size:10px;color:var(--text-muted);text-transform:uppercase;margin-bottom:4px;text-align:center;"><span>Qtd</span><span>Compra</span><span>Venda</span><span>Qtd</span></div>';
+        
+        // Levels (5 shown)
+        for (let i = 4; i >= 0; i--) {
+            const v = data.venda[i];
+            const c = data.compra[i];
+            const cBar = Math.round(c.quantidade / maxQtd * 100);
+            const vBar = Math.round(v.quantidade / maxQtd * 100);
+            h += '<div style="display:grid;grid-template-columns:1fr 80px 80px 1fr;gap:2px;padding:1px 0;border-bottom:1px solid var(--border);align-items:center;">';
+            h += '<div style="position:relative;text-align:right;padding-right:4px;"><div style="position:absolute;right:0;top:0;bottom:0;width:' + cBar + '%;background:rgba(34,197,94,0.15);border-radius:2px;"></div><span style="position:relative;font-family:monospace;color:var(--accent-green)">' + c.quantidade + '</span></div>';
+            h += '<div style="text-align:center;font-family:monospace;color:var(--accent-green);font-weight:600">' + c.preco.toLocaleString('pt-BR') + '</div>';
+            h += '<div style="text-align:center;font-family:monospace;color:var(--accent-red);font-weight:600">' + v.preco.toLocaleString('pt-BR') + '</div>';
+            h += '<div style="position:relative;padding-left:4px;"><div style="position:absolute;left:0;top:0;bottom:0;width:' + vBar + '%;background:rgba(239,68,68,0.15);border-radius:2px;"></div><span style="position:relative;font-family:monospace;color:var(--accent-red)">' + v.quantidade + '</span></div>';
+            h += '</div>';
+        }
+        
+        // Totals
+        const pressaoTag = data.pressao === 'COMPRADORES' ? 'tag-green' : data.pressao === 'VENDEDORES' ? 'tag-red' : 'tag-yellow';
+        h += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px;text-align:center;">';
+        h += '<div><div style="font-size:10px;color:var(--text-muted)">COMPRA</div><div style="font-weight:700;color:var(--accent-green);font-family:monospace">' + data.total_compra.toLocaleString('pt-BR') + '</div></div>';
+        h += '<div><div style="font-size:10px;color:var(--text-muted)">VENDA</div><div style="font-weight:700;color:var(--accent-red);font-family:monospace">' + data.total_venda.toLocaleString('pt-BR') + '</div></div>';
+        h += '</div>';
+        h += '<div class="stat-row" style="margin-top:6px;"><span class="stat-label">Pressao</span><span class="tag ' + pressaoTag + '">' + data.pressao + ' (' + data.ratio + ')</span></div>';
+        h += '</div>';
+        el.innerHTML = h;
+    } catch(e) { console.log('Book error:', e); }
+}
+
+// =====================================================
+// TAPE READING (TIMES & TRADES)
+// =====================================================
+async function atualizarTape() {
+    try {
+        const res = await fetch('/api/tape?ativo=' + state.ativo);
+        const data = await res.json();
+        const el = document.getElementById('tapeSection');
+        if (data.erro) { el.innerHTML = '<div style="font-size:12px;color:var(--text-muted)">' + data.erro + '</div>'; return; }
+        
+        let h = '<div style="font-size:11px;">';
+        
+        // Aggression bar
+        const agTag = data.agressao === 'COMPRADORA' ? 'tag-green' : data.agressao === 'VENDEDORA' ? 'tag-red' : 'tag-yellow';
+        h += '<div style="display:flex;height:8px;border-radius:4px;overflow:hidden;margin-bottom:8px;">';
+        h += '<div style="width:' + data.pct_compra + '%;background:var(--accent-green);"></div>';
+        h += '<div style="width:' + data.pct_venda + '%;background:var(--accent-red);"></div>';
+        h += '</div>';
+        h += '<div style="display:flex;justify-content:space-between;font-size:10px;margin-bottom:6px;">';
+        h += '<span style="color:var(--accent-green)">Compra ' + data.pct_compra + '%</span>';
+        h += '<span class="tag ' + agTag + '">' + data.agressao + '</span>';
+        h += '<span style="color:var(--accent-red)">Venda ' + data.pct_venda + '%</span>';
+        h += '</div>';
+        
+        // Last trades (show 10)
+        h += '<div style="max-height:180px;overflow-y:auto;">';
+        data.trades.slice(0, 12).forEach(t => {
+            const color = t.tipo === 'COMPRA' ? 'var(--accent-green)' : 'var(--accent-red)';
+            const bg = t.grande ? (t.tipo === 'COMPRA' ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.1)') : 'transparent';
+            h += '<div style="display:grid;grid-template-columns:55px 1fr 50px 30px;gap:4px;padding:2px 0;border-bottom:1px solid var(--border);background:' + bg + ';font-family:monospace;">';
+            h += '<span style="color:var(--text-muted);font-size:10px">' + t.hora + '</span>';
+            h += '<span style="color:' + color + ';font-weight:' + (t.grande?'700':'400') + '">' + t.preco.toLocaleString('pt-BR') + '</span>';
+            h += '<span style="text-align:right">' + t.quantidade + '</span>';
+            h += '<span style="color:' + color + ';font-size:10px;text-align:center">' + (t.tipo === 'COMPRA' ? 'C' : 'V') + '</span>';
+            h += '</div>';
+        });
+        h += '</div>';
+        
+        h += '<div class="stat-row" style="margin-top:6px;"><span class="stat-label">Lotes Grandes</span><span style="font-weight:700;color:var(--accent-orange)">' + data.lotes_grandes + '</span></div>';
+        h += '</div>';
+        el.innerHTML = h;
+    } catch(e) { console.log('Tape error:', e); }
 }
 
 function atualizarMultiTF(pan) {
