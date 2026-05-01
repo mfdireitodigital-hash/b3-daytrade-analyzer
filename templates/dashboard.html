@@ -475,53 +475,30 @@
             </div>
             <!-- TAB: REPLAY DO PREGAO ANTERIOR -->
             <div class="pt-tab-content" id="ptTabReplay" style="display:none;">
-                <div id="simContainer">
-                    <!-- HEADER -->
-                    <div id="simHeader" style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:var(--card-bg);border:1px solid var(--border);border-radius:8px;margin-bottom:8px;">
-                        <div style="font-size:14px;font-weight:800;">SIMULADOR</div>
-                        <div id="simDiaInfo" style="font-size:12px;color:var(--text-muted);">Carregando...</div>
-                        <div id="simPlacar" style="font-size:13px;font-weight:700;"></div>
+                <!-- Info bar -->
+                <div id="simInfo" style="padding:8px 12px;background:var(--card-bg);border:1px solid var(--border);border-radius:8px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;">
+                    <div id="simDiaLabel" style="font-size:13px;font-weight:700;">Carregando pregao anterior...</div>
+                    <div style="display:flex;gap:8px;align-items:center;">
+                        <span style="font-size:11px;color:var(--text-muted);">Stop:</span>
+                        <input id="simStopInput" type="number" value="200" style="width:55px;padding:3px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:4px;color:var(--text-primary);font-size:12px;text-align:center;">
+                        <span style="font-size:11px;color:var(--text-muted);">Alvo:</span>
+                        <input id="simAlvoInput" type="number" value="300" style="width:55px;padding:3px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:4px;color:var(--text-primary);font-size:12px;text-align:center;">
+                        <span style="font-size:11px;color:var(--text-muted);">Ctrs:</span>
+                        <input id="simCtrsInput" type="number" value="1" min="1" style="width:40px;padding:3px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:4px;color:var(--text-primary);font-size:12px;text-align:center;">
                     </div>
-                    
-                    <!-- VELA ATUAL -->
-                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;">
-                        <!-- Painel da vela -->
-                        <div id="simVelaPanel" style="padding:12px;background:var(--card-bg);border:1px solid var(--border);border-radius:8px;">
-                            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-                                <button onclick="simNav(-1)" style="padding:4px 12px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:4px;color:var(--text-primary);cursor:pointer;font-weight:700;">&lt;</button>
-                                <div id="simVelaHora" style="font-size:18px;font-weight:800;">--:--</div>
-                                <button onclick="simNav(1)" style="padding:4px 12px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:4px;color:var(--text-primary);cursor:pointer;font-weight:700;">&gt;</button>
-                            </div>
-                            <div id="simVelaPreco" style="font-size:28px;font-weight:800;text-align:center;margin:8px 0;">---</div>
-                            <div id="simVelaOHLC" style="display:grid;grid-template-columns:repeat(4,1fr);gap:4px;font-size:11px;text-align:center;"></div>
-                            <div id="simVelaIndicadores" style="display:grid;grid-template-columns:repeat(3,1fr);gap:4px;font-size:11px;text-align:center;margin-top:8px;"></div>
-                            <div style="text-align:center;margin-top:4px;font-size:10px;color:var(--text-muted);" id="simVelaNum">0/0</div>
-                        </div>
-                        
-                        <!-- Painel de operacao -->
-                        <div style="padding:12px;background:var(--card-bg);border:1px solid var(--border);border-radius:8px;">
-                            <div style="font-size:12px;font-weight:700;margin-bottom:8px;text-align:center;">OPERAR</div>
-                            <!-- Config -->
-                            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:10px;">
-                                <div><label style="font-size:10px;color:var(--text-muted);display:block;">Stop (pts)</label><input id="simStop" type="number" value="200" style="width:100%;padding:4px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:4px;color:var(--text-primary);font-size:13px;font-weight:700;text-align:center;"></div>
-                                <div><label style="font-size:10px;color:var(--text-muted);display:block;">Alvo (pts)</label><input id="simAlvo" type="number" value="300" style="width:100%;padding:4px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:4px;color:var(--text-primary);font-size:13px;font-weight:700;text-align:center;"></div>
-                                <div><label style="font-size:10px;color:var(--text-muted);display:block;">Contratos</label><input id="simCtrs" type="number" value="1" min="1" style="width:100%;padding:4px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:4px;color:var(--text-primary);font-size:13px;font-weight:700;text-align:center;"></div>
-                            </div>
-                            <!-- Botoes -->
-                            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;">
-                                <button id="btnCompra" onclick="simOperar('COMPRA')" style="padding:12px;background:#16a34a;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:16px;font-weight:800;letter-spacing:1px;">COMPRA</button>
-                                <button id="btnVenda" onclick="simOperar('VENDA')" style="padding:12px;background:#dc2626;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:16px;font-weight:800;letter-spacing:1px;">VENDA</button>
-                            </div>
-                            <!-- Resultado -->
-                            <div id="simResultado" style="min-height:60px;"></div>
-                        </div>
-                    </div>
-                    
-                    <!-- HISTORICO -->
-                    <div id="simHistorico" style="padding:10px;background:var(--card-bg);border:1px solid var(--border);border-radius:8px;">
-                        <div style="font-size:12px;font-weight:700;margin-bottom:6px;">HISTORICO DE OPERACOES</div>
-                        <div id="simHistLista" style="font-size:11px;color:var(--text-muted);">Nenhuma operacao ainda. Navegue pelas velas e clique COMPRA ou VENDA.</div>
-                    </div>
+                    <div id="simPlacarBar" style="font-size:13px;font-weight:700;">0W / 0L | R$ 0,00</div>
+                </div>
+                
+                <!-- Resultado da ultima operacao -->
+                <div id="simUltimoResult" style="display:none;padding:10px;border-radius:8px;margin-bottom:8px;text-align:center;"></div>
+                
+                <!-- Tabela de velas -->
+                <div id="simTabelaBox" style="max-height:420px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;background:var(--card-bg);"></div>
+                
+                <!-- Historico -->
+                <div id="simHistBox" style="margin-top:8px;padding:8px 12px;background:var(--card-bg);border:1px solid var(--border);border-radius:8px;display:none;">
+                    <div style="font-size:11px;font-weight:700;margin-bottom:4px;">SUAS OPERACOES</div>
+                    <div id="simHistList"></div>
                 </div>
             </div>
         </div>
@@ -2032,119 +2009,155 @@ setInterval(atualizarPrecoRealtime, 30000);
 // REPLAY AUTOMATICO DO PREGAO ANTERIOR
 // =====================================================
 async function simInit() {
-            window.simData = null;
-            window.simIdx = 0;
-            window.simScore = {wins:0, losses:0, pts:0, rs:0, ops:[]};
+            window.simScore = {wins:0,losses:0,pts:0,rs:0,ops:[]};
+            document.getElementById('simDiaLabel').textContent = 'Carregando pregao anterior...';
+            document.getElementById('simTabelaBox').innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-muted);">Buscando dados...</div>';
+            document.getElementById('simUltimoResult').style.display = 'none';
+            document.getElementById('simHistBox').style.display = 'none';
+            
             fetch('/api/replay-velas?ativo=WIN').then(r=>r.json()).then(data=>{
-                if(data.erro){document.getElementById('simDiaInfo').textContent='Erro: '+data.erro;return;}
-                window.simData = data;
-                window.simIdx = 0;
-                const m=data.mercado;
-                document.getElementById('simDiaInfo').innerHTML=data.dia+' <b>'+data.contrato+'</b> | '+m.abertura.toLocaleString('pt-BR')+' &rarr; '+m.fechamento.toLocaleString('pt-BR')+' ('+((m.variacao_pct>=0?'+':'')+m.variacao_pct)+'%)';
-                simAtualizarPlacar();
-                simMostrarVela();
-            }).catch(e=>{document.getElementById('simDiaInfo').textContent='Erro: '+e.message;});
+                if(data.erro){document.getElementById('simDiaLabel').textContent='Erro: '+data.erro;return;}
+                window.simVelas = data;
+                const m = data.mercado;
+                const corVar = m.variacao_pct >= 0 ? '#22c55e' : '#ef4444';
+                document.getElementById('simDiaLabel').innerHTML = 
+                    '<span style="color:var(--accent-blue);">'+data.dia+'</span> '+data.contrato+
+                    ' | Open: '+m.abertura.toLocaleString('pt-BR')+' Close: <span style="color:'+corVar+';">'+m.fechamento.toLocaleString('pt-BR')+'</span>'+
+                    ' (<span style="color:'+corVar+';">'+(m.variacao_pct>=0?'+':'')+m.variacao_pct+'%</span>)'+
+                    ' | Amplitude: '+m.amplitude_pts.toLocaleString('pt-BR')+' pts';
+                simRenderTabela(data.velas);
+                simUpdatePlacar();
+            }).catch(e=>{document.getElementById('simDiaLabel').textContent='Erro: '+e.message;});
         }
         
-        function simNav(dir) {
-            if(!window.simData) return;
-            const max = window.simData.velas.length - 1;
-            window.simIdx = Math.max(0, Math.min(max, window.simIdx + dir));
-            simMostrarVela();
+        function simRenderTabela(velas) {
+            let t = '<table style="width:100%;border-collapse:collapse;font-size:11px;">';
+            t += '<thead><tr style="background:var(--bg-secondary);position:sticky;top:0;z-index:1;">';
+            t += '<th style="padding:6px 4px;text-align:left;border-bottom:2px solid var(--border);">Hora</th>';
+            t += '<th style="padding:6px 4px;text-align:right;border-bottom:2px solid var(--border);">Open</th>';
+            t += '<th style="padding:6px 4px;text-align:right;border-bottom:2px solid var(--border);">High</th>';
+            t += '<th style="padding:6px 4px;text-align:right;border-bottom:2px solid var(--border);">Low</th>';
+            t += '<th style="padding:6px 4px;text-align:right;border-bottom:2px solid var(--border);">Close</th>';
+            t += '<th style="padding:6px 4px;text-align:center;border-bottom:2px solid var(--border);">Tend</th>';
+            t += '<th style="padding:6px 4px;text-align:center;border-bottom:2px solid var(--border);">RSI</th>';
+            t += '<th style="padding:6px 4px;text-align:center;border-bottom:2px solid var(--border);min-width:100px;">OPERAR</th>';
+            t += '</tr></thead><tbody>';
+            
+            velas.forEach((v, i) => {
+                const up = v.close >= v.open;
+                const cV = up ? '#22c55e' : '#ef4444';
+                const cT = v.tendencia==='ALTA'?'#22c55e':v.tendencia==='BAIXA'?'#ef4444':'#888';
+                const cR = v.rsi>70?'#ef4444':v.rsi<30?'#22c55e':'inherit';
+                const last = i >= velas.length - 1;
+                t += '<tr id="sR'+i+'" style="border-bottom:1px solid var(--border);">';
+                t += '<td style="padding:5px 4px;font-weight:700;">'+v.hora+'</td>';
+                t += '<td style="padding:5px 4px;text-align:right;">'+v.open.toLocaleString('pt-BR')+'</td>';
+                t += '<td style="padding:5px 4px;text-align:right;color:#22c55e;">'+v.high.toLocaleString('pt-BR')+'</td>';
+                t += '<td style="padding:5px 4px;text-align:right;color:#ef4444;">'+v.low.toLocaleString('pt-BR')+'</td>';
+                t += '<td style="padding:5px 4px;text-align:right;font-weight:700;color:'+cV+';">'+v.close.toLocaleString('pt-BR')+'</td>';
+                t += '<td style="padding:5px 4px;text-align:center;font-weight:700;color:'+cT+';font-size:10px;">'+v.tendencia+'</td>';
+                t += '<td style="padding:5px 4px;text-align:center;color:'+cR+';">'+(v.rsi!=null?v.rsi:'-')+'</td>';
+                t += '<td style="padding:5px 4px;text-align:center;">';
+                if(!last){
+                    t += '<button onclick="simGo('+i+\',\\\'COMPRA\\\'\')" style="padding:3px 10px;background:#16a34a;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:11px;font-weight:800;margin-right:3px;">COMPRA</button>';
+                    t += '<button onclick="simGo('+i+\',\\\'VENDA\\\'\')" style="padding:3px 10px;background:#dc2626;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:11px;font-weight:800;">VENDA</button>';
+                } else {
+                    t += '<span style="color:var(--text-muted);font-size:10px;">Fechamento</span>';
+                }
+                t += '</td></tr>';
+            });
+            t += '</tbody></table>';
+            document.getElementById('simTabelaBox').innerHTML = t;
         }
         
-        function simMostrarVela() {
-            if(!window.simData) return;
-            const v = window.simData.velas[window.simIdx];
-            const isUp = v.close >= v.open;
-            const cor = isUp ? '#22c55e' : '#ef4444';
-            document.getElementById('simVelaHora').textContent = v.hora;
-            document.getElementById('simVelaPreco').innerHTML = '<span style="color:'+cor+';">'+v.close.toLocaleString('pt-BR')+'</span>';
-            document.getElementById('simVelaOHLC').innerHTML = 
-                '<div style="padding:4px;background:var(--bg-secondary);border-radius:4px;"><div style="color:var(--text-muted);font-size:9px;">OPEN</div><div style="font-weight:600;">'+v.open.toLocaleString('pt-BR')+'</div></div>'+
-                '<div style="padding:4px;background:var(--bg-secondary);border-radius:4px;"><div style="color:var(--text-muted);font-size:9px;">HIGH</div><div style="font-weight:600;color:#22c55e;">'+v.high.toLocaleString('pt-BR')+'</div></div>'+
-                '<div style="padding:4px;background:var(--bg-secondary);border-radius:4px;"><div style="color:var(--text-muted);font-size:9px;">LOW</div><div style="font-weight:600;color:#ef4444;">'+v.low.toLocaleString('pt-BR')+'</div></div>'+
-                '<div style="padding:4px;background:var(--bg-secondary);border-radius:4px;"><div style="color:var(--text-muted);font-size:9px;">CLOSE</div><div style="font-weight:600;color:'+cor+';">'+v.close.toLocaleString('pt-BR')+'</div></div>';
-            const corT = v.tendencia==='ALTA'?'#22c55e':v.tendencia==='BAIXA'?'#ef4444':'var(--text-muted)';
-            const corR = v.rsi>70?'#ef4444':v.rsi<30?'#22c55e':'var(--text-primary)';
-            const corM = v.macd_hist>0?'#22c55e':v.macd_hist<0?'#ef4444':'var(--text-muted)';
-            document.getElementById('simVelaIndicadores').innerHTML = 
-                '<div style="padding:4px;background:var(--bg-secondary);border-radius:4px;"><div style="color:var(--text-muted);font-size:9px;">TENDENCIA</div><div style="font-weight:700;color:'+corT+';">'+v.tendencia+'</div></div>'+
-                '<div style="padding:4px;background:var(--bg-secondary);border-radius:4px;"><div style="color:var(--text-muted);font-size:9px;">RSI</div><div style="font-weight:700;color:'+corR+';">'+(v.rsi||'--')+'</div></div>'+
-                '<div style="padding:4px;background:var(--bg-secondary);border-radius:4px;"><div style="color:var(--text-muted);font-size:9px;">MACD</div><div style="font-weight:700;color:'+corM+';">'+(v.macd_hist||'--')+'</div></div>';
-            document.getElementById('simVelaNum').textContent = (window.simIdx+1)+'/'+window.simData.velas.length;
-        }
-        
-        function simOperar(tipo) {
-            if(!window.simData) return;
-            const idx = window.simIdx;
-            if(idx >= window.simData.velas.length - 1){document.getElementById('simResultado').innerHTML='<div style="text-align:center;color:var(--accent-red);font-size:12px;">Ultima vela - nao pode entrar</div>';return;}
-            const stop = parseInt(document.getElementById('simStop').value)||200;
-            const alvo = parseInt(document.getElementById('simAlvo').value)||300;
-            const ctrs = parseInt(document.getElementById('simCtrs').value)||1;
-            const rd = document.getElementById('simResultado');
-            const btn = tipo==='COMPRA'?document.getElementById('btnCompra'):document.getElementById('btnVenda');
-            btn.disabled=true; btn.style.opacity='0.5';
-            rd.innerHTML='<div style="text-align:center;padding:8px;color:var(--text-muted);font-size:12px;">Simulando...</div>';
+        function simGo(idx, tipo) {
+            const stop = parseInt(document.getElementById('simStopInput').value)||200;
+            const alvo = parseInt(document.getElementById('simAlvoInput').value)||300;
+            const ctrs = parseInt(document.getElementById('simCtrsInput').value)||1;
+            const rd = document.getElementById('simUltimoResult');
+            rd.style.display = 'block';
+            rd.style.border = '1px solid var(--border)';
+            rd.style.background = 'var(--card-bg)';
+            rd.innerHTML = '<span style="color:var(--text-muted);font-size:12px;">Simulando '+tipo+' na vela '+window.simVelas.velas[idx].hora+'...</span>';
+            
+            // Highlight entry row
+            const row = document.getElementById('sR'+idx);
+            if(row) row.style.background = tipo==='COMPRA'?'rgba(34,197,94,0.15)':'rgba(239,68,68,0.15)';
+            
             fetch('/api/simular-entrada',{method:'POST',headers:{'Content-Type':'application/json'},
                 body:JSON.stringify({ativo:'WIN',vela_idx:idx,tipo:tipo,stop_pts:stop,alvo_pts:alvo,contratos:ctrs})
             }).then(r=>r.json()).then(data=>{
-                btn.disabled=false;btn.style.opacity='1';
-                if(data.erro){rd.innerHTML='<div style="color:var(--accent-red);font-size:12px;">'+data.erro+'</div>';return;}
-                const e=data.entrada,s=data.saida;
-                const isW=s.resultado==='WIN';
-                const cor=isW?'#22c55e':'#ef4444';
-                const sc=window.simScore;
-                if(isW)sc.wins++;else sc.losses++;
-                sc.pts+=s.pts;sc.rs+=s.resultado_rs;
-                sc.ops.push({tipo:e.tipo,hora:e.hora,preco:e.preco,resultado:s.resultado,pts:s.pts,rs:s.resultado_rs,saida:s.hora,velas:s.velas_na_operacao});
-                simAtualizarPlacar();
-                simAtualizarHistorico();
-                rd.innerHTML=
-                    '<div style="text-align:center;padding:10px;border:2px solid '+cor+';border-radius:8px;background:rgba('+(isW?'34,197,94':'239,68,68')+',0.08);">'+
-                    '<div style="font-size:22px;font-weight:900;color:'+cor+';margin-bottom:2px;">'+s.resultado+'</div>'+
-                    '<div style="font-size:18px;font-weight:800;color:'+cor+';">'+(s.pts>=0?'+':'')+s.pts+' pts</div>'+
-                    '<div style="font-size:15px;font-weight:700;color:'+cor+';margin-bottom:4px;">'+(s.resultado_rs>=0?'+':'')+'R$ '+s.resultado_rs.toFixed(2)+'</div>'+
-                    '<div style="font-size:10px;color:var(--text-muted);">'+e.hora+' &rarr; '+s.hora+' ('+s.velas_na_operacao+' velas)'+(s.fechamento_forcado?' [fim dia]':'')+'</div>'+
-                    '<div style="font-size:10px;color:var(--text-muted);margin-top:2px;">Max favor: +'+data.detalhes.max_favoravel_pts+'pts | Max contra: -'+data.detalhes.max_adverso_pts+'pts</div>'+
-                    '</div>';
-            }).catch(err=>{btn.disabled=false;btn.style.opacity='1';rd.innerHTML='<div style="color:var(--accent-red);">Erro: '+err.message+'</div>';});
+                if(data.erro){rd.innerHTML='<span style="color:#ef4444;">'+data.erro+'</span>';return;}
+                const e=data.entrada, s=data.saida;
+                const w = s.resultado==='WIN';
+                const cor = w?'#22c55e':'#ef4444';
+                
+                // Update score
+                const sc = window.simScore;
+                if(w) sc.wins++; else sc.losses++;
+                sc.pts += s.pts; sc.rs += s.resultado_rs;
+                sc.ops.push({tipo:e.tipo,hora:e.hora,preco:e.preco,resultado:s.resultado,pts:s.pts,rs:s.resultado_rs,horaSaida:s.hora,velas:s.velas_na_operacao});
+                simUpdatePlacar();
+                simUpdateHist();
+                
+                // Highlight exit row
+                if(window.simVelas){
+                    const ei = window.simVelas.velas.findIndex(v=>v.hora===s.hora);
+                    if(ei>=0){const er=document.getElementById('sR'+ei);if(er)er.style.background=w?'rgba(34,197,94,0.25)':'rgba(239,68,68,0.25)';}
+                }
+                
+                // Show result
+                rd.style.border = '2px solid '+cor;
+                rd.style.background = w?'rgba(34,197,94,0.06)':'rgba(239,68,68,0.06)';
+                rd.innerHTML = 
+                    '<span style="font-size:20px;font-weight:900;color:'+cor+';margin-right:12px;">'+s.resultado+'</span>'+
+                    '<span style="font-size:11px;color:var(--text-muted);">'+e.tipo+' @ '+e.preco.toLocaleString('pt-BR')+' ('+e.hora+')</span>'+
+                    '<span style="font-size:16px;font-weight:800;color:'+cor+';margin:0 12px;">'+(s.pts>=0?'+':'')+s.pts+' pts</span>'+
+                    '<span style="font-size:14px;font-weight:700;color:'+cor+';">'+(s.resultado_rs>=0?'+':'')+'R$ '+s.resultado_rs.toFixed(2)+'</span>'+
+                    '<span style="font-size:10px;color:var(--text-muted);margin-left:12px;">Saida: '+s.hora+' ('+s.velas_na_operacao+' velas)'+
+                    (s.fechamento_forcado?' [fim dia]':'')+'</span>';
+            }).catch(err=>{rd.innerHTML='<span style="color:#ef4444;">Erro: '+err.message+'</span>';});
         }
         
-        function simAtualizarPlacar() {
-            const s=window.simScore;
-            const total=s.wins+s.losses;
-            if(total===0){document.getElementById('simPlacar').innerHTML='<span style="color:var(--text-muted);font-size:11px;">Sem operacoes</span>';return;}
-            const taxa=Math.round(s.wins/total*100);
-            const cor=s.rs>=0?'#22c55e':'#ef4444';
-            document.getElementById('simPlacar').innerHTML=
-                '<span style="color:#22c55e;font-size:14px;">'+s.wins+'W</span> <span style="color:#ef4444;font-size:14px;">'+s.losses+'L</span> '+
-                '<span style="color:var(--text-muted);font-size:12px;">('+taxa+'%)</span> '+
-                '<span style="color:'+cor+';font-size:14px;font-weight:800;">'+(s.rs>=0?'+':'')+'R$ '+s.rs.toFixed(2)+'</span>';
+        function simUpdatePlacar() {
+            const s = window.simScore;
+            const total = s.wins+s.losses;
+            const taxa = total>0?Math.round(s.wins/total*100):0;
+            const cor = s.rs>=0?'#22c55e':'#ef4444';
+            document.getElementById('simPlacarBar').innerHTML = total===0?
+                '<span style="color:var(--text-muted);">Escolha uma vela e clique COMPRA ou VENDA</span>':
+                '<span style="color:#22c55e;">'+s.wins+'W</span> / <span style="color:#ef4444;">'+s.losses+'L</span> ('+taxa+'%) | <span style="color:'+cor+';font-size:14px;">'+(s.rs>=0?'+':'')+'R$ '+s.rs.toFixed(2)+'</span>';
         }
         
-        function simAtualizarHistorico() {
-            const ops=window.simScore.ops;
-            if(!ops.length)return;
-            let h='';
+        function simUpdateHist() {
+            const ops = window.simScore.ops;
+            if(!ops.length) return;
+            document.getElementById('simHistBox').style.display = 'block';
+            let h = '';
             ops.forEach((op,i)=>{
-                const cor=op.resultado==='WIN'?'#22c55e':'#ef4444';
-                h+='<div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid var(--border);font-size:11px;">'+
-                    '<span style="font-weight:700;color:'+cor+';">#'+(i+1)+' '+op.resultado+'</span>'+
-                    '<span>'+op.tipo+' @ '+op.preco.toLocaleString('pt-BR')+' ('+op.hora+')</span>'+
-                    '<span style="color:'+cor+';font-weight:700;">'+(op.pts>=0?'+':'')+op.pts+'pts</span>'+
-                    '<span style="color:'+cor+';">R$ '+(op.rs>=0?'+':'')+op.rs.toFixed(2)+'</span>'+
-                    '<span style="color:var(--text-muted);">'+op.velas+' velas</span>'+
-                    '</div>';
+                const cor = op.resultado==='WIN'?'#22c55e':'#ef4444';
+                h += '<div style="display:flex;gap:10px;padding:3px 0;border-bottom:1px solid var(--border);font-size:11px;align-items:center;">';
+                h += '<span style="font-weight:800;color:'+cor+';min-width:35px;">#'+(i+1)+'</span>';
+                h += '<span style="font-weight:700;color:'+cor+';min-width:40px;">'+op.resultado+'</span>';
+                h += '<span style="min-width:55px;">'+op.tipo+'</span>';
+                h += '<span style="min-width:40px;">'+op.hora+'</span>';
+                h += '<span>@ '+op.preco.toLocaleString('pt-BR')+'</span>';
+                h += '<span style="color:'+cor+';font-weight:700;margin-left:auto;">'+(op.pts>=0?'+':'')+op.pts+'pts</span>';
+                h += '<span style="color:'+cor+';font-weight:700;min-width:70px;text-align:right;">R$ '+(op.rs>=0?'+':'')+op.rs.toFixed(2)+'</span>';
+                h += '</div>';
             });
-            document.getElementById('simHistLista').innerHTML=h;
+            document.getElementById('simHistList').innerHTML = h;
         }
         
-        // Auto-load when tab is shown
         function carregarVelasReplay() { simInit(); }
         function atualizarPlacarReplay() {}
         function renderVelasReplay() {}
         function simEntrada() {}
+        function simNav() {}
+        function simMostrarVela() {}
+        function simOperar() {}
+        function simAtualizarPlacar() {}
+        function simAtualizarHistorico() {}
         function executarReplay() { simInit(); }
 
 </script>
