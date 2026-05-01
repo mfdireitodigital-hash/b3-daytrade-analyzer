@@ -860,7 +860,7 @@
             <div style="font-size:13px;font-weight:800;color:var(--accent-blue);text-transform:uppercase;margin-bottom:8px;padding-bottom:4px;border-bottom:1px solid var(--border);">
                 Operacoes Recomendadas
             </div>
-            <div id="simRealOps" style="max-height:400px;overflow-y:auto;">
+            <div id="simRealOps">
                 <div style="text-align:center;padding:24px;color:var(--text-muted);">Clique ANALISAR AGORA para gerar operacoes com base em todos os indicadores.</div>
             </div>
         </div>
@@ -3014,8 +3014,8 @@ function simRealCheckMarket() {
         dot.style.background = '#22c55e';
         label.innerHTML = '<span style="color:#22c55e;">MERCADO ABERTO</span> - Analise em Tempo Real';
     } else {
-        dot.style.background = '#ef4444';
-        label.innerHTML = '<span style="color:#ef4444;">MERCADO FECHADO</span> - Analise do Pregao Anterior (Dados Reais)';
+        dot.style.background = '#3b82f6';
+        label.innerHTML = '<span style="color:#3b82f6;">MODO REPLAY</span> - Relatorio Completo do Ultimo Pregao (09:00-18:00)';
     }
 }
 
@@ -3024,20 +3024,18 @@ async function simRealAnalisar() {
     const veredSub = document.getElementById('simRealVeredictoSub');
     veredEl.textContent = 'ANALISANDO...';
     veredEl.style.color = 'var(--accent-blue)';
-    veredSub.textContent = 'Analisando pregao completo: abertura a fechamento, vela por vela...';
+    veredSub.textContent = 'Analisando pregao completo 09:00-18:00, vela por vela...';
+    document.getElementById('simRealOps').innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-muted);">Processando todas as velas do pregao...</div>';
     
     try {
-        // Fetch simulador-real + noticias in parallel
         const [simRes, notRes] = await Promise.all([
             fetch('/api/simulador-real?ativo=WIN').then(r => r.json()),
             fetch('/api/noticias-impacto').then(r => r.json()).catch(e => null),
         ]);
         
         if (simRes.erro) {
-            veredEl.textContent = 'ERRO';
-            veredEl.style.color = '#ef4444';
-            veredSub.textContent = simRes.erro;
-            return;
+            veredEl.textContent = 'ERRO'; veredEl.style.color = '#ef4444';
+            veredSub.textContent = simRes.erro; return;
         }
         
         const res = simRes.resumo;
@@ -3045,172 +3043,185 @@ async function simRealAnalisar() {
         const ops = simRes.operacoes;
         const velas = simRes.velas;
         
-        // Update subtitle
-        document.getElementById('simRealSubtitle').textContent = simRes.dia + ' | ' + simRes.contrato + ' | Pregao Completo: ' + res.total_velas + ' velas analisadas';
-        
-        // Update price
+        document.getElementById('simRealSubtitle').textContent = simRes.dia + ' | ' + simRes.contrato + ' | Relatorio Completo 09:00-18:00 | ' + res.total_velas + ' velas';
         document.getElementById('simRealPreco').textContent = res.fechamento ? res.fechamento.toLocaleString('pt-BR') : '--';
         
         // ---- RESUMO DO DIA ----
         const corVar = res.variacao_pct >= 0 ? '#22c55e' : '#ef4444';
         const dirLabel = res.direcao === 'ALTA' ? 'DIA DE ALTA' : res.direcao === 'BAIXA' ? 'DIA DE BAIXA' : 'DIA NEUTRO';
         
-        document.getElementById('simRealStatus').innerHTML = `
-            <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
-                <span style="background:${corVar};color:#fff;padding:3px 10px;border-radius:4px;font-size:11px;font-weight:800;">${dirLabel}</span>
-                <span style="font-size:12px;">Abertura: <strong>${res.abertura?.toLocaleString('pt-BR')}</strong></span>
-                <span style="font-size:12px;">Fechamento: <strong style="color:${corVar}">${res.fechamento?.toLocaleString('pt-BR')}</strong></span>
-                <span style="font-size:12px;">Variacao: <strong style="color:${corVar}">${res.variacao_pct >= 0 ? '+' : ''}${res.variacao_pct}%</strong></span>
-                <span style="font-size:12px;">Amplitude: <strong>${res.amplitude_pts}pts</strong></span>
-            </div>
-            <div style="display:flex;gap:12px;font-size:11px;color:var(--text-muted);">
-                <span>Operar: <strong style="color:#22c55e;">${res.velas_operar}</strong></span>
-                <span>Nao operar: <strong style="color:#ef4444;">${res.velas_nao_operar}</strong></span>
-            </div>
-        `;
+        document.getElementById('simRealStatus').innerHTML = 
+            '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">' +
+            '<span style="background:' + corVar + ';color:#fff;padding:3px 10px;border-radius:4px;font-size:11px;font-weight:800;">' + dirLabel + '</span>' +
+            '<span style="font-size:12px;">Abertura: <strong>' + (res.abertura||0).toLocaleString('pt-BR') + '</strong></span>' +
+            '<span style="font-size:12px;">Fechamento: <strong style="color:' + corVar + '">' + (res.fechamento||0).toLocaleString('pt-BR') + '</strong></span>' +
+            '<span style="font-size:12px;">Var: <strong style="color:' + corVar + '">' + (res.variacao_pct >= 0 ? '+' : '') + res.variacao_pct + '%</strong></span>' +
+            '<span style="font-size:12px;">Amplitude: <strong>' + res.amplitude_pts + 'pts</strong></span>' +
+            '</div>';
         
-        // ---- VEREDICTO (performance do dia) ----
+        // ---- VEREDICTO (performance) ----
         if (perf.total_operacoes > 0) {
-            const corPerf = perf.total_rs >= 0 ? '#22c55e' : '#ef4444';
+            const corP = perf.total_rs >= 0 ? '#22c55e' : '#ef4444';
             veredEl.innerHTML = perf.win_rate + '% WIN RATE';
             veredEl.style.color = perf.win_rate >= 60 ? '#22c55e' : perf.win_rate >= 40 ? '#ca8a04' : '#ef4444';
-            veredSub.innerHTML = perf.wins + 'W / ' + perf.losses + 'L | ' + (perf.total_pts >= 0 ? '+' : '') + perf.total_pts + ' pts | <span style="color:' + corPerf + ';font-weight:800;">' + (perf.total_rs >= 0 ? '+' : '') + 'R$ ' + perf.total_rs.toFixed(2) + '</span> | ' + perf.total_operacoes + ' operacoes';
+            veredSub.innerHTML = '<span style="font-size:14px;">' + perf.wins + 'W / ' + perf.losses + 'L</span> | ' +
+                (perf.total_pts >= 0 ? '+' : '') + perf.total_pts + ' pts | ' +
+                '<span style="color:' + corP + ';font-weight:800;font-size:14px;">' + (perf.total_rs >= 0 ? '+' : '') + 'R$ ' + perf.total_rs.toFixed(2) + '</span>';
             document.getElementById('simRealVeredicto').style.borderColor = perf.total_rs >= 0 ? '#22c55e' : '#ef4444';
         } else {
-            veredEl.innerHTML = 'NENHUMA OPERACAO';
+            veredEl.innerHTML = 'SEM OPORTUNIDADES CLARAS';
             veredEl.style.color = '#ca8a04';
-            veredSub.textContent = 'Nenhum setup com score 4+ foi encontrado neste pregao.';
+            veredSub.textContent = 'Nenhum setup atingiu score 4+ neste pregao. Dia de ficar de fora.';
+            document.getElementById('simRealVeredicto').style.borderColor = '#ca8a04';
         }
         
-        // ---- TRIPLE SCREEN (from first valid signal or last candle) ----
-        const lastVela = velas[velas.length - 1];
-        let tsHtml = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;">';
-        tsHtml += '<div style="padding:4px 6px;background:rgba(255,255,255,0.03);border-radius:4px;font-size:10px;"><span style="color:var(--text-muted);">Tendencia Final:</span> <strong style="color:' + (lastVela.tendencia === 'ALTA' ? '#22c55e' : lastVela.tendencia === 'BAIXA' ? '#ef4444' : '#888') + '">' + lastVela.tendencia + '</strong></div>';
-        tsHtml += '<div style="padding:4px 6px;background:rgba(255,255,255,0.03);border-radius:4px;font-size:10px;"><span style="color:var(--text-muted);">RSI Final:</span> <strong>' + lastVela.rsi + '</strong></div>';
-        tsHtml += '<div style="padding:4px 6px;background:rgba(255,255,255,0.03);border-radius:4px;font-size:10px;"><span style="color:var(--text-muted);">EMA9/21:</span> <strong>' + (lastVela.ema9 > lastVela.ema21 ? 'ALTA' : 'BAIXA') + '</strong></div>';
-        tsHtml += '<div style="padding:4px 6px;background:rgba(255,255,255,0.03);border-radius:4px;font-size:10px;"><span style="color:var(--text-muted);">MACD:</span> <strong style="color:' + (lastVela.macd_hist > 0 ? '#22c55e' : '#ef4444') + '">' + lastVela.macd_hist + '</strong></div>';
-        tsHtml += '</div>';
-        document.getElementById('simRealTriple').innerHTML = tsHtml;
-        
-        // ---- TIMELINE DO DIA (visual) ----
-        let confHtml = '<div style="font-size:10px;color:var(--text-muted);margin-bottom:4px;">Timeline do pregao (verde=operar, vermelho=nao operar):</div>';
-        confHtml += '<div style="display:flex;gap:1px;height:20px;border-radius:4px;overflow:hidden;">';
-        velas.forEach(v => {
-            const cor = v.decisao === 'OPERAR' ? '#22c55e' : v.score >= 3 ? '#ca8a04' : '#ef444450';
-            confHtml += '<div title="' + v.hora + ' Score:' + v.score + ' ' + v.decisao + '" style="flex:1;background:' + cor + ';min-width:2px;cursor:pointer;"></div>';
+        // ---- TRIPLE SCREEN (ultimo estado) ----
+        const lv = velas[velas.length - 1];
+        let tsH = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;">';
+        const items = [
+            ['Tendencia', lv.tendencia, lv.tendencia==='ALTA'?'#22c55e':lv.tendencia==='BAIXA'?'#ef4444':'#888'],
+            ['RSI', lv.rsi, lv.rsi<30?'#22c55e':lv.rsi>70?'#ef4444':'#888'],
+            ['EMAs', lv.ema9>lv.ema21?'ALTA':'BAIXA', lv.ema9>lv.ema21?'#22c55e':'#ef4444'],
+            ['MACD', lv.macd_hist>0?'Positivo':'Negativo', lv.macd_hist>0?'#22c55e':'#ef4444'],
+        ];
+        items.forEach(([k,v2,c2]) => {
+            tsH += '<div style="padding:4px 6px;background:rgba(255,255,255,0.03);border-radius:4px;font-size:10px;"><span style="color:var(--text-muted);">' + k + ':</span> <strong style="color:' + c2 + ';">' + v2 + '</strong></div>';
         });
-        confHtml += '</div>';
-        confHtml += '<div style="display:flex;justify-content:space-between;font-size:9px;color:var(--text-muted);margin-top:2px;"><span>09:00</span><span>12:00</span><span>15:00</span><span>18:00</span></div>';
-        document.getElementById('simRealConf').innerHTML = confHtml;
+        tsH += '</div>';
+        document.getElementById('simRealTriple').innerHTML = tsH;
         
-        // ---- NOTICIAS ----
-        let newsHtml = '';
+        // ---- TIMELINE VISUAL ----
+        let confH = '<div style="font-size:10px;color:var(--text-muted);margin-bottom:4px;">Timeline (verde=operar | amarelo=cautela | vermelho=fora):</div>';
+        confH += '<div style="display:flex;gap:1px;height:24px;border-radius:4px;overflow:hidden;">';
+        velas.forEach(v => {
+            const c2 = v.decisao==='OPERAR'?'#22c55e':v.score>=3?'#ca8a04':'rgba(239,68,68,0.4)';
+            confH += '<div title="' + v.hora + ' | Score:' + v.score + '/7 | ' + v.decisao + '" style="flex:1;background:' + c2 + ';min-width:2px;cursor:pointer;"></div>';
+        });
+        confH += '</div><div style="display:flex;justify-content:space-between;font-size:9px;color:var(--text-muted);margin-top:2px;"><span>09:00</span><span>11:00</span><span>13:00</span><span>15:00</span><span>17:00</span></div>';
+        document.getElementById('simRealConf').innerHTML = confH;
+        
+        // ---- NOTICIAS INDICATOR ----
+        let nH = '';
         if (notRes && !notRes.erro) {
-            const total = (notRes.proximos?.length || 0) + (notRes.passados?.length || 0);
-            if (total > 0) {
-                newsHtml += '<div style="font-size:10px;color:var(--text-muted);margin-bottom:4px;">' + total + ' eventos de 3 estrelas esta semana</div>';
-                const passados = (notRes.passados || []).slice(0, 4);
-                passados.forEach(p => {
-                    const cor = p.surpresa === 'ACIMA' ? '#22c55e' : p.surpresa === 'ABAIXO' ? '#ef4444' : '#888';
-                    newsHtml += '<div style="font-size:10px;padding:2px 0;border-bottom:1px solid rgba(255,255,255,0.03);">';
-                    newsHtml += '<span style="color:var(--text-muted);">' + p.hora + '</span> ';
-                    newsHtml += '<span>' + p.moeda + '</span> ';
-                    newsHtml += '<span style="font-weight:600;">' + p.evento + '</span> ';
-                    if (p.surpresa) newsHtml += '<span style="color:' + cor + ';font-weight:700;">' + p.surpresa + '</span>';
-                    newsHtml += '</div>';
-                });
+            const all = [...(notRes.proximos||[]), ...(notRes.passados||[])];
+            if (all.length > 0) {
+                nH += '<div style="font-size:11px;font-weight:700;margin-bottom:4px;">' + all.length + ' eventos 3 estrelas</div>';
+                // Check if any impact trading
+                const impactantes = all.filter(e => e.surpresa && e.surpresa !== 'NEUTRO');
+                if (impactantes.length > 0) {
+                    nH += '<div style="color:#ea580c;font-size:10px;font-weight:600;margin-bottom:4px;">Eventos que moveram o mercado:</div>';
+                    impactantes.slice(0, 5).forEach(e => {
+                        const ic = e.surpresa==='ACIMA'?'#22c55e':'#ef4444';
+                        nH += '<div style="font-size:10px;padding:2px 0;">' + e.hora + ' ' + e.moeda + ' <strong>' + e.evento + '</strong> <span style="color:' + ic + ';font-weight:700;">' + e.surpresa + '</span>';
+                        if (e.impacto_win) nH += ' <span style="font-size:9px;color:var(--text-muted);">WIN:' + e.impacto_win.split('(')[0] + '</span>';
+                        nH += '</div>';
+                    });
+                } else {
+                    nH += '<div style="color:#22c55e;font-size:10px;">Nenhum evento gerou surpresa significativa. Bom para operar.</div>';
+                }
             } else {
-                newsHtml = '<div style="color:#22c55e;font-size:11px;">Sem noticias de impacto relevantes.</div>';
+                nH = '<div style="color:#22c55e;font-size:11px;">Sem eventos de impacto. Cenario favoravel para operacoes.</div>';
             }
             updateSafetyBar(notRes.alertas === 0, notRes);
+        } else {
+            nH = '<div style="font-size:10px;color:var(--text-muted);">Dados de noticias indisponiveis.</div>';
         }
-        document.getElementById('simRealNews').innerHTML = newsHtml || 'Sem dados';
+        document.getElementById('simRealNews').innerHTML = nH;
         
-        // ---- HEATMAP from actual data ----
-        let heatHtml = '<div style="font-size:10px;color:var(--text-muted);margin-bottom:4px;">Horarios com mais oportunidades (score 4+):</div>';
-        const horaMap = {};
-        velas.forEach(v => {
-            const h = v.hora.split(':')[0];
-            if (!horaMap[h]) horaMap[h] = {total: 0, operar: 0};
-            horaMap[h].total++;
-            if (v.decisao === 'OPERAR') horaMap[h].operar++;
+        // ---- HEATMAP ----
+        let hH = '<div style="font-size:10px;color:var(--text-muted);margin-bottom:4px;">Oportunidades por hora:</div>';
+        const hMap = {};
+        velas.forEach(v => { const h2=v.hora.split(':')[0]; if(!hMap[h2])hMap[h2]={t:0,op:0};hMap[h2].t++;if(v.decisao==='OPERAR')hMap[h2].op++;});
+        Object.entries(hMap).sort((a,b)=>parseInt(a[0])-parseInt(b[0])).forEach(([h2,d]) => {
+            const p = Math.round(d.op/d.t*100);
+            const c3 = p>=50?'#22c55e':p>=25?'#ca8a04':'#ef4444';
+            hH += '<div style="display:flex;align-items:center;gap:6px;padding:1px 0;font-size:10px;"><span style="width:35px;font-weight:700;">' + h2 + ':00</span><div style="flex:1;height:6px;background:#333;border-radius:3px;"><div style="height:100%;width:' + p + '%;background:' + c3 + ';border-radius:3px;"></div></div><span style="width:30px;text-align:right;color:' + c3 + ';font-weight:700;">' + p + '%</span></div>';
         });
-        const horaEntries = Object.entries(horaMap).sort((a,b) => b[1].operar - a[1].operar);
-        horaEntries.forEach(([h, data]) => {
-            const pct = Math.round(data.operar / data.total * 100);
-            const cor = pct >= 50 ? '#22c55e' : pct >= 25 ? '#ca8a04' : '#ef4444';
-            heatHtml += '<div style="display:flex;justify-content:space-between;align-items:center;padding:2px 0;font-size:10px;">';
-            heatHtml += '<span style="font-weight:700;">' + h + ':00</span>';
-            heatHtml += '<div style="flex:1;margin:0 8px;height:6px;background:#333;border-radius:3px;"><div style="height:100%;width:' + pct + '%;background:' + cor + ';border-radius:3px;"></div></div>';
-            heatHtml += '<span style="color:' + cor + ';font-weight:700;">' + pct + '%</span>';
-            heatHtml += '</div>';
-        });
-        document.getElementById('simRealHeat').innerHTML = heatHtml;
+        document.getElementById('simRealHeat').innerHTML = hH;
         
-        // ---- ESCALA DE CONFIANCA (media do dia) ----
-        const avgScore = velas.reduce((s, v) => s + v.confianca, 0) / velas.length;
-        const avgConf = Math.round(avgScore);
+        // ---- ESCALA ----
+        const avgC = Math.round(velas.reduce((s,v)=>s+v.confianca,0)/velas.length);
         const bars = document.getElementById('simRealEscala').children;
-        const cores = ['#ef4444','#ea580c','#ca8a04','#16a34a','#22c55e'];
-        for (let i = 0; i < 5; i++) {
-            bars[i].style.background = i < avgConf ? cores[i] : '#333';
-        }
+        ['#ef4444','#ea580c','#ca8a04','#16a34a','#22c55e'].forEach((c4,i) => { bars[i].style.background = i < avgC ? c4 : '#333'; });
         
-        // ---- OPERACOES RECOMENDADAS ----
-        let opsHtml = '';
+        // ---- RELATORIO COMPLETO 09:00-18:00 (TODAS AS VELAS) ----
+        let oH = '';
+        
+        // OPERACOES primeiro
         if (ops.length > 0) {
-            opsHtml += '<div style="font-size:10px;color:var(--text-muted);margin-bottom:8px;">Operacoes que o Simulador teria feito no pregao de ' + simRes.dia + ':</div>';
-            
-            ops.forEach((op, idx) => {
-                const isWin = op.resultado === 'WIN';
-                const cor = op.tipo === 'COMPRA' ? '#22c55e' : '#ef4444';
-                const resCor = isWin ? '#22c55e' : '#ef4444';
-                
-                opsHtml += '<div style="background:rgba(255,255,255,0.02);border:1px solid ' + cor + '30;border-left:3px solid ' + cor + ';border-radius:6px;padding:10px 12px;margin-bottom:6px;">';
-                
-                // Header
-                opsHtml += '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;">';
-                opsHtml += '<div style="display:flex;align-items:center;gap:8px;">';
-                opsHtml += '<span style="font-size:11px;font-weight:800;color:' + cor + ';background:' + cor + '15;padding:2px 8px;border-radius:4px;">' + op.tipo + '</span>';
-                opsHtml += '<span style="font-weight:700;font-size:13px;font-family:monospace;">' + op.hora_entrada + '</span>';
-                opsHtml += '<span style="font-size:11px;color:var(--text-muted);">@ ' + op.preco_entrada.toLocaleString('pt-BR') + '</span>';
-                opsHtml += '<span style="font-size:10px;color:var(--accent-blue);">Confianca ' + op.confianca + '/5 (' + op.conf_label + ')</span>';
-                opsHtml += '</div>';
-                opsHtml += '<div style="display:flex;align-items:center;gap:8px;">';
-                opsHtml += '<span style="font-size:20px;font-weight:900;color:' + resCor + ';">' + op.resultado + '</span>';
-                opsHtml += '<span style="font-size:13px;font-weight:800;color:' + resCor + ';">' + (op.pts >= 0 ? '+' : '') + op.pts + 'pts</span>';
-                opsHtml += '<span style="font-size:12px;color:' + resCor + ';">' + (op.resultado_rs >= 0 ? '+' : '') + 'R$ ' + op.resultado_rs.toFixed(2) + '</span>';
-                opsHtml += '</div></div>';
-                
-                // Details
-                opsHtml += '<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin-top:6px;font-size:10px;">';
-                opsHtml += '<div style="text-align:center;padding:3px;background:rgba(255,255,255,0.03);border-radius:3px;"><div style="color:var(--text-muted);font-size:9px;">Stop</div><div>' + op.stop_pts + 'pts</div></div>';
-                opsHtml += '<div style="text-align:center;padding:3px;background:rgba(255,255,255,0.03);border-radius:3px;"><div style="color:var(--text-muted);font-size:9px;">Alvo</div><div>' + op.alvo_pts + 'pts</div></div>';
-                opsHtml += '<div style="text-align:center;padding:3px;background:rgba(255,255,255,0.03);border-radius:3px;"><div style="color:var(--text-muted);font-size:9px;">R:R</div><div>' + op.rr + '</div></div>';
-                opsHtml += '<div style="text-align:center;padding:3px;background:rgba(255,255,255,0.03);border-radius:3px;"><div style="color:var(--text-muted);font-size:9px;">Saida</div><div>' + op.hora_saida + '</div></div>';
-                opsHtml += '<div style="text-align:center;padding:3px;background:rgba(255,255,255,0.03);border-radius:3px;"><div style="color:var(--text-muted);font-size:9px;">Velas</div><div>' + op.velas_na_op + '</div></div>';
-                opsHtml += '</div>';
-                
-                // Motivos
-                opsHtml += '<div style="font-size:10px;color:var(--text-muted);margin-top:4px;">' + op.motivos.join(' | ') + '</div>';
-                opsHtml += '</div>';
+            oH += '<div style="font-size:12px;font-weight:800;color:var(--accent-blue);margin-bottom:8px;padding:6px 0;border-bottom:1px solid var(--border);">OPERACOES EXECUTADAS (' + ops.length + ')</div>';
+            ops.forEach(op => {
+                const isW = op.resultado==='WIN';
+                const cOp = op.tipo==='COMPRA'?'#22c55e':'#ef4444';
+                const cRes = isW?'#22c55e':'#ef4444';
+                oH += '<div style="background:rgba(255,255,255,0.02);border:1px solid ' + cOp + '30;border-left:3px solid ' + cOp + ';border-radius:6px;padding:10px 12px;margin-bottom:6px;">';
+                oH += '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;">';
+                oH += '<div style="display:flex;align-items:center;gap:6px;">';
+                oH += '<span style="font-size:11px;font-weight:800;color:' + cOp + ';background:' + cOp + '15;padding:2px 8px;border-radius:4px;">' + op.tipo + '</span>';
+                oH += '<span style="font-weight:700;font-size:13px;font-family:monospace;">' + op.hora_entrada + ' → ' + op.hora_saida + '</span>';
+                oH += '<span style="font-size:11px;color:var(--text-muted);">@ ' + op.preco_entrada.toLocaleString('pt-BR') + ' → ' + op.preco_saida.toLocaleString('pt-BR') + '</span>';
+                oH += '</div>';
+                oH += '<div style="display:flex;align-items:center;gap:6px;">';
+                oH += '<span style="font-size:20px;font-weight:900;color:' + cRes + ';">' + op.resultado + '</span>';
+                oH += '<span style="font-size:13px;font-weight:800;color:' + cRes + ';">' + (op.pts>=0?'+':'') + op.pts + 'pts</span>';
+                oH += '<span style="font-size:12px;color:' + cRes + ';">' + (op.resultado_rs>=0?'+':'') + 'R$ ' + op.resultado_rs.toFixed(2) + '</span>';
+                oH += '</div></div>';
+                oH += '<div style="display:flex;gap:8px;margin-top:6px;font-size:10px;flex-wrap:wrap;">';
+                oH += '<span style="background:rgba(255,255,255,0.05);padding:2px 6px;border-radius:3px;">Stop: ' + op.stop_pts + 'pts</span>';
+                oH += '<span style="background:rgba(255,255,255,0.05);padding:2px 6px;border-radius:3px;">Alvo: ' + op.alvo_pts + 'pts</span>';
+                oH += '<span style="background:rgba(255,255,255,0.05);padding:2px 6px;border-radius:3px;">R:R ' + op.rr + '</span>';
+                oH += '<span style="background:rgba(255,255,255,0.05);padding:2px 6px;border-radius:3px;">Confianca: ' + op.confianca + '/5 ' + op.conf_label + '</span>';
+                oH += '<span style="background:rgba(255,255,255,0.05);padding:2px 6px;border-radius:3px;">' + op.velas_na_op + ' velas</span>';
+                oH += '</div>';
+                oH += '<div style="font-size:10px;color:var(--text-muted);margin-top:4px;">Motivos: ' + op.motivos.join(' | ') + '</div>';
+                oH += '</div>';
             });
             
-            // Summary bar
-            opsHtml += '<div style="background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:12px;margin-top:8px;display:flex;justify-content:space-around;text-align:center;flex-wrap:wrap;gap:8px;">';
-            opsHtml += '<div><div style="font-size:10px;color:var(--text-muted);">Operacoes</div><div style="font-size:20px;font-weight:800;">' + perf.total_operacoes + '</div></div>';
-            opsHtml += '<div><div style="font-size:10px;color:var(--text-muted);">Win Rate</div><div style="font-size:20px;font-weight:800;color:' + (perf.win_rate >= 60 ? '#22c55e' : '#ca8a04') + ';">' + perf.win_rate + '%</div></div>';
-            opsHtml += '<div><div style="font-size:10px;color:var(--text-muted);">Total Pts</div><div style="font-size:20px;font-weight:800;color:' + (perf.total_pts >= 0 ? '#22c55e' : '#ef4444') + ';">' + (perf.total_pts >= 0 ? '+' : '') + perf.total_pts + '</div></div>';
-            opsHtml += '<div><div style="font-size:10px;color:var(--text-muted);">Resultado</div><div style="font-size:20px;font-weight:800;color:' + (perf.total_rs >= 0 ? '#22c55e' : '#ef4444') + ';">' + (perf.total_rs >= 0 ? '+' : '') + 'R$ ' + perf.total_rs.toFixed(2) + '</div></div>';
-            opsHtml += '</div>';
-        } else {
-            opsHtml = '<div style="text-align:center;padding:24px;color:var(--text-muted);">Nenhum setup com score 4+ encontrado neste pregao. Dia sem oportunidades claras.</div>';
+            // Summary
+            oH += '<div style="background:var(--bg-card);border:2px solid var(--border);border-radius:8px;padding:14px;margin:10px 0;display:flex;justify-content:space-around;text-align:center;flex-wrap:wrap;gap:10px;">';
+            oH += '<div><div style="font-size:10px;color:var(--text-muted);">Total Ops</div><div style="font-size:22px;font-weight:800;">' + perf.total_operacoes + '</div></div>';
+            oH += '<div><div style="font-size:10px;color:var(--text-muted);">Win Rate</div><div style="font-size:22px;font-weight:800;color:' + (perf.win_rate>=60?'#22c55e':'#ca8a04') + ';">' + perf.win_rate + '%</div></div>';
+            oH += '<div><div style="font-size:10px;color:var(--text-muted);">Pontos</div><div style="font-size:22px;font-weight:800;color:' + (perf.total_pts>=0?'#22c55e':'#ef4444') + ';">' + (perf.total_pts>=0?'+':'') + perf.total_pts + '</div></div>';
+            oH += '<div><div style="font-size:10px;color:var(--text-muted);">P&L</div><div style="font-size:22px;font-weight:800;color:' + (perf.total_rs>=0?'#22c55e':'#ef4444') + ';">' + (perf.total_rs>=0?'+':'') + 'R$ ' + perf.total_rs.toFixed(2) + '</div></div>';
+            oH += '</div>';
         }
-        document.getElementById('simRealOps').innerHTML = opsHtml;
+        
+        // RELATORIO COMPLETO VELA POR VELA
+        oH += '<div style="font-size:12px;font-weight:800;color:var(--accent-blue);margin:12px 0 8px 0;padding:6px 0;border-bottom:1px solid var(--border);">RELATORIO COMPLETO 09:00-18:00 (' + velas.length + ' velas)</div>';
+        
+        // Table header
+        oH += '<div style="display:grid;grid-template-columns:55px 1fr 40px 55px 55px 80px;gap:2px;font-size:9px;font-weight:700;color:var(--text-muted);padding:4px 6px;background:var(--bg-secondary);border-radius:4px 4px 0 0;position:sticky;top:0;z-index:1;">';
+        oH += '<div>HORA</div><div>DECISAO</div><div>SCORE</div><div>RSI</div><div>TEND</div><div>MOTIVO</div>';
+        oH += '</div>';
+        
+        velas.forEach((v, i) => {
+            const isOp = v.decisao === 'OPERAR';
+            const bg = isOp ? 'rgba(34,197,94,0.04)' : (v.score >= 3 ? 'rgba(202,138,4,0.04)' : 'rgba(239,68,68,0.02)');
+            const bLeft = isOp ? '2px solid #22c55e' : (v.score >= 3 ? '2px solid #ca8a04' : '2px solid transparent');
+            const cDec = isOp ? '#22c55e' : (v.score >= 3 ? '#ca8a04' : '#ef4444');
+            const cRsi = v.rsi < 30 ? '#22c55e' : v.rsi > 70 ? '#ef4444' : '#888';
+            const cTend = v.tendencia === 'ALTA' ? '#22c55e' : v.tendencia === 'BAIXA' ? '#ef4444' : '#888';
+            
+            // Check if this vela has an operation
+            const hasOp = ops.find(op => op.hora_entrada === v.hora);
+            const opBadge = hasOp ? '<span style="background:' + (hasOp.tipo==='COMPRA'?'#22c55e':'#ef4444') + ';color:#fff;padding:0 4px;border-radius:2px;font-size:8px;font-weight:800;margin-left:4px;">' + hasOp.tipo.charAt(0) + '</span>' : '';
+            
+            const motivo = isOp ? v.motivos_operar.slice(0,2).join(', ') : v.motivos_nao_operar.slice(0,2).join(', ');
+            
+            oH += '<div style="display:grid;grid-template-columns:55px 1fr 40px 55px 55px 80px;gap:2px;font-size:10px;padding:4px 6px;background:' + bg + ';border-left:' + bLeft + ';border-bottom:1px solid rgba(255,255,255,0.02);">';
+            oH += '<div style="font-weight:700;font-family:monospace;">' + v.hora + opBadge + '</div>';
+            oH += '<div style="color:' + cDec + ';font-weight:700;font-size:9px;">' + v.decisao + (v.tipo_sinal ? ' (' + v.tipo_sinal + ')' : '') + '</div>';
+            oH += '<div style="font-weight:700;">' + v.score + '/7</div>';
+            oH += '<div style="color:' + cRsi + ';">' + v.rsi + '</div>';
+            oH += '<div style="color:' + cTend + ';font-size:9px;">' + v.tendencia + '</div>';
+            oH += '<div style="font-size:9px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="' + motivo + '">' + motivo + '</div>';
+            oH += '</div>';
+        });
+        
+        document.getElementById('simRealOps').innerHTML = oH;
         
     } catch(e) {
-        veredEl.textContent = 'ERRO';
-        veredEl.style.color = '#ef4444';
+        veredEl.textContent = 'ERRO'; veredEl.style.color = '#ef4444';
         veredSub.textContent = e.message;
     }
 }
@@ -3227,7 +3238,7 @@ function updateSafetyBar(seguro, data) {
         bar.style.background = 'rgba(239,68,68,0.12)';
         bar.style.borderColor = '#ef4444';
         icon.innerHTML = '&#x26D4;';
-        label.textContent = 'NAO OPERE AGORA';
+        label.textContent = 'RUIM PARA OPERAR';
         label.style.color = '#ef4444';
         const evts = (data.alerta_eventos || []).map(a => a.evento).join(', ');
         detail.textContent = 'Evento(s) na zona de impacto: ' + evts + '. Aguarde 15min apos o resultado.';
@@ -3239,7 +3250,7 @@ function updateSafetyBar(seguro, data) {
             icon.innerHTML = '&#x26A0;';
             label.textContent = 'ATENCAO - EVENTO PROXIMO';
             label.style.color = '#ea580c';
-            detail.textContent = prox[0].evento + ' (' + prox[0].moeda + ') em ' + prox[0].minutos_restantes + ' minutos. Considere reduzir posicoes.';
+            detail.textContent = prox[0].evento + ' (' + prox[0].moeda + ') em ' + prox[0].minutos_restantes + ' min. Reduza posicoes ou aguarde o resultado.';
         } else {
             bar.style.background = 'rgba(34,197,94,0.1)';
             bar.style.borderColor = '#22c55e';
