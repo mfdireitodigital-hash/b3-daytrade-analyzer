@@ -1205,6 +1205,11 @@ async function ptCarregarMelhoresEntradas() {
                 // Train button
                 h += '<div style="margin-top:6px;"><button onclick="ptTreinarEntrada(' + idx + ',\'' + op.tipo + '\',' + op.stop_pts + ',' + op.alvo_pts + ')" style="padding:4px 12px;background:' + cOp + ';color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:10px;font-weight:700;">TREINAR ESTA ENTRADA</button></div>';
                 h += '</div>';
+                if (op.detalhes_perda && op.resultado === 'LOSS') {
+                    h += '<div style="background:rgba(239,68,68,0.06);border:1px solid rgba(239,68,68,0.2);border-radius:4px;padding:8px;margin-top:6px;font-size:10px;color:#fca5a5;">';
+                    h += '<span style="font-weight:800;color:#ef4444;">POR QUE PERDEU: </span>' + op.detalhes_perda;
+                    h += '</div>';
+                }
             });
         }
         
@@ -3111,6 +3116,15 @@ function renderNotEventos(eventos, containerId, isPast) {
         html += '<div style="font-size:9px;color:var(--text-muted);text-transform:uppercase;">Surpresa</div>';
         html += '<div style="font-size:12px;">' + (surpresaHtml || '<span style="color:var(--text-muted);">--</span>') + '</div></div>';
         
+        // Operavel badge
+        let operavelColor = '#888';
+        if (e.operavel === 'BOM') operavelColor = '#22c55e';
+        else if (e.operavel === 'CAUTELA') operavelColor = '#ea580c';
+        else if (e.operavel === 'RUIM') operavelColor = '#ef4444';
+        html += '<div style="text-align:center;padding:4px 6px;background:rgba(255,255,255,0.03);border-radius:4px;">';
+        html += '<div style="font-size:9px;color:var(--text-muted);text-transform:uppercase;">Operavel</div>';
+        html += '<div style="font-size:12px;"><span style="background:' + operavelColor + ';color:#fff;padding:2px 8px;border-radius:3px;font-weight:800;font-size:11px;">' + (e.operavel || '--') + '</span></div></div>';
+        
         html += '</div>';
         
         // Impact analysis
@@ -3307,6 +3321,11 @@ async function simRealAnalisar() {
                 oH += '<span style="background:rgba(255,255,255,0.05);padding:2px 6px;border-radius:3px;">' + op.velas_na_op + ' velas</span>';
                 oH += '</div>';
                 oH += '<div style="font-size:10px;color:var(--text-muted);margin-top:4px;">Motivos: ' + op.motivos.join(' | ') + '</div>';
+                if (op.detalhes_perda && op.resultado === 'LOSS') {
+                    oH += '<div style="background:rgba(239,68,68,0.06);border:1px solid rgba(239,68,68,0.2);border-radius:4px;padding:8px;margin-top:6px;font-size:10px;color:#fca5a5;">';
+                    oH += '<span style="font-weight:800;color:#ef4444;">POR QUE PERDEU: </span>' + op.detalhes_perda;
+                    oH += '</div>';
+                }
                 oH += '</div>';
             });
             

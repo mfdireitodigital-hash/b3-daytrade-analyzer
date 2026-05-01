@@ -2450,16 +2450,110 @@ async def simulador_real(ativo: str = Query("WIN")):
             if vol > 0:
                 score += 0  # placeholder - yfinance nem sempre traz vol de futuros
             
+            # 7. Suporte e Resistencia (Murphy)
+            suporte = None
+            resistencia = None
+            if len(w) >= 20:
+                recent_highs = [float(w.iloc[j]['high']) for j in range(-20, 0)]
+                recent_lows = [float(w.iloc[j]['low']) for j in range(-20, 0)]
+                resistencia = max(recent_highs)
+                suporte = min(recent_lows)
+                dist_suporte = abs(c - suporte)
+                dist_resistencia = abs(resistencia - c)
+                
+                # Near support + COMPRA = good
+                if tipo_sinal == "COMPRA" and dist_suporte < atr_v * 0.5:
+                    score += 1
+                    motivos_operar.append(f"Proximo ao suporte {round(suporte,0)} (S/R Murphy)")
+                # Near resistance + VENDA = good  
+                elif tipo_sinal == "VENDA" and dist_resistencia < atr_v * 0.5:
+                    score += 1
+                    motivos_operar.append(f"Proximo a resistencia {round(resistencia,0)} (S/R Murphy)")
+                else:
+                    motivos_nao_operar.append("Preco longe de S/R relevante")
+            
+            # 8. VWAP - Preco medio ponderado volume
+            vwap = None
+            if len(w) >= 10:
+                try:
+                    typical = (w['high'] + w['low'] + w['close']) / 3
+                    vol_s = w['volume'].replace(0, 1)
+                    vwap = float((typical * vol_s).cumsum().iloc[-1] / vol_s.cumsum().iloc[-1])
+                    dist_vwap = c - vwap
+                    if tipo_sinal == "COMPRA" and c > vwap:
+                        score += 1
+                        motivos_operar.append(f"Acima VWAP {round(vwap,0)} (comprador)")
+                    elif tipo_sinal == "VENDA" and c < vwap:
+                        score += 1
+                        motivos_operar.append(f"Abaixo VWAP {round(vwap,0)} (vendedor)")
+                    elif tipo_sinal == "COMPRA" and c < vwap:
+                        motivos_nao_operar.append(f"Abaixo VWAP - compra arriscada")
+                    elif tipo_sinal == "VENDA" and c > vwap:
+                        motivos_nao_operar.append(f"Acima VWAP - venda arriscada")
+                except: pass
+            
+            # 9. Fibonacci (retracao do swing recente)
+            fib_level = None
+            if len(w) >= 30:
+                try:
+                    swing_high = max(float(w.iloc[j]['high']) for j in range(-30, 0))
+                    swing_low = min(float(w.iloc[j]['low']) for j in range(-30, 0))
+                    fib_range = swing_high - swing_low
+                    if fib_range > 0:
+                        fib_382 = swing_high - fib_range * 0.382
+                        fib_500 = swing_high - fib_range * 0.500
+                        fib_618 = swing_high - fib_range * 0.618
+                        # Check if price is near a Fibonacci level
+                        for fib_lv, fib_name in [(fib_382, "38.2%"), (fib_500, "50%"), (fib_618, "61.8%")]:
+                            if abs(c - fib_lv) < atr_v * 0.3:
+                                score += 1
+                                fib_level = fib_name
+                                motivos_operar.append(f"Proximo Fibonacci {fib_name} ({round(fib_lv,0)})")
+                                break
+                except: pass
+            
+            # 10. Candlestick Patterns
+            if len(w) >= 3:
+                try:
+                    prev = w.iloc[-2]
+                    prev2 = w.iloc[-3]
+                    body = abs(c - o)
+                    upper_shadow = h - max(c, o)
+                    lower_shadow = min(c, o) - l
+                    prev_body = abs(float(prev['close']) - float(prev['open']))
+                    
+                    # Martelo (hammer) - bullish reversal
+                    if lower_shadow > body * 2 and upper_shadow < body * 0.5 and c > o:
+                        if tipo_sinal == "COMPRA":
+                            score += 1
+                            motivos_operar.append("Candlestick: Martelo (reversao altista)")
+                    # Estrela Cadente (shooting star) - bearish reversal
+                    elif upper_shadow > body * 2 and lower_shadow < body * 0.5 and o > c:
+                        if tipo_sinal == "VENDA":
+                            score += 1
+                            motivos_operar.append("Candlestick: Estrela Cadente (reversao baixista)")
+                    # Engolfo de Alta
+                    elif c > o and float(prev['close']) < float(prev['open']) and body > prev_body * 1.2:
+                        if tipo_sinal == "COMPRA":
+                            score += 1
+                            motivos_operar.append("Candlestick: Engolfo de Alta")
+                    # Engolfo de Baixa
+                    elif o > c and float(prev['close']) > float(prev['open']) and body > prev_body * 1.2:
+                        if tipo_sinal == "VENDA":
+                            score += 1
+                            motivos_operar.append("Candlestick: Engolfo de Baixa")
+                except: pass
+            
             # DECISAO FINAL
             # Regra: 4+ score, tem sinal, nao contra tendencia, nao horario ruim
-            operar = score >= 4 and tipo_sinal is not None and not horario_ruim and not contra_tendencia
+            operar = score >= 5 and tipo_sinal is not None and not horario_ruim and not contra_tendencia
             decisao = "OPERAR" if operar else "NAO OPERAR"
             
-            # Confianca (Bellafiore)
-            if score >= 6: confianca = 5; conf_label = "A+ SETUP"
-            elif score >= 5: confianca = 4; conf_label = "BOM"
-            elif score >= 4: confianca = 3; conf_label = "OK"
-            elif score >= 3: confianca = 2; conf_label = "DUVIDOSO"
+            # Confianca (Bellafiore) - updated for new scoring
+            if score >= 9: confianca = 5; conf_label = "A+ SETUP"
+            elif score >= 7: confianca = 4; conf_label = "BOM"
+            elif score >= 5: confianca = 3; conf_label = "OK"
+            elif score >= 4: confianca = 2; conf_label = "DUVIDOSO"
             else: confianca = 1; conf_label = "SEM SETUP"
             
             vela_info = {
@@ -2475,6 +2569,10 @@ async def simulador_real(ativo: str = Query("WIN")):
                 "confianca": confianca, "conf_label": conf_label,
                 "motivos_operar": motivos_operar,
                 "motivos_nao_operar": motivos_nao_operar,
+                "suporte": round(suporte, 0) if suporte else None,
+                "resistencia": round(resistencia, 0) if resistencia else None,
+                "vwap": round(vwap, 0) if vwap else None,
+                "fib_level": fib_level,
             }
             velas_analisadas.append(vela_info)
             
