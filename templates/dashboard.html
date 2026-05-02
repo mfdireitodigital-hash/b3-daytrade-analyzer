@@ -1301,6 +1301,10 @@ function ptTrocarAtivo() {
     ptState.ativo = document.getElementById('ptAtivo').value;
     ptAtualizarPreco();
     ptAtualizarUI();
+    // Recarregar entradas e heatmap para o novo ativo
+    ptCarregarMelhoresEntradas();
+    carregarHeatmap();
+    carregarSinaisIA();
 }
 
 function ptMudarTab(tab) {
@@ -1322,7 +1326,7 @@ async function ptCarregarMelhoresEntradas() {
     container.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-muted);">Analisando todas as velas com 7 confluencias...</div>';
     
     try {
-        const res = await fetch('/api/simulador-real?ativo=' + ptState.ativo);
+        const res = await fetch('/api/treinamento-ia?ativo=' + ptState.ativo);
         const data = await res.json();
         if (data.erro) { container.innerHTML = '<div style="color:#ef4444;padding:12px;">' + data.erro + '</div>'; return; }
         
@@ -1330,7 +1334,7 @@ async function ptCarregarMelhoresEntradas() {
         if (label) label.textContent = 'Pregao ' + data.dia + ' | ' + data.contrato;
         
         // Filter velas with score >= 4 (OPERAR with good confluence)
-        const boas = data.velas.filter(v => v.score >= 4 && v.decisao === 'OPERAR');
+        const boas = (data.velas || []).filter(v => v.score >= 4 && v.decisao === 'OPERAR');
         const ops = data.operacoes || [];
         const perf = data.performance || {};
         
