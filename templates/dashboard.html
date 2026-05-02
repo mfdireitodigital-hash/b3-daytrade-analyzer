@@ -3312,12 +3312,12 @@ function renderNotEventos(eventos, containerId, isPast) {
 // SIMULADOR REAL - TRADER COMPLETO
 // =====================================================
 function abrirSimuladorReal() {
-    document.getElementById('simRealOverlay').style.display = 'block';
+    var _sro = document.getElementById('simRealOverlay'); if(_sro) _sro.style.display = 'block';
     simRealCheckMarket();
     simRealAnalisar();
 }
 function fecharSimuladorReal() {
-    document.getElementById('simRealOverlay').style.display = 'none';
+    var _sro2 = document.getElementById('simRealOverlay'); if(_sro2) _sro2.style.display = 'none';
 }
 // fecharPaperTrading defined above (line ~1141)
 
@@ -3342,7 +3342,7 @@ function simRealSetAtivo(a) {
     state.ativo = a;
     document.getElementById('simBtnWIN').className = a === 'WIN' ? 'btn btn-primary' : 'btn';
     document.getElementById('simBtnWDO').className = a === 'WDO' ? 'btn btn-primary' : 'btn';
-    document.getElementById('simRealAtivo').textContent = a;
+    var _sra = document.getElementById('simRealAtivo'); if(_sra) _sra.textContent = a;
     simRealAnalisar();
 }
 
@@ -3752,7 +3752,7 @@ async function simRealAnalisar() {
     const veredSub = document.getElementById('simRealVeredictoSub');
     if (veredEl) { veredEl.textContent = 'ANALISANDO...'; veredEl.style.color = 'var(--accent-blue)'; }
     if (veredSub) { veredSub.textContent = 'Analisando pregao completo 09:00-18:00, vela por vela...'; }
-    document.getElementById('simRealOps').innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-muted);">Processando todas as velas do pregao...</div>';
+    var _opsLoad = document.getElementById('simRealOps'); if(_opsLoad) _opsLoad.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-muted);">Processando todas as velas do pregao...</div>';
     
     try {
         const _ativo = state.ativo || 'WIN';
@@ -3774,13 +3774,13 @@ async function simRealAnalisar() {
         const _modoLabel = document.getElementById('simRealModoLabel');
         const _modoDot = document.getElementById('simRealDot');
         if (_modo === 'REAL') {
-            _modoLabel.innerHTML = '<span style="color:#22c55e;">MODO REAL</span> - Mercado Aberto | Analise ao vivo';
-            _modoDot.style.background = '#22c55e';
+            if(_modoLabel) _modoLabel.innerHTML = '<span style="color:#22c55e;">MODO REAL</span> - Mercado Aberto | Analise ao vivo';
+            if(_modoDot) _modoDot.style.background = '#22c55e';
         } else {
-            _modoLabel.innerHTML = '<span style="color:#3b82f6;">MODO REPLAY</span> - Pregao ' + simRes.dia + ' | Replica do mercado para estudo';
-            _modoDot.style.background = '#3b82f6';
+            if(_modoLabel) _modoLabel.innerHTML = '<span style="color:#3b82f6;">MODO REPLAY</span> - Pregao ' + simRes.dia + ' | Replica do mercado para estudo';
+            if(_modoDot) _modoDot.style.background = '#3b82f6';
         }
-        document.getElementById('simRealAtivo').textContent = simRes.ativo;
+        var _ativoEl = document.getElementById('simRealAtivo'); if(_ativoEl) _ativoEl.textContent = simRes.ativo;
         
         const res = simRes.resumo;
         const perf = simRes.performance;
@@ -3794,7 +3794,7 @@ async function simRealAnalisar() {
         const corVar = res.variacao_pct >= 0 ? '#22c55e' : '#ef4444';
         const dirLabel = res.direcao === 'ALTA' ? 'DIA DE ALTA' : res.direcao === 'BAIXA' ? 'DIA DE BAIXA' : 'DIA NEUTRO';
         
-        document.getElementById('simRealStatus').innerHTML = 
+        var _statusEl = document.getElementById('simRealStatus'); if(_statusEl) _statusEl.innerHTML = 
             '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">' +
             '<span style="background:' + corVar + ';color:#fff;padding:3px 10px;border-radius:4px;font-size:11px;font-weight:800;">' + dirLabel + '</span>' +
             '<span style="font-size:12px;">Abertura: <strong>' + (res.abertura||0).toLocaleString('pt-BR') + '</strong></span>' +
@@ -3841,7 +3841,7 @@ async function simRealAnalisar() {
             tsH += '<div style="padding:4px 6px;background:rgba(255,255,255,0.03);border-radius:4px;font-size:10px;"><span style="color:var(--text-muted);">' + k + ':</span> <strong style="color:' + c2 + ';">' + v2 + '</strong></div>';
         });
         tsH += '</div>';
-        document.getElementById('simRealTriple').innerHTML = tsH;
+        var _tripleEl = document.getElementById('simRealTriple'); if(_tripleEl) _tripleEl.innerHTML = tsH;
         
         // ---- TIMELINE VISUAL ----
         let confH = '<div style="font-size:10px;color:var(--text-muted);margin-bottom:4px;">Timeline (verde=operar | amarelo=cautela | vermelho=fora):</div>';
@@ -3851,7 +3851,7 @@ async function simRealAnalisar() {
             confH += '<div title="' + v.hora + ' | Score:' + v.score + '/7 | ' + v.decisao + '" style="flex:1;background:' + c2 + ';min-width:2px;cursor:pointer;"></div>';
         });
         confH += '</div><div style="display:flex;justify-content:space-between;font-size:9px;color:var(--text-muted);margin-top:2px;"><span>09:00</span><span>11:00</span><span>13:00</span><span>15:00</span><span>17:00</span></div>';
-        document.getElementById('simRealConf').innerHTML = confH;
+        var _confEl = document.getElementById('simRealConf'); if(_confEl) _confEl.innerHTML = confH;
         
         // ---- NOTICIAS INDICATOR ----
         let nH = '';
@@ -3879,7 +3879,7 @@ async function simRealAnalisar() {
         } else {
             nH = '<div style="font-size:10px;color:var(--text-muted);">Dados de noticias indisponiveis.</div>';
         }
-        document.getElementById('simRealNews').innerHTML = nH;
+        var _newsEl = document.getElementById('simRealNews'); if(_newsEl) _newsEl.innerHTML = nH;
         
         // ---- HEATMAP ----
         let hH = '<div style="font-size:10px;color:var(--text-muted);margin-bottom:4px;">Oportunidades por hora:</div>';
@@ -3890,7 +3890,7 @@ async function simRealAnalisar() {
             const c3 = p>=50?'#22c55e':p>=25?'#ca8a04':'#ef4444';
             hH += '<div style="display:flex;align-items:center;gap:6px;padding:1px 0;font-size:10px;"><span style="width:35px;font-weight:700;">' + h2 + ':00</span><div style="flex:1;height:6px;background:#333;border-radius:3px;"><div style="height:100%;width:' + p + '%;background:' + c3 + ';border-radius:3px;"></div></div><span style="width:30px;text-align:right;color:' + c3 + ';font-weight:700;">' + p + '%</span></div>';
         });
-        document.getElementById('simRealHeat').innerHTML = hH;
+        var _heatEl = document.getElementById('simRealHeat'); if(_heatEl) _heatEl.innerHTML = hH;
         
         // ---- CHART DATA ----
         simChartData = simRes.chart_data || simRes.velas || [];
@@ -3899,7 +3899,7 @@ async function simRealAnalisar() {
         
         // ---- ESCALA ----
         const avgC = Math.round(velas.reduce((s,v)=>s+v.confianca,0)/velas.length);
-        const bars = document.getElementById('simRealEscala').children;
+        const _escalaEl = document.getElementById('simRealEscala'); if(!_escalaEl) return; const bars = _escalaEl.children;
         ['#ef4444','#ea580c','#ca8a04','#16a34a','#22c55e'].forEach((c4,i) => { bars[i].style.background = i < avgC ? c4 : '#333'; });
         
         // ---- RELATORIO COMPLETO 09:00-18:00 (TODAS AS VELAS) ----
@@ -4075,13 +4075,13 @@ async function simRealAnalisar() {
         });
         
         oH += '</div></details>'; // Close vela-by-vela collapsible
-        document.getElementById('simRealOps').innerHTML = oH;
+        var _opsEl = document.getElementById('simRealOps'); if(_opsEl) _opsEl.innerHTML = oH;
         
     } catch(e) {
         if (veredEl) { veredEl.textContent = 'ERRO'; veredEl.style.color = '#ef4444'; }
         const _msg = e.name === 'AbortError' ? 'Timeout: API demorou mais de 60s. Tente novamente.' : e.message;
         if (veredSub) { veredSub.textContent = _msg; }
-        document.getElementById('simRealOps').innerHTML = '<div style="text-align:center;padding:20px;"><div style="color:#ef4444;font-weight:700;margin-bottom:8px;">Erro na analise</div><div style="color:var(--text-muted);font-size:11px;">' + _msg + '</div><button class="btn" onclick="simRealAnalisar()" style="margin-top:10px;font-size:11px;padding:6px 16px;">TENTAR NOVAMENTE</button></div>';
+        var _opsErr = document.getElementById('simRealOps'); if(_opsErr) _opsErr.innerHTML = '<div style="text-align:center;padding:20px;"><div style="color:#ef4444;font-weight:700;margin-bottom:8px;">Erro na analise</div><div style="color:var(--text-muted);font-size:11px;">' + _msg + '</div><button class="btn" onclick="simRealAnalisar()" style="margin-top:10px;font-size:11px;padding:6px 16px;">TENTAR NOVAMENTE</button></div>';
         console.error('simRealAnalisar error:', e);
     }
 }

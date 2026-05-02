@@ -37,6 +37,7 @@ from trading_books_knowledge import (
 )
 from smc_engine import aplicar_smc_scoring
 from pro_trader_analysis import calcular_tendencia_macro, detectar_setup_profissional, gerar_analise_completa
+from news_impact import avaliar_impacto_noticias, obter_noticias_do_dia
 
 load_dotenv()
 
@@ -2340,6 +2341,15 @@ async def simulador_real(ativo: str = Query("WIN")):
         # Usar TODAS as velas até o dia anterior para calcular tendência macro
         macro_window = dados.iloc[:day_indices[-1]+1]
         tend_macro = calcular_tendencia_macro(macro_window, ativo)
+
+        # ---- NOTICIAS DE IMPACTO ----
+        try:
+            noticias_dia = obter_noticias_do_dia()
+            logger.info(f"Noticias carregadas: {len(noticias_dia)} eventos")
+        except Exception as _ne:
+            logger.warning(f"Falha ao buscar noticias: {_ne}")
+            noticias_dia = []
+
         
         # ---- ANALYZE EVERY CANDLE ----
         velas_analisadas = []
@@ -2416,6 +2426,25 @@ async def simulador_real(ativo: str = Query("WIN")):
                 if conf_label == "C+":
                     operar = False
                     motivos_nao_operar.append(f"Horário fraco ({hora}) + setup C+ = não vale o risco")
+            
+
+            # ---- IMPACTO DE NOTICIAS NA ENTRADA ----
+            news_impact = avaliar_impacto_noticias(hora, ativo, tipo_sinal, noticias_dia)
+            if news_impact["bloquear"] and operar:
+                operar = False
+                motivos_nao_operar.append(f"NOTÍCIA: {news_impact['motivo']}")
+            elif news_impact["modificador_score"] != 0:
+                score = max(0, min(7, score + news_impact["modificador_score"]))
+                if news_impact["modificador_score"] < 0:
+                    motivos_nao_operar.append(f"Notícia: {news_impact['alerta']}")
+                    # Se score caiu abaixo do mínimo, não operar
+                    if score < 4 and operar:
+                        operar = False
+                        motivos_nao_operar.append(f"Score caiu para {score}/7 por notícia")
+                elif news_impact["modificador_score"] > 0:
+                    motivos_operar.append(f"Notícia favorável: {news_impact['alerta']}")
+            # Viés de notícias (informativo)
+            vies_noticias = news_impact.get("vies_noticias")
             
             decisao = "OPERAR" if operar else "NAO OPERAR"
             
@@ -2900,6 +2929,15 @@ async def treinamento_ia(ativo: str = Query("WIN")):
         # Tendência macro
         macro_window = dados.iloc[:day_indices[-1]+1]
         tend_macro = calcular_tendencia_macro(macro_window, ativo)
+
+        # ---- NOTICIAS DE IMPACTO ----
+        try:
+            noticias_dia = obter_noticias_do_dia()
+            logger.info(f"Noticias carregadas: {len(noticias_dia)} eventos")
+        except Exception as _ne:
+            logger.warning(f"Falha ao buscar noticias: {_ne}")
+            noticias_dia = []
+
         
         velas_analisadas = []
         operacoes = []
@@ -2979,6 +3017,24 @@ async def treinamento_ia(ativo: str = Query("WIN")):
                 })
                 if mem_check["tem_alerta"]:
                     alerta_memoria = mem_check
+            
+
+            # ---- IMPACTO DE NOTICIAS NA ENTRADA (TREINAMENTO) ----
+            news_impact = avaliar_impacto_noticias(hora, ativo, tipo_sinal, noticias_dia)
+            if news_impact["bloquear"] and operar_treino:
+                # No treinamento, não bloqueia mas avisa fortemente
+                motivos_nao_operar.append(f"ALERTA NOTÍCIA: {news_impact['motivo']}")
+                # Só bloqueia se score < 5 (C+ em treino)
+                if score < 5:
+                    operar_treino = False
+                    motivos_nao_operar.append(f"Score {score}/7 + notícia crítica = bloqueado")
+            elif news_impact["modificador_score"] != 0:
+                score = max(0, min(7, score + news_impact["modificador_score"]))
+                if news_impact["modificador_score"] < 0:
+                    motivos_nao_operar.append(f"Notícia: {news_impact['alerta']}")
+                elif news_impact["modificador_score"] > 0:
+                    motivos_operar.append(f"Notícia favorável: {news_impact['alerta']}")
+            vies_noticias = news_impact.get("vies_noticias")
             
             decisao = "OPERAR" if operar_treino else "NAO OPERAR"
             
