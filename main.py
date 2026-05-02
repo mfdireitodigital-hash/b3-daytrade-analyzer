@@ -2382,7 +2382,7 @@ async def simulador_real(ativo: str = Query("WIN")):
                     ema21 = round(float(w['close'].ewm(span=21, adjust=False).mean().iloc[-1]), 2)
                     ema50 = round(float(w['close'].ewm(span=50, adjust=False).mean().iloc[-1]), 2) if len(w) >= 50 else 0
                     atr_s = calcular_atr_series(w)
-                    atr_v = round(float(atr_s.iloc[-1]), 1) if len(atr_s) > 0 else 150
+                    atr_v = round(float(atr_s.iloc[-1]), 4) if len(atr_s) > 0 else (150 if ativo == 'WIN' else 0.01)
                     
                     if ema9 > ema21 and c > ema9: tend = "ALTA"
                     elif ema9 < ema21 and c < ema9: tend = "BAIXA"
@@ -2526,7 +2526,7 @@ async def simulador_real(ativo: str = Query("WIN")):
             
             if pode_operar:
                 # ===== STOP E ALVO PRO =====
-                stop_pts = round(atr_v * 1.5)
+                stop_pts = round(atr_v * 1.5, 4) if ativo != 'WIN' else round(atr_v * 1.5)
                 if ativo == "WIN":
                     stop_pts = max(round(stop_pts / 5) * 5, 80)
                     stop_pts = min(stop_pts, 350)
@@ -2968,7 +2968,7 @@ async def treinamento_ia(ativo: str = Query("WIN")):
                     ema9 = round(float(w['close'].ewm(span=9, adjust=False).mean().iloc[-1]), 2)
                     ema21 = round(float(w['close'].ewm(span=21, adjust=False).mean().iloc[-1]), 2)
                     atr_s = calcular_atr_series(w)
-                    atr_v = round(float(atr_s.iloc[-1]), 1) if len(atr_s) > 0 else 150
+                    atr_v = round(float(atr_s.iloc[-1]), 4) if len(atr_s) > 0 else (150 if ativo == 'WIN' else 0.01)
                     
                     if ema9 > ema21 and c > ema9: tend = "ALTA"
                     elif ema9 < ema21 and c < ema9: tend = "BAIXA"
@@ -3090,7 +3090,7 @@ async def treinamento_ia(ativo: str = Query("WIN")):
             )
             
             if pode_operar:
-                stop_pts = round(atr_v * 1.5)
+                stop_pts = round(atr_v * 1.5, 4) if ativo != 'WIN' else round(atr_v * 1.5)
                 if ativo == "WIN":
                     stop_pts = max(round(stop_pts / 5) * 5, 80)
                     stop_pts = min(stop_pts, 350)
