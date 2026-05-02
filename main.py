@@ -1401,7 +1401,7 @@ async def replay_velas(ativo: str = "WIN"):
             return JSONResponse({"erro": "Dia anterior nao encontrado"})
         
         # Get day data
-        day_mask = dados.index.date == dia_anterior
+        day_mask = (dados.index.date == dia_anterior) & (dados.index.hour >= 9) & (dados.index.hour < 18)
         day_data = dados[day_mask]
         
         # Calculate indicators for each candle
@@ -1410,7 +1410,7 @@ async def replay_velas(ativo: str = "WIN"):
         
         velas = []
         all_indices = list(range(len(dados)))
-        day_indices = [i for i, d in enumerate(dados.index.date) if d == dia_anterior]
+        day_indices = [i for i, d in enumerate(dados.index.date) if d == dia_anterior and 9 <= dados.index[i].hour < 18]
         
         for pos_idx in day_indices:
             w = dados.iloc[max(0, pos_idx - 100):pos_idx + 1]
@@ -1527,7 +1527,7 @@ async def simular_entrada(request: Request):
                 dia_anterior = d
                 break
         
-        day_indices = [i for i, d in enumerate(dados.index.date) if d == dia_anterior]
+        day_indices = [i for i, d in enumerate(dados.index.date) if d == dia_anterior and 9 <= dados.index[i].hour < 18]
         
         if vela_idx < 0 or vela_idx >= len(day_indices):
             return JSONResponse({"erro": f"vela_idx invalido: {vela_idx}, max: {len(day_indices)-1}"})
@@ -2322,7 +2322,7 @@ async def simulador_real(ativo: str = Query("WIN")):
         if not dia_anterior:
             return JSONResponse({"erro": "Dia anterior nao encontrado"})
         
-        day_indices = [i for i, d in enumerate(dados.index.date) if d == dia_anterior]
+        day_indices = [i for i, d in enumerate(dados.index.date) if d == dia_anterior and 9 <= dados.index[i].hour < 18]
         if not day_indices:
             return JSONResponse({"erro": "Sem velas do dia anterior"})
         
@@ -2880,7 +2880,7 @@ async def treinamento_ia(ativo: str = Query("WIN")):
         if not dia_anterior:
             return JSONResponse({"erro": "Dia anterior nao encontrado"})
         
-        day_indices = [i for i, d in enumerate(dados.index.date) if d == dia_anterior]
+        day_indices = [i for i, d in enumerate(dados.index.date) if d == dia_anterior and 9 <= dados.index[i].hour < 18]
         if not day_indices:
             return JSONResponse({"erro": "Sem velas do dia anterior"})
         

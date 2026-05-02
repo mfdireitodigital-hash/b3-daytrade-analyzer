@@ -390,6 +390,12 @@
             /* Demo summary */
             .demo-summary { grid-template-columns: 1fr 1fr !important; }
             
+            /* Overlays: full-screen no mobile */
+            .pt-overlay { background: rgba(0,0,0,0.95) !important; -webkit-overflow-scrolling: touch !important; }
+            #simRealOverlay .pt-header { position: sticky !important; top: 0 !important; z-index: 100 !important; }
+            #noticiasOverlay .pt-header { position: sticky !important; top: 0 !important; z-index: 100 !important; }
+            #ptOverlay .pt-header { position: sticky !important; top: 0 !important; z-index: 100 !important; }
+
             /* Noticias panel */
             .pt-container[style*="max-width:900px"] { max-width: 100% !important; margin: 5px !important; }
         }
@@ -3306,7 +3312,7 @@ function renderNotEventos(eventos, containerId, isPast) {
 // SIMULADOR REAL - TRADER COMPLETO
 // =====================================================
 function abrirSimuladorReal() {
-    document.getElementById('simRealOverlay').style.display = 'flex';
+    document.getElementById('simRealOverlay').style.display = 'block';
     simRealCheckMarket();
     simRealAnalisar();
 }
