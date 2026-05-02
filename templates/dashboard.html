@@ -1424,7 +1424,7 @@ async function ptCarregarMelhoresEntradas() {
         // Timeline
         h += '<div style="font-size:10px;color:var(--text-muted);margin:8px 0 4px;">Timeline (verde=operar | amarelo=cautela | vermelho=fora):</div>';
         h += '<div style="display:flex;gap:1px;height:20px;border-radius:4px;overflow:hidden;">';
-        data.velas.forEach(v => {
+        (data.velas || []).forEach(v => {
             const c2 = v.decisao==='OPERAR'?'#22c55e':v.score>=3?'#ca8a04':'rgba(239,68,68,0.4)';
             h += '<div title="' + v.hora + ' Score:' + v.score + '/7 ' + v.decisao + '" style="flex:1;background:' + c2 + ';min-width:2px;cursor:pointer;"></div>';
         });
