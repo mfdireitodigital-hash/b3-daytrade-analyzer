@@ -2531,8 +2531,9 @@ async def simulador_real(ativo: str = Query("WIN")):
                     stop_pts = max(round(stop_pts / 5) * 5, 80)
                     stop_pts = min(stop_pts, 350)
                 else:
-                    stop_pts = max(round(stop_pts * 200) / 200, 0.005)
-                    stop_pts = min(stop_pts, 0.10)
+                    # WDO: stop mínimo 0.015 (equivale a ~5 candles de margem)
+                    stop_pts = max(round(stop_pts * 200) / 200, 0.015)
+                    stop_pts = min(stop_pts, 0.08)
                 
                 alvo_pts = round(stop_pts * 2.0, 4)
                 is_compra = tipo_sinal == "COMPRA"
@@ -2544,7 +2545,7 @@ async def simulador_real(ativo: str = Query("WIN")):
                         if ativo == "WIN":
                             stop_pts = max(round(_structural_stop / 5) * 5, 80)
                         else:
-                            stop_pts = max(_structural_stop, 0.005)
+                            stop_pts = max(_structural_stop, 0.015)
                         alvo_pts = round(stop_pts * 2.0, 4)
                 elif not is_compra and resistencia and abs(resistencia - c) < stop_pts:
                     _structural_stop = round(resistencia - c + atr_v * 0.3)
@@ -2552,7 +2553,7 @@ async def simulador_real(ativo: str = Query("WIN")):
                         if ativo == "WIN":
                             stop_pts = max(round(_structural_stop / 5) * 5, 80)
                         else:
-                            stop_pts = max(_structural_stop, 0.005)
+                            stop_pts = max(_structural_stop, 0.015)
                         alvo_pts = round(stop_pts * 2.0, 4)
                 
                 # ===== ENTRADA REALISTA: próxima vela open + slippage =====
@@ -2922,7 +2923,7 @@ async def treinamento_ia(ativo: str = Query("WIN")):
         # - Permite contra-tendência em C+ com alerta
         # - Consulta memória de erros antes de cada entrada
         MAX_OPS_DIA = 15   # Mais que o Simulador Real (8)
-        MAX_LOSSES_CONSECUTIVOS = 5  # Mais tolerante
+        MAX_LOSSES_CONSECUTIVOS = 4  # Tolerante mas não descuidado
         losses_consecutivos = 0
         total_pts_dia = 0
         
@@ -3094,8 +3095,9 @@ async def treinamento_ia(ativo: str = Query("WIN")):
                     stop_pts = max(round(stop_pts / 5) * 5, 80)
                     stop_pts = min(stop_pts, 350)
                 else:
-                    stop_pts = max(round(stop_pts * 200) / 200, 0.005)
-                    stop_pts = min(stop_pts, 0.10)
+                    # WDO: stop mínimo 0.015 (equivale a ~5 candles de margem)
+                    stop_pts = max(round(stop_pts * 200) / 200, 0.015)
+                    stop_pts = min(stop_pts, 0.08)
                 
                 alvo_pts = round(stop_pts * 2.0, 4)
                 is_compra = tipo_sinal == "COMPRA"
@@ -3252,10 +3254,12 @@ async def treinamento_ia(ativo: str = Query("WIN")):
                 total_pts_dia += pts
                 if resultado == "LOSS":
                     losses_consecutivos += 1
-                    cooldown = 2  # Menor cooldown no treino
+                    # Operador de verdade: cooldown PROGRESSIVO
+                    # 1º loss: 3 velas, 2º: 5 velas, 3º: 8 velas (respira, analisa)
+                    cooldown = 3 + losses_consecutivos * 2
                 else:
                     losses_consecutivos = 0
-                    cooldown = 1  # Cooldown mínimo
+                    cooldown = 2  # Cooldown mínimo após win
                 
                 posicao_aberta = {"close_idx": future_start + velas_na_op + cooldown}
         

@@ -1363,7 +1363,7 @@ async function ptCarregarMelhoresEntradas() {
                 h += '<div style="display:flex;align-items:center;gap:6px;">';
                 h += '<span style="font-size:10px;font-weight:800;color:' + cOp + ';background:' + cOp + '15;padding:2px 6px;border-radius:3px;">' + op.tipo + '</span>';
                 h += '<span style="font-weight:700;font-size:12px;font-family:monospace;">' + op.hora_entrada + ' → ' + op.hora_saida + '</span>';
-                h += '<span style="font-size:10px;background:rgba(255,255,255,0.05);padding:1px 5px;border-radius:3px;">Score ' + op.score + '/15 | ' + op.conf_label + '</span>';
+                h += '<span style="font-size:10px;background:rgba(255,255,255,0.05);padding:1px 5px;border-radius:3px;">Score ' + op.score + '/7 | ' + op.conf_label + '</span>';
                 h += '</div>';
                 h += '<div style="display:flex;align-items:center;gap:6px;">';
                 h += '<span style="font-size:16px;font-weight:900;color:' + cRes + ';">' + op.resultado + '</span>';
@@ -4212,7 +4212,7 @@ async function simRealAnalisar() {
             oH += '<div style="display:grid;grid-template-columns:55px 1fr 40px 55px 55px 80px;gap:2px;font-size:10px;padding:4px 6px;background:' + bg + ';border-left:' + bLeft + ';border-bottom:1px solid rgba(255,255,255,0.02);">';
             oH += '<div style="font-weight:700;font-family:monospace;">' + v.hora + opBadge + '</div>';
             oH += '<div style="color:' + cDec + ';font-weight:700;font-size:9px;">' + v.decisao + (v.tipo_sinal ? ' (' + v.tipo_sinal + ')' : '') + '</div>';
-            oH += '<div style="font-weight:700;">' + v.score + '/15</div>';
+            oH += '<div style="font-weight:700;">' + v.score + '/7</div>';
             oH += '<div style="color:' + cRsi + ';">' + v.rsi + '</div>';
             oH += '<div style="color:' + cTend + ';font-size:9px;">' + v.tendencia + '</div>';
             oH += '<div style="font-size:9px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="' + motivo + '">' + motivo + smcBadge + '</div>';
