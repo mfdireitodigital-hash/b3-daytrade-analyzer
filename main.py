@@ -1961,16 +1961,41 @@ async def get_sinais_ia(ativo: str = Query("WIN")):
 
 # =====================================================
 # NOTICIAS DE IMPACTO - Calendario Economico Real-Time
+# Fonte: Profit API Economic Calendar + Investing.com fallback
 # =====================================================
 
-@app.get("/api/noticias-impacto")
-async def get_noticias_impacto():
-    """Calendario economico com eventos de ALTO IMPACTO (3 estrelas) - EUA e Brasil"""
+# Cache global de noticias (evita rate limit da API)
+_noticias_cache = {"data": None, "timestamp": None, "ttl": 1800}  # 30min cache
+
+async def _buscar_noticias_profit():
+    """Busca eventos da Profit API Economic Calendar"""
+    token = os.getenv("PROFIT_API_TOKEN", "")
+    if not token:
+        return []
+    
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.get(
+                "https://api.profit.com/data-api/economic_calendar/forex",
+                params={"token": token, "limit": 50}
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                if isinstance(data, list):
+                    return data
+                elif isinstance(data, dict) and "message" in data:
+                    logger.warning(f"Profit Calendar: {data['message']}")
+                    return []
+            return []
+    except Exception as e:
+        logger.error(f"Erro Profit Calendar: {e}")
+        return []
+
+def _buscar_noticias_investing():
+    """Busca eventos via scraping Investing.com (fallback)"""
     import re as _re
     try:
-        from datetime import timezone, timedelta
-        BRT = timezone(timedelta(hours=-3))
-        agora = datetime.now(BRT)
+        import urllib.request, urllib.parse
         
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
@@ -1979,16 +2004,13 @@ async def get_noticias_impacto():
             "Accept": "application/json, text/javascript, */*",
         }
         
-        eventos_total = []
-        
-        # Fetch today + this week
+        eventos = []
         for tab_filter in ["today", "thisWeek"]:
             try:
-                import urllib.request, urllib.parse
                 params = urllib.parse.urlencode({
-                    "country[]": ["25", "5"],  # 25=Brasil, 5=EUA
-                    "importance[]": "3",  # 3 estrelas only
-                    "timeZone": "12",  # BRT
+                    "country[]": ["25", "5"],
+                    "importance[]": "3",
+                    "timeZone": "12",
                     "timeFilter": "timeRemain",
                     "currentTab": tab_filter,
                 }, doseq=True)
@@ -2000,270 +2022,294 @@ async def get_noticias_impacto():
                     method="POST"
                 )
                 with urllib.request.urlopen(req, timeout=10) as resp:
-                    import json
                     raw = json.loads(resp.read().decode())
                     html_data = raw.get("data", "")
                 
-                # Parse HTML events
-                day_pattern = _re.compile(r'class="theDay"[^>]*>([^<]+)<')
-                row_pattern = _re.compile(
-                    r'event_attr_ID="(\d+)"[^>]*data-event-datetime="([^"]+)".*?'
-                    r'js-time"[^>]*>([^<]*)<.*?'
-                    r'title="([^"]*)"[^>]*class="ceFlags\s+(\w+)".*?'
-                    r'(\w{3})<.*?'
-                    r'event"[^>]*>(.*?)</a>.*?'
-                    r'(?:bold\s*"[^>]*>([^<]*)<.*?)?'  # actual
-                    r'(?:prev"[^>]*>([^<]*)<.*?)?'  # forecast
-                    r'(?:prev"[^>]*>([^<]*)<)?',  # previous
-                    _re.DOTALL
-                )
-                
-                # Simpler row-by-row parsing
-                current_day = agora.strftime("%d/%m/%Y")
                 rows = html_data.split('js-event-item')
-                
-                for row in rows[1:]:  # skip first empty
+                for row in rows[1:]:
                     try:
-                        # Extract event ID
-                        eid_m = _re.search(r'event_attr_ID="(\d+)"', row)
-                        eid = eid_m.group(1) if eid_m else "0"
-                        
-                        # Extract datetime
-                        dt_m = _re.search(r'data-event-datetime="([^"]+)"', row)
-                        evt_dt = dt_m.group(1) if dt_m else ""
-                        
-                        # Extract time
                         time_m = _re.search(r'js-time"[^>]*>([^<]*)<', row)
                         evt_time = time_m.group(1).strip() if time_m else ""
                         
-                        # Extract country
-                        country_m = _re.search(r'title="([^"]*)"[^>]*class="ceFlags', row)
-                        country = country_m.group(1).strip() if country_m else ""
+                        dt_m = _re.search(r'data-event-datetime="([^"]+)"', row)
+                        evt_dt = dt_m.group(1) if dt_m else ""
                         
-                        # Extract currency
                         cur_m = _re.search(r'ceFlags[^>]*>[^<]*</span>\s*(\w{3})', row)
                         currency = cur_m.group(1).strip() if cur_m else ""
                         
-                        # Extract event name
                         name_m = _re.search(r'class="[^"]*event[^"]*"[^>]*>([^<]+)<', row)
-                        evt_name = name_m.group(1).strip() if name_m else "Evento"
-                        # Clean HTML entities
+                        evt_name = name_m.group(1).strip() if name_m else ""
                         evt_name = evt_name.replace("&amp;", "&").replace("&nbsp;", " ").replace("&#39;", "'")
                         
-                        # Extract actual, forecast, previous values
-                        bold_vals = _re.findall(r'<td[^>]*class="[^"]*bold[^"]*"[^>]*>\s*([^<]*?)\s*</td>', row)
-                        # Also try spans inside tds
-                        if not bold_vals:
-                            bold_vals = _re.findall(r'bold[^>]*>([^<]*)<', row)
+                        bold_vals = _re.findall(r'bold[^>]*>([^<]*)<', row)
+                        actual = bold_vals[0].strip().replace("&nbsp;","") if len(bold_vals) >= 1 else ""
+                        forecast = bold_vals[1].strip().replace("&nbsp;","") if len(bold_vals) >= 2 else ""
+                        previous = bold_vals[2].strip().replace("&nbsp;","") if len(bold_vals) >= 3 else ""
                         
-                        actual = ""
-                        forecast = ""
-                        previous = ""
+                        country_m = _re.search(r'title="([^"]*)"[^>]*class="ceFlags', row)
+                        country = country_m.group(1).strip() if country_m else ""
                         
-                        if len(bold_vals) >= 1:
-                            actual = bold_vals[0].strip().replace("&nbsp;", "").strip()
-                        if len(bold_vals) >= 2:
-                            forecast = bold_vals[1].strip().replace("&nbsp;", "").strip()
-                        if len(bold_vals) >= 3:
-                            previous = bold_vals[2].strip().replace("&nbsp;", "").strip()
+                        eid_m = _re.search(r'event_attr_ID="(\d+)"', row)
+                        eid = eid_m.group(1) if eid_m else str(len(eventos))
                         
-                        # Determine impact on WIN and WDO
-                        impacto_win = ""
-                        impacto_wdo = ""
-                        surpresa = ""
-                        
-                        # Default impact based on event type (even without forecast)
-                        operavel = "BOM"
-                        evt_lower = evt_name.lower()
-                        if currency == "USD":
-                            impacto_win = "Dado americano - monitorar"
-                            impacto_wdo = "Dado americano - impacto no dolar"
-                            if any(kw in evt_lower for kw in ["payroll", "nonfarm", "fomc", "fed", "cpi", "ipc", "taxa de juros", "interest rate", "gdp", "pib"]):
-                                operavel = "CAUTELA"
-                                impacto_win = "ALTO IMPACTO potencial no indice"
-                                impacto_wdo = "ALTO IMPACTO potencial no dolar"
-                            elif any(kw in evt_lower for kw in ["pmi", "ism", "emprego", "vendas", "producao", "pedidos"]):
-                                operavel = "BOM"
-                                impacto_win = "Impacto moderado no indice"
-                                impacto_wdo = "Impacto moderado no dolar"
-                            else:
-                                impacto_win = "Baixo impacto no indice"
-                                impacto_wdo = "Baixo impacto no dolar"
-                        elif currency == "BRL":
-                            impacto_win = "Dado brasileiro - monitorar"
-                            impacto_wdo = "Dado brasileiro - impacto no dolar"
-                            if any(kw in evt_lower for kw in ["selic", "copom", "ipca", "pib"]):
-                                operavel = "CAUTELA"
-                                impacto_win = "ALTO IMPACTO no Ibovespa"
-                                impacto_wdo = "ALTO IMPACTO no dolar"
-                            else:
-                                impacto_win = "Impacto moderado no indice"
-                                impacto_wdo = "Impacto moderado no dolar"
-                        
-                        if actual and forecast:
-                            try:
-                                act_num = float(actual.replace("%", "").replace(",", ".").replace("K", "000").replace("M", "000000").replace("B", "000000000").strip())
-                                for_num = float(forecast.replace("%", "").replace(",", ".").replace("K", "000").replace("M", "000000").replace("B", "000000000").strip())
-                                diff = act_num - for_num
-                                
-                                if currency == "USD":
-                                    if diff > 0:
-                                        surpresa = "ACIMA"
-                                        impacto_wdo = "ALTA (dolar fortalece)"
-                                        impacto_win = "BAIXA (pressao no ibov)"
-                                    elif diff < 0:
-                                        surpresa = "ABAIXO"
-                                        impacto_wdo = "BAIXA (dolar enfraquece)"
-                                        impacto_win = "ALTA (alivio no ibov)"
-                                    else:
-                                        surpresa = "NEUTRO"
-                                        impacto_wdo = "NEUTRO"
-                                        impacto_win = "NEUTRO"
-                                elif currency == "BRL":
-                                    if diff > 0:
-                                        surpresa = "ACIMA"
-                                        impacto_win = "DEPENDE (contexto)"
-                                        impacto_wdo = "DEPENDE (contexto)"
-                                    elif diff < 0:
-                                        surpresa = "ABAIXO"
-                                        impacto_win = "DEPENDE (contexto)"
-                                        impacto_wdo = "DEPENDE (contexto)"
-                                    else:
-                                        surpresa = "NEUTRO"
-                                        impacto_win = "NEUTRO"
-                                        impacto_wdo = "NEUTRO"
-                                    
-                                    # Specific Brazilian events
-                                    evt_lower = evt_name.lower()
-                                    if "selic" in evt_lower or "copom" in evt_lower:
-                                        if diff > 0:  # juros subiu mais
-                                            impacto_win = "BAIXA (juros apertam)"
-                                            impacto_wdo = "BAIXA (atrai capital)"
-                                        elif diff < 0:
-                                            impacto_win = "ALTA (juros aliviam)"
-                                            impacto_wdo = "ALTA (menos atrativo)"
-                                    elif "ipca" in evt_lower or "inflacao" in evt_lower:
-                                        if diff > 0:
-                                            impacto_win = "BAIXA (inflacao alta)"
-                                            impacto_wdo = "ALTA (real enfraquece)"
-                                        elif diff < 0:
-                                            impacto_win = "ALTA (inflacao controlada)"
-                                            impacto_wdo = "BAIXA (real fortalece)"
-                                    elif "pib" in evt_lower:
-                                        if diff > 0:
-                                            impacto_win = "ALTA (economia forte)"
-                                            impacto_wdo = "BAIXA (confianca)"
-                                        elif diff < 0:
-                                            impacto_win = "BAIXA (economia fraca)"
-                                            impacto_wdo = "ALTA (fuga capital)"
-                                
-                                # US specific events
-                                if currency == "USD":
-                                    evt_lower = evt_name.lower()
-                                    if "nonfarm" in evt_lower or "payroll" in evt_lower or "emprego" in evt_lower:
-                                        if diff > 0:
-                                            impacto_wdo = "ALTA FORTE (USD fortalece)"
-                                            impacto_win = "BAIXA FORTE (risk-off)"
-                                        else:
-                                            impacto_wdo = "BAIXA FORTE (USD enfraquece)"
-                                            impacto_win = "ALTA FORTE (risk-on)"
-                                    elif "cpi" in evt_lower or "ipc" in evt_lower or "inflacao" in evt_lower:
-                                        if diff > 0:
-                                            impacto_wdo = "ALTA (Fed hawkish)"
-                                            impacto_win = "BAIXA (juros US sobem)"
-                                        else:
-                                            impacto_wdo = "BAIXA (Fed dovish)"
-                                            impacto_win = "ALTA (juros US caem)"
-                                    elif "fed" in evt_lower or "fomc" in evt_lower or "juros" in evt_lower:
-                                        if diff > 0:
-                                            impacto_wdo = "ALTA FORTE (USD fortalece)"
-                                            impacto_win = "BAIXA FORTE (fuga emergentes)"
-                                        else:
-                                            impacto_wdo = "BAIXA FORTE (USD enfraquece)"
-                                            impacto_win = "ALTA FORTE (fluxo emergentes)"
-                                    elif "pib" in evt_lower or "gdp" in evt_lower:
-                                        if diff > 0:
-                                            impacto_wdo = "ALTA (USD forte)"
-                                            impacto_win = "MISTA (global forte)"
-                                        else:
-                                            impacto_wdo = "BAIXA (USD fraco)"
-                                            impacto_win = "MISTA (global fraco)"
-                            except:
-                                pass
-                        
-                        # Parse datetime for countdown
-                        minutos_restantes = None
-                        ja_passou = False
-                        if evt_dt:
-                            try:
-                                evt_datetime = datetime.strptime(evt_dt, "%Y/%m/%d %H:%M:%S")
-                                evt_datetime = evt_datetime.replace(tzinfo=BRT)
-                                delta = (evt_datetime - agora).total_seconds()
-                                minutos_restantes = round(delta / 60)
-                                ja_passou = delta < 0
-                            except:
-                                pass
-                        
-                        # Zone: 15min before/after
-                        zona_impacto = ""
-                        if minutos_restantes is not None:
-                            if -15 <= minutos_restantes <= 15:
-                                zona_impacto = "ZONA DE IMPACTO"
-                            elif 0 < minutos_restantes <= 30:
-                                zona_impacto = "APROXIMANDO"
-                            elif minutos_restantes > 30:
-                                zona_impacto = "AGUARDANDO"
-                            elif minutos_restantes < -15:
-                                zona_impacto = "ENCERRADO"
-                        
-                        if not evt_name or evt_name == "Evento":
-                            continue
-                        
-                        eventos_total.append({
-                            "id": eid,
-                            "datetime": evt_dt,
-                            "hora": evt_time,
-                            "pais": country,
-                            "moeda": currency,
-                            "evento": evt_name,
-                            "impacto": 3,
-                            "atual": actual,
-                            "previsao": forecast,
-                            "anterior": previous,
-                            "surpresa": surpresa,
-                            "impacto_win": impacto_win,
-                            "impacto_wdo": impacto_wdo,
-                            "operavel": operavel,
-                            "minutos_restantes": minutos_restantes,
-                            "ja_passou": ja_passou,
-                            "zona_impacto": zona_impacto,
-                            "tab": tab_filter,
-                        })
-                    except Exception as parse_err:
+                        if evt_name and evt_time:
+                            eventos.append({
+                                "id": eid,
+                                "datetime": evt_dt,
+                                "hora": evt_time,
+                                "pais": country,
+                                "moeda": currency,
+                                "evento": evt_name,
+                                "actual": actual,
+                                "previsao": forecast,
+                                "anterior": previous,
+                                "fonte": "investing",
+                            })
+                    except:
                         continue
-                        
-            except Exception as fetch_err:
-                logger.error(f"Erro fetch calendario {tab_filter}: {fetch_err}")
+            except Exception as e:
+                logger.warning(f"Erro investing.com {tab_filter}: {e}")
                 continue
         
-        # Deduplicate by event ID
-        seen = set()
+        return eventos
+    except Exception as e:
+        logger.error(f"Erro investing.com: {e}")
+        return []
+
+def _processar_evento(evt, agora, fonte="profit"):
+    """Processa um evento raw em formato padrao para o frontend"""
+    import re as _re
+    from datetime import timezone, timedelta
+    BRT = timezone(timedelta(hours=-3))
+    
+    if fonte == "profit":
+        # Profit API format: {name, time (unix), impact, currency, actual, estimate, previous, country_iso}
+        ts = evt.get("time", 0)
+        try:
+            evt_datetime = datetime.utcfromtimestamp(ts).replace(tzinfo=timezone.utc).astimezone(BRT)
+        except:
+            return None
+        
+        evt_name = evt.get("name", "")
+        currency = evt.get("currency", "")
+        impact = evt.get("impact", "low")
+        actual = str(evt.get("actual", "")) if evt.get("actual") is not None else ""
+        forecast = str(evt.get("estimate", "")) if evt.get("estimate") is not None else ""
+        previous = str(evt.get("previous", "")) if evt.get("previous") is not None else ""
+        country = evt.get("country_iso", "")
+        evt_time = evt_datetime.strftime("%H:%M")
+        evt_dt = evt_datetime.strftime("%Y/%m/%d %H:%M:%S")
+        eid = f"p_{ts}_{currency}"
+        
+        # Filtrar: apenas high impact OU USD/BRL
+        if impact not in ("high",) and currency not in ("USD", "BRL"):
+            return None
+    else:
+        # Investing format (already parsed)
+        evt_name = evt.get("evento", "")
+        currency = evt.get("moeda", "")
+        actual = evt.get("actual", "")
+        forecast = evt.get("previsao", "")
+        previous = evt.get("anterior", "")
+        country = evt.get("pais", "")
+        evt_time = evt.get("hora", "")
+        evt_dt = evt.get("datetime", "")
+        eid = evt.get("id", "0")
+        
+        try:
+            if evt_dt:
+                evt_datetime = datetime.strptime(evt_dt, "%Y/%m/%d %H:%M:%S").replace(tzinfo=BRT)
+            elif evt_time and ":" in evt_time:
+                h, m = map(int, evt_time.split(":"))
+                evt_datetime = agora.replace(hour=h, minute=m, second=0)
+            else:
+                return None
+        except:
+            return None
+    
+    # Filter: only USD and BRL
+    if currency not in ("USD", "BRL"):
+        return None
+    
+    # Calculate time difference
+    delta = (evt_datetime - agora).total_seconds()
+    minutos_restantes = round(delta / 60)
+    ja_passou = delta < 0
+    
+    # Zone calculation
+    zona_impacto = ""
+    if -15 <= minutos_restantes <= 15:
+        zona_impacto = "ZONA DE IMPACTO"
+    elif 0 < minutos_restantes <= 30:
+        zona_impacto = "APROXIMANDO"
+    elif minutos_restantes > 30:
+        zona_impacto = "AGUARDANDO"
+    elif minutos_restantes < -15:
+        zona_impacto = "ENCERRADO"
+    
+    # Impact analysis
+    evt_lower = evt_name.lower()
+    impacto_win = ""
+    impacto_wdo = ""
+    surpresa = ""
+    operavel = "BOM"
+    
+    # Check if critical event
+    criticos = ["payroll", "nonfarm", "non-farm", "fomc", "fed fund", "taxa de juros", "interest rate", "cpi", "ipc", "selic", "copom", "gdp", "pib"]
+    altos = ["pmi", "ism", "emprego", "employment", "unemployment", "vendas no varejo", "retail sales", "producao industrial", "ipca", "inflacao"]
+    
+    is_critico = any(kw in evt_lower for kw in criticos)
+    is_alto = any(kw in evt_lower for kw in altos)
+    
+    if currency == "USD":
+        if is_critico:
+            operavel = "CAUTELA"
+            impacto_win = "ALTO IMPACTO potencial no indice"
+            impacto_wdo = "ALTO IMPACTO potencial no dolar"
+        elif is_alto:
+            impacto_win = "Impacto moderado no indice"
+            impacto_wdo = "Impacto moderado no dolar"
+        else:
+            impacto_win = "Baixo impacto no indice"
+            impacto_wdo = "Baixo impacto no dolar"
+    elif currency == "BRL":
+        if is_critico:
+            operavel = "CAUTELA"
+            impacto_win = "ALTO IMPACTO no Ibovespa"
+            impacto_wdo = "ALTO IMPACTO no dolar"
+        elif is_alto:
+            impacto_win = "Impacto moderado no indice"
+            impacto_wdo = "Impacto moderado no dolar"
+        else:
+            impacto_win = "Baixo impacto no indice"
+            impacto_wdo = "Baixo impacto no dolar"
+    
+    # Surpresa analysis
+    if actual and forecast:
+        try:
+            act_num = float(str(actual).replace("%","").replace(",",".").replace("K","000").replace("M","000000").strip())
+            for_num = float(str(forecast).replace("%","").replace(",",".").replace("K","000").replace("M","000000").strip())
+            if act_num > for_num:
+                surpresa = "ACIMA"
+                if currency == "USD":
+                    impacto_wdo = "ALTA (dolar fortalece)"
+                    impacto_win = "BAIXA (pressao no ibov)"
+                    if "nonfarm" in evt_lower or "payroll" in evt_lower:
+                        impacto_wdo = "ALTA FORTE (USD fortalece)"
+                        impacto_win = "BAIXA FORTE (risk-off)"
+                elif currency == "BRL":
+                    if "selic" in evt_lower or "copom" in evt_lower:
+                        impacto_win = "BAIXA (juros apertam)"
+                        impacto_wdo = "BAIXA (atrai capital)"
+                    elif "ipca" in evt_lower:
+                        impacto_win = "BAIXA (inflacao alta)"
+                        impacto_wdo = "ALTA (real enfraquece)"
+                    elif "pib" in evt_lower:
+                        impacto_win = "ALTA (economia forte)"
+                        impacto_wdo = "BAIXA (confianca)"
+            elif act_num < for_num:
+                surpresa = "ABAIXO"
+                if currency == "USD":
+                    impacto_wdo = "BAIXA (dolar enfraquece)"
+                    impacto_win = "ALTA (alivio no ibov)"
+                    if "nonfarm" in evt_lower or "payroll" in evt_lower:
+                        impacto_wdo = "BAIXA FORTE (USD enfraquece)"
+                        impacto_win = "ALTA FORTE (risk-on)"
+                elif currency == "BRL":
+                    if "selic" in evt_lower or "copom" in evt_lower:
+                        impacto_win = "ALTA (juros aliviam)"
+                        impacto_wdo = "ALTA (menos atrativo)"
+                    elif "ipca" in evt_lower:
+                        impacto_win = "ALTA (inflacao controlada)"
+                        impacto_wdo = "BAIXA (real fortalece)"
+                    elif "pib" in evt_lower:
+                        impacto_win = "BAIXA (economia fraca)"
+                        impacto_wdo = "ALTA (fuga capital)"
+            else:
+                surpresa = "NEUTRO"
+        except:
+            pass
+    
+    return {
+        "id": eid,
+        "datetime": evt_dt,
+        "hora": evt_time,
+        "pais": country,
+        "moeda": currency,
+        "evento": evt_name,
+        "impacto": 3,
+        "atual": actual,
+        "previsao": forecast,
+        "anterior": previous,
+        "surpresa": surpresa,
+        "impacto_win": impacto_win,
+        "impacto_wdo": impacto_wdo,
+        "operavel": operavel,
+        "minutos_restantes": minutos_restantes,
+        "ja_passou": ja_passou,
+        "zona_impacto": zona_impacto,
+    }
+
+
+@app.get("/api/noticias-impacto")
+async def get_noticias_impacto():
+    """Calendario economico — Profit API (principal) + Investing.com (fallback)"""
+    try:
+        from datetime import timezone, timedelta
+        BRT = timezone(timedelta(hours=-3))
+        agora = datetime.now(BRT)
+        
+        eventos_processados = []
+        fonte_usada = "nenhuma"
+        
+        # Check cache first
+        cache = _noticias_cache
+        if cache["data"] and cache["timestamp"]:
+            age = (datetime.now() - cache["timestamp"]).total_seconds()
+            if age < cache["ttl"]:
+                logger.info(f"Noticias: usando cache ({int(age)}s old)")
+                return JSONResponse(cache["data"])
+        
+        # === FONTE 1: Profit API Economic Calendar ===
+        raw_profit = await _buscar_noticias_profit()
+        if raw_profit:
+            fonte_usada = "Profit API"
+            for evt in raw_profit:
+                processed = _processar_evento(evt, agora, fonte="profit")
+                if processed:
+                    eventos_processados.append(processed)
+            logger.info(f"Profit Calendar: {len(eventos_processados)} eventos relevantes de {len(raw_profit)} total")
+        
+        # === FONTE 2: Investing.com (fallback) ===
+        if not eventos_processados:
+            raw_inv = _buscar_noticias_investing()
+            if raw_inv:
+                fonte_usada = "Investing.com"
+                for evt in raw_inv:
+                    processed = _processar_evento(evt, agora, fonte="investing")
+                    if processed:
+                        eventos_processados.append(processed)
+                logger.info(f"Investing.com: {len(eventos_processados)} eventos")
+        
+        # Deduplicate by similar name+time
+        seen_keys = set()
         unique = []
-        for e in eventos_total:
-            if e["id"] not in seen:
-                seen.add(e["id"])
+        for e in eventos_processados:
+            key = f"{e['evento'][:20]}_{e['hora']}"
+            if key not in seen_keys:
+                seen_keys.add(key)
                 unique.append(e)
         
-        # Sort: upcoming first, then past
+        # Split upcoming vs past
         upcoming = [e for e in unique if not e["ja_passou"]]
         past = [e for e in unique if e["ja_passou"]]
         upcoming.sort(key=lambda x: x.get("minutos_restantes") or 9999)
         past.sort(key=lambda x: -(x.get("minutos_restantes") or 0))
         
-        # Alert: any event in zona de impacto?
+        # Alerts
         alertas = [e for e in unique if e["zona_impacto"] in ("ZONA DE IMPACTO", "APROXIMANDO")]
         
-        return JSONResponse({
+        result = {
             "proximos": upcoming,
             "passados": past,
             "total": len(unique),
@@ -2271,18 +2317,19 @@ async def get_noticias_impacto():
             "alerta_eventos": [{"evento": a["evento"], "moeda": a["moeda"], "hora": a["hora"], "zona": a["zona_impacto"], "minutos": a["minutos_restantes"]} for a in alertas],
             "timestamp": agora.strftime("%H:%M:%S"),
             "data": agora.strftime("%d/%m/%Y"),
-        })
+            "fonte": fonte_usada,
+        }
+        
+        # Save to cache
+        _noticias_cache["data"] = result
+        _noticias_cache["timestamp"] = datetime.now()
+        
+        return JSONResponse(result)
     except Exception as e:
         logger.error(f"Erro noticias-impacto: {e}")
         import traceback; traceback.print_exc()
-        return JSONResponse({"erro": str(e), "proximos": [], "passados": []}, status_code=500)
+        return JSONResponse({"erro": str(e), "proximos": [], "passados": [], "total": 0, "alertas": 0, "alerta_eventos": [], "timestamp": "", "data": ""}, status_code=500)
 
-
-
-
-# =====================================================
-# SIMULADOR REAL - ANALISE COMPLETA DO PREGAO ANTERIOR
-# =====================================================
 
 @app.get("/api/simulador-real")
 async def simulador_real(ativo: str = Query("WIN")):
