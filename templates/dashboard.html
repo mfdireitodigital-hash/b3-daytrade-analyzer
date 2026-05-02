@@ -3374,7 +3374,10 @@ function simRealSetAtivo(a) {
     document.getElementById('simBtnWIN').className = a === 'WIN' ? 'btn btn-primary' : 'btn';
     document.getElementById('simBtnWDO').className = a === 'WDO' ? 'btn btn-primary' : 'btn';
     var _sra = document.getElementById('simRealAtivo'); if(_sra) _sra.textContent = a;
-    simRealAnalisar();
+    const marketOpen = simRealCheckMarket();
+    if (marketOpen) {
+        simRealAnalisar();
+    }
 }
 
 // ===== CHART RENDERING =====
@@ -3642,6 +3645,79 @@ function simChartRender() {
                 ctx.font = 'bold 12px sans-serif';
                 ctx.fillText(pa.vol_ratio + 'x', x - 8, H - pad.b - 44);
             }
+            
+            // PULLBACK marker - cyan diamond
+            if (pa.pullback) {
+                const pbColor = pa.pullback === 'ALTA' ? '#06b6d4' : '#f97316';
+                ctx.fillStyle = pbColor;
+                ctx.font = 'bold 14px sans-serif';
+                const pbY = pa.pullback === 'ALTA' ? pY(v.low) + 28 : pY(v.high) - 14;
+                ctx.fillText('PB', x - 6, pbY);
+                // Draw pullback level line
+                if (pa.pullback_nivel) {
+                    const pby = pY(pa.pullback_nivel);
+                    ctx.strokeStyle = pbColor;
+                    ctx.lineWidth = 1;
+                    ctx.setLineDash([3, 3]);
+                    ctx.beginPath(); ctx.moveTo(x - cW*3, pby); ctx.lineTo(x + cW*3, pby); ctx.stroke();
+                    ctx.setLineDash([]);
+                }
+            }
+            
+            // FALSO ROMPIMENTO marker - yellow warning
+            if (pa.falso_rompimento) {
+                ctx.fillStyle = '#facc15';
+                ctx.font = 'bold 14px sans-serif';
+                if (pa.falso_rompimento === 'TOPO') {
+                    ctx.fillText('FAKE', x - 12, pY(v.high) - 22);
+                    // X marker at the fake breakout level
+                    if (pa.falso_rompimento_nivel) {
+                        const fy = pY(pa.falso_rompimento_nivel);
+                        ctx.strokeStyle = '#facc15';
+                        ctx.lineWidth = 2;
+                        ctx.beginPath(); ctx.moveTo(x-6, fy-6); ctx.lineTo(x+6, fy+6); ctx.stroke();
+                        ctx.beginPath(); ctx.moveTo(x+6, fy-6); ctx.lineTo(x-6, fy+6); ctx.stroke();
+                    }
+                } else {
+                    ctx.fillText('FAKE', x - 12, pY(v.low) + 34);
+                    if (pa.falso_rompimento_nivel) {
+                        const fy = pY(pa.falso_rompimento_nivel);
+                        ctx.strokeStyle = '#facc15';
+                        ctx.lineWidth = 2;
+                        ctx.beginPath(); ctx.moveTo(x-6, fy-6); ctx.lineTo(x+6, fy+6); ctx.stroke();
+                        ctx.beginPath(); ctx.moveTo(x+6, fy-6); ctx.lineTo(x-6, fy+6); ctx.stroke();
+                    }
+                }
+            }
+            
+            // CAPTURA DE LIQUIDEZ marker - magenta $
+            if (pa.captura_liquidez) {
+                ctx.fillStyle = '#d946ef';
+                ctx.font = 'bold 16px sans-serif';
+                if (pa.captura_liquidez === 'COMPRA') {
+                    ctx.fillText('$LQ', x - 10, pY(v.low) + 32);
+                } else {
+                    ctx.fillText('$LQ', x - 10, pY(v.high) - 18);
+                }
+                // Wick highlight
+                if (pa.captura_liquidez_nivel) {
+                    const lqy = pY(pa.captura_liquidez_nivel);
+                    ctx.strokeStyle = '#d946ef';
+                    ctx.lineWidth = 1.5;
+                    ctx.setLineDash([2, 2]);
+                    ctx.beginPath(); ctx.moveTo(x - cW*2, lqy); ctx.lineTo(x + cW*2, lqy); ctx.stroke();
+                    ctx.setLineDash([]);
+                }
+            }
+            
+            // S/R TF SUPERIOR markers
+            if (pa.perto_sr_sup) {
+                const srColor = pa.perto_sr_sup.tipo === 'SUPORTE' ? '#22c55e' : '#ef4444';
+                ctx.fillStyle = srColor;
+                ctx.font = 'bold 11px sans-serif';
+                const srY = pa.perto_sr_sup.tipo === 'SUPORTE' ? pY(v.low) + 38 : pY(v.high) - 24;
+                ctx.fillText('TF+', x - 8, srY);
+            }
         });
         
         // LTA (Linha de Tendencia de Alta) / LTB (Linha de Tendencia de Baixa) - connect ascending lows
@@ -3686,6 +3762,40 @@ function simChartRender() {
             ctx.font = 'bold 14px sans-serif';
             ctx.fillStyle = '#ef4444';
             ctx.fillText('LTB', pad.l + 4, lp.y1 - 4);
+        }
+        
+        // S/R from TF Superior (drawn as thicker dashed lines)
+        const lastVela = d[d.length - 1];
+        const tfSr = (lastVela && lastVela.price_action) ? lastVela.price_action.sr_tf_superior : null;
+        if (tfSr) {
+            // Draw TF superior support levels
+            (tfSr.fundos || []).forEach(sr => {
+                if (sr >= minP && sr <= maxP) {
+                    const sy = pY(sr);
+                    ctx.strokeStyle = '#22c55e';
+                    ctx.lineWidth = 2.5;
+                    ctx.setLineDash([12, 6]);
+                    ctx.beginPath(); ctx.moveTo(pad.l, sy); ctx.lineTo(W - pad.r, sy); ctx.stroke();
+                    ctx.setLineDash([]);
+                    ctx.font = 'bold 13px sans-serif';
+                    ctx.fillStyle = '#22c55e';
+                    ctx.fillText('S(TF+) ' + sr.toFixed(0), W - pad.r - 110, sy - 4);
+                }
+            });
+            // Draw TF superior resistance levels
+            (tfSr.topos || []).forEach(sr => {
+                if (sr >= minP && sr <= maxP) {
+                    const ry = pY(sr);
+                    ctx.strokeStyle = '#ef4444';
+                    ctx.lineWidth = 2.5;
+                    ctx.setLineDash([12, 6]);
+                    ctx.beginPath(); ctx.moveTo(pad.l, ry); ctx.lineTo(W - pad.r, ry); ctx.stroke();
+                    ctx.setLineDash([]);
+                    ctx.font = 'bold 13px sans-serif';
+                    ctx.fillStyle = '#ef4444';
+                    ctx.fillText('R(TF+) ' + sr.toFixed(0), W - pad.r - 110, ry - 4);
+                }
+            });
         }
     }
     
@@ -3779,6 +3889,10 @@ function simChartRender() {
 }
 
 async function simRealAnalisar() {
+    // Block if market closed
+    const _mktOpen = simRealCheckMarket();
+    if (!_mktOpen) return;
+    
     const veredEl = document.getElementById('simRealVeredictoText');
     const veredSub = document.getElementById('simRealVeredictoSub');
     if (veredEl) { veredEl.textContent = 'ANALISANDO...'; veredEl.style.color = 'var(--accent-blue)'; }

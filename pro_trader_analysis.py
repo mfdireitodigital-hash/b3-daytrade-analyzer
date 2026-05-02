@@ -663,6 +663,174 @@ def _analisar_price_action(w, c, o, h, l, direcao, ativo) -> Dict:
                 result["detalhes"]["estrutura"] = "QUEBRA"
                 patterns_found.append("QUEBRA DE ESTRUTURA - mudança de direção possível")
     
+
+    # ===== PULLBACK ANALYSIS =====
+    if len(w) >= 15:
+        # Pullback = preço corrige contra tendência e depois retoma
+        # Detecta via EMAs: preço toca/cruza EMA e volta
+        ema9_vals = w['close'].ewm(span=9, adjust=False).mean().values
+        ema21_vals = w['close'].ewm(span=21, adjust=False).mean().values
+        
+        # Tendência definida por EMAs
+        ema_trend_up = float(ema9_vals[-1]) > float(ema21_vals[-1])
+        ema_trend_down = float(ema9_vals[-1]) < float(ema21_vals[-1])
+        
+        # Pullback de alta: tendência de alta, preço tocou/cruzou EMA21 e fechou acima
+        if ema_trend_up and len(lows) >= 3:
+            # Vela anterior tocou EMA21 (low <= ema21) e vela atual fechou acima EMA9
+            prev_touched_ema = float(lows[-2]) <= float(ema21_vals[-2]) * 1.001
+            curr_above_ema = c > float(ema9_vals[-1])
+            if prev_touched_ema and curr_above_ema:
+                result["detalhes"]["pullback"] = "ALTA"
+                result["detalhes"]["pullback_nivel"] = round(float(ema21_vals[-1]), 2)
+                if direcao == "COMPRA":
+                    patterns_found.append(f"PULLBACK DE ALTA na EMA21 ({round(float(ema21_vals[-1]),2)}) - retomou tendência")
+        
+        # Pullback de baixa: tendência de baixa, preço tocou/cruzou EMA21 e fechou abaixo
+        if ema_trend_down and len(highs) >= 3:
+            prev_touched_ema = float(highs[-2]) >= float(ema21_vals[-2]) * 0.999
+            curr_below_ema = c < float(ema9_vals[-1])
+            if prev_touched_ema and curr_below_ema:
+                result["detalhes"]["pullback"] = "BAIXA"
+                result["detalhes"]["pullback_nivel"] = round(float(ema21_vals[-1]), 2)
+                if direcao == "VENDA":
+                    patterns_found.append(f"PULLBACK DE BAIXA na EMA21 ({round(float(ema21_vals[-1]),2)}) - retomou tendência")
+        
+        # Pullback em Fibonacci (38.2% ou 50% ou 61.8%)
+        if len(w) >= 20:
+            recent_high = float(max(highs[-20:]))
+            recent_low = float(min(lows[-20:]))
+            fib_range = recent_high - recent_low
+            if fib_range > 0:
+                fib_382 = recent_high - fib_range * 0.382
+                fib_500 = recent_high - fib_range * 0.500
+                fib_618 = recent_high - fib_range * 0.618
+                
+                tolerance = fib_range * 0.02  # 2% tolerance
+                
+                if ema_trend_up and direcao == "COMPRA":
+                    for fib_name, fib_val in [("38.2%", fib_382), ("50%", fib_500), ("61.8%", fib_618)]:
+                        if abs(l - fib_val) < tolerance and c > o:
+                            patterns_found.append(f"Pullback em Fibo {fib_name} ({round(fib_val,2)}) - rejeitou e subiu")
+                            result["detalhes"]["pullback_fibo"] = fib_name
+                            break
+                
+                if ema_trend_down and direcao == "VENDA":
+                    fib_382_inv = recent_low + fib_range * 0.382
+                    fib_500_inv = recent_low + fib_range * 0.500
+                    fib_618_inv = recent_low + fib_range * 0.618
+                    for fib_name, fib_val in [("38.2%", fib_382_inv), ("50%", fib_500_inv), ("61.8%", fib_618_inv)]:
+                        if abs(h - fib_val) < tolerance and c < o:
+                            patterns_found.append(f"Pullback em Fibo {fib_name} ({round(fib_val,2)}) - rejeitou e caiu")
+                            result["detalhes"]["pullback_fibo"] = fib_name
+                            break
+    
+    # ===== FALSO ROMPIMENTO (Fakeout / Bull Trap / Bear Trap) =====
+    if len(w) >= 10 and len(closes) >= 5:
+        # Falso rompimento de TOPO: preço rompeu high anterior mas fechou ABAIXO
+        recent_highs = [float(x) for x in highs[-10:-1]]  # últimas 9 highs (sem a atual)
+        recent_lows = [float(x) for x in lows[-10:-1]]
+        
+        if recent_highs:
+            max_recent = max(recent_highs)
+            min_recent = min(recent_lows)
+            
+            # Bull Trap: rompeu topo mas fechou abaixo
+            if h > max_recent and c < max_recent and c < o:
+                result["detalhes"]["falso_rompimento"] = "TOPO"
+                result["detalhes"]["falso_rompimento_nivel"] = round(max_recent, 2)
+                if direcao == "VENDA":
+                    patterns_found.append(f"FALSO ROMPIMENTO DE TOPO (Bull Trap) em {round(max_recent,2)} - entrada de VENDA")
+                elif direcao == "COMPRA":
+                    result["motivos_contra"].append(f"CUIDADO: Possível Bull Trap em {round(max_recent,2)}")
+            
+            # Bear Trap: rompeu fundo mas fechou acima
+            if l < min_recent and c > min_recent and c > o:
+                result["detalhes"]["falso_rompimento"] = "FUNDO"
+                result["detalhes"]["falso_rompimento_nivel"] = round(min_recent, 2)
+                if direcao == "COMPRA":
+                    patterns_found.append(f"FALSO ROMPIMENTO DE FUNDO (Bear Trap) em {round(min_recent,2)} - entrada de COMPRA")
+                elif direcao == "VENDA":
+                    result["motivos_contra"].append(f"CUIDADO: Possível Bear Trap em {round(min_recent,2)}")
+    
+    # ===== CAPTURA DE LIQUIDEZ (Liquidity Sweep/Grab) =====
+    if len(w) >= 15:
+        # Captura = preço varre stops (abaixo de suporte ou acima de resistência) e volta rápido
+        # Conceito SMC: smart money captura liquidez dos retail traders
+        
+        # Encontra swing points recentes
+        sw_hi = []
+        sw_lo = []
+        for i in range(2, min(len(highs) - 1, 15)):
+            if highs[-(i+1)] > highs[-i] and highs[-(i+1)] > highs[-(i+2)]:
+                sw_hi.append(float(highs[-(i+1)]))
+            if lows[-(i+1)] < lows[-i] and lows[-(i+1)] < lows[-(i+2)]:
+                sw_lo.append(float(lows[-(i+1)]))
+        
+        if sw_lo:
+            # Captura de liquidez de baixo: wick violou fundo anterior mas corpo fechou acima
+            nearest_low = min(sw_lo)
+            if l < nearest_low and c > nearest_low and c > o:
+                result["detalhes"]["captura_liquidez"] = "COMPRA"
+                result["detalhes"]["captura_liquidez_nivel"] = round(nearest_low, 2)
+                if direcao == "COMPRA":
+                    patterns_found.append(f"CAPTURA DE LIQUIDEZ abaixo de {round(nearest_low,2)} - smart money comprando")
+        
+        if sw_hi:
+            # Captura de liquidez de cima: wick violou topo anterior mas corpo fechou abaixo
+            nearest_high = max(sw_hi)
+            if h > nearest_high and c < nearest_high and c < o:
+                result["detalhes"]["captura_liquidez"] = "VENDA"
+                result["detalhes"]["captura_liquidez_nivel"] = round(nearest_high, 2)
+                if direcao == "VENDA":
+                    patterns_found.append(f"CAPTURA DE LIQUIDEZ acima de {round(nearest_high,2)} - smart money vendendo")
+    
+    # ===== S/R EM TIMEFRAME SUPERIOR (usando janela maior) =====
+    if len(w) >= 50:
+        # Simula TF superior usando janelas de 30-50 candles (equivale a olhar H1 em M5)
+        tf_sup_highs = highs[-50:]
+        tf_sup_lows = lows[-50:]
+        tf_sup_closes = closes[-50:]
+        
+        # Agrupa em blocos de 6 candles (simula 30min com candles de 5min)
+        block_size = 6
+        tf_blocks_hi = []
+        tf_blocks_lo = []
+        for b in range(0, len(tf_sup_highs) - block_size + 1, block_size):
+            tf_blocks_hi.append(float(max(tf_sup_highs[b:b+block_size])))
+            tf_blocks_lo.append(float(min(tf_sup_lows[b:b+block_size])))
+        
+        # Swing points no TF superior
+        tf_swing_highs = []
+        tf_swing_lows = []
+        for i in range(1, len(tf_blocks_hi) - 1):
+            if tf_blocks_hi[i] > tf_blocks_hi[i-1] and tf_blocks_hi[i] > tf_blocks_hi[i+1]:
+                tf_swing_highs.append(tf_blocks_hi[i])
+            if tf_blocks_lo[i] < tf_blocks_lo[i-1] and tf_blocks_lo[i] < tf_blocks_lo[i+1]:
+                tf_swing_lows.append(tf_blocks_lo[i])
+        
+        if tf_swing_highs or tf_swing_lows:
+            result["detalhes"]["sr_tf_superior"] = {
+                "topos": [round(x, 2) for x in tf_swing_highs[-3:]],
+                "fundos": [round(x, 2) for x in tf_swing_lows[-3:]],
+            }
+            
+            # Verifica se preço está próximo de S/R do TF superior
+            atr_proxy = float(max(highs[-20:]) - min(lows[-20:])) / 10 if len(highs) >= 20 else 50
+            
+            for sr in tf_swing_lows:
+                if abs(c - sr) < atr_proxy:
+                    patterns_found.append(f"Próximo de SUPORTE TF superior ({round(sr,2)})")
+                    result["detalhes"]["perto_sr_sup"] = {"tipo": "SUPORTE", "nivel": round(sr, 2)}
+                    break
+            
+            for sr in tf_swing_highs:
+                if abs(c - sr) < atr_proxy:
+                    patterns_found.append(f"Próximo de RESISTÊNCIA TF superior ({round(sr,2)})")
+                    result["detalhes"]["perto_sr_sup"] = {"tipo": "RESISTÊNCIA", "nivel": round(sr, 2)}
+                    break
+
+
     # ===== RESULTADO =====
     if patterns_found:
         result["confirma"] = True
