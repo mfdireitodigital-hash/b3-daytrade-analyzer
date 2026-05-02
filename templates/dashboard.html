@@ -317,6 +317,98 @@
             .chart-container { height: 280px; }
             .contrato-selector { flex-wrap: wrap; }
         }
+        /* ===== MOBILE RESPONSIVO COMPLETO ===== */
+        @media (max-width: 768px) {
+            /* Simulador Real grid: 1 coluna no mobile */
+            #simRealGrid { grid-template-columns: 1fr !important; }
+            
+            /* Container mais estreito */
+            .pt-container { margin: 5px !important; padding: 0 !important; max-width: 100% !important; }
+            .pt-overlay .pt-container { max-width: 100% !important; }
+            
+            /* Header do simulador */
+            #simRealOverlay .pt-container > div:first-child { 
+                flex-wrap: wrap !important; 
+                gap: 6px !important;
+                padding: 8px !important;
+            }
+            
+            /* Botões WIN/WDO menores */
+            #simBtnWIN, #simBtnWDO { font-size: 10px !important; padding: 4px 8px !important; }
+            
+            /* Veredicto menor */
+            #simRealVeredictoText { font-size: 20px !important; }
+            
+            /* Chart: full width, scroll horizontal se preciso */
+            #simChartCanvas { 
+                height: 250px !important; 
+                min-width: 600px !important;
+            }
+            #simRsiCanvas { 
+                height: 60px !important;
+                min-width: 600px !important;
+            }
+            
+            /* Chart container com scroll horizontal */
+            .chart-scroll-wrapper {
+                overflow-x: auto !important;
+                -webkit-overflow-scrolling: touch !important;
+            }
+            
+            /* Toggle buttons do gráfico: wrap */
+            #simChartCanvas + div { flex-wrap: wrap !important; }
+            
+            /* Operações: texto menor */
+            #simRealOps { font-size: 10px !important; }
+            #simRealOps .btn { font-size: 10px !important; padding: 4px 10px !important; }
+            
+            /* Grid de operação: stack vertical */
+            #simRealOps > div > div[style*="grid-template-columns"] {
+                grid-template-columns: 1fr !important;
+            }
+            
+            /* Status bar: wrap */
+            #simRealStatus { flex-direction: column !important; gap: 4px !important; padding: 8px !important; }
+            
+            /* Performance summary: 2 colunas */
+            #simRealOps > div[style*="justify-content:space-around"] {
+                flex-wrap: wrap !important;
+                gap: 8px !important;
+            }
+            
+            /* Vela-by-vela table: scroll horizontal */
+            #simRealOps details > div { overflow-x: auto !important; }
+            
+            /* Escala labels menores */
+            #simRealEscala + div { font-size: 7px !important; }
+            
+            /* Treinamento grid */
+            .multi-tf-grid { grid-template-columns: repeat(3, 1fr) !important; }
+            .sinal-detail { grid-template-columns: 1fr !important; }
+            .pt-report-grid { grid-template-columns: 1fr 1fr !important; }
+            
+            /* Demo summary */
+            .demo-summary { grid-template-columns: 1fr 1fr !important; }
+            
+            /* Noticias panel */
+            .pt-container[style*="max-width:900px"] { max-width: 100% !important; margin: 5px !important; }
+        }
+        
+        @media (max-width: 480px) {
+            /* Extra small screens */
+            #simRealVeredictoText { font-size: 16px !important; }
+            #simRealGrid { gap: 4px !important; }
+            .pt-report-grid { grid-template-columns: 1fr !important; }
+            .multi-tf-grid { grid-template-columns: 1fr 1fr !important; }
+            
+            /* Chart buttons even smaller */
+            #simChartBtnEma, #simChartBtnVwap, #simChartBtnSr, #simChartBtnFib,
+            #simChartBtnVol, #simChartBtnPa, #simChartBtnOps {
+                font-size: 8px !important;
+                padding: 2px 4px !important;
+            }
+        }
+
     
         @keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:0.5;} }
         </style>
@@ -856,7 +948,7 @@
             </div>
             <!-- Confluencia -->
             <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:12px;">
-                <div style="font-size:11px;font-weight:700;color:var(--accent-green);text-transform:uppercase;margin-bottom:6px;">Confluencia (15 pontos)</div>
+                <div style="font-size:11px;font-weight:700;color:var(--accent-green);text-transform:uppercase;margin-bottom:6px;">Confluencia (7 fatores)</div>
                 <div id="simRealConf" style="font-size:11px;">--</div>
             </div>
             <!-- Noticias -->
@@ -875,7 +967,7 @@
         <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:12px;margin:8px 0;">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
                 <div style="font-size:11px;font-weight:700;color:var(--accent-blue);text-transform:uppercase;">Grafico de Velas + Indicadores</div>
-                <div style="display:flex;gap:4px;">
+                <div style="display:flex;gap:4px;flex-wrap:wrap;">
                     <button onclick="simChartToggle('ema')" id="simChartBtnEma" class="btn" style="font-size:9px;padding:2px 6px;background:rgba(59,130,246,0.2);color:#60a5fa;border:1px solid #3b82f6;">EMA</button>
                     <button onclick="simChartToggle('vwap')" id="simChartBtnVwap" class="btn" style="font-size:9px;padding:2px 6px;background:rgba(168,85,247,0.2);color:#a855f7;border:1px solid #8b5cf6;">VWAP</button>
                     <button onclick="simChartToggle('sr')" id="simChartBtnSr" class="btn" style="font-size:9px;padding:2px 6px;background:rgba(239,68,68,0.2);color:#fca5a5;border:1px solid #ef4444;">S/R</button>
@@ -885,8 +977,8 @@
                     <button onclick="simChartToggle('ops')" id="simChartBtnOps" class="btn" style="font-size:9px;padding:2px 6px;background:rgba(34,197,94,0.2);color:#22c55e;border:1px solid #22c55e;">ENTRADAS</button>
                 </div>
             </div>
-            <canvas id="simChartCanvas" width="900" height="320" style="width:100%;height:320px;border-radius:4px;background:#0a0a0a;"></canvas>
-            <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:6px;font-size:9px;color:var(--text-muted);">
+            <div class="chart-scroll-wrapper" style="overflow-x:auto;-webkit-overflow-scrolling:touch;"><canvas id="simChartCanvas" width="900" height="320" style="width:100%;height:320px;border-radius:4px;background:#0a0a0a;min-width:600px;"></canvas></div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px;font-size:9px;color:var(--text-muted);">
                 <span><span style="color:#3b82f6;">━━</span> EMA9</span>
                 <span><span style="color:#f59e0b;">━━</span> EMA21</span>
                 <span><span style="color:#a855f7;">╌╌</span> VWAP</span>
@@ -902,7 +994,7 @@
             </div>
             <div style="margin-top:6px;">
                 <div style="font-size:9px;font-weight:700;color:var(--text-muted);margin-bottom:4px;">RSI</div>
-                <canvas id="simRsiCanvas" width="900" height="80" style="width:100%;height:80px;border-radius:4px;background:#0a0a0a;"></canvas>
+                <div class="chart-scroll-wrapper" style="overflow-x:auto;-webkit-overflow-scrolling:touch;"><canvas id="simRsiCanvas" width="900" height="80" style="width:100%;height:80px;border-radius:4px;background:#0a0a0a;min-width:600px;"></canvas></div>
             </div>
         </div>
 
@@ -1324,7 +1416,7 @@ async function ptCarregarMelhoresEntradas() {
         h += '<div style="display:flex;gap:1px;height:20px;border-radius:4px;overflow:hidden;">';
         data.velas.forEach(v => {
             const c2 = v.decisao==='OPERAR'?'#22c55e':v.score>=3?'#ca8a04':'rgba(239,68,68,0.4)';
-            h += '<div title="' + v.hora + ' Score:' + v.score + '/15 ' + v.decisao + '" style="flex:1;background:' + c2 + ';min-width:2px;cursor:pointer;"></div>';
+            h += '<div title="' + v.hora + ' Score:' + v.score + '/7 ' + v.decisao + '" style="flex:1;background:' + c2 + ';min-width:2px;cursor:pointer;"></div>';
         });
         h += '</div><div style="display:flex;justify-content:space-between;font-size:9px;color:var(--text-muted);margin-top:2px;"><span>09:00</span><span>11:00</span><span>13:00</span><span>15:00</span><span>17:00</span></div>';
         
@@ -2767,7 +2859,7 @@ async function simInit() {
 // =====================================================
 async function carregarSinaisIA() {
     const container = document.getElementById('sinaisIAContent');
-    container.innerHTML = '<div style="text-align:center;padding:12px;color:var(--text-muted);font-size:12px;">Analisando com Triple Screen + Confluencia 15 pontos...</div>';
+    container.innerHTML = '<div style="text-align:center;padding:12px;color:var(--text-muted);font-size:12px;">Analisando com Triple Screen + Confluencia 7 fatores...</div>';
     try {
         const res = await fetch('/api/sinais-ia?ativo=' + ptState.ativo);
         const data = await res.json();
@@ -3716,13 +3808,23 @@ async function simRealAnalisar() {
             var _vb = document.getElementById('simRealVeredicto'); if(_vb) _vb.style.borderColor = perf.total_rs >= 0 ? '#22c55e' : '#ef4444';
         } else {
             if(veredEl) { veredEl.innerHTML = 'SEM OPORTUNIDADES CLARAS'; veredEl.style.color = '#ca8a04'; }
-            if(veredSub) { veredSub.textContent = 'Nenhum setup atingiu score 5+ neste pregao. Dia de ficar de fora.'; }
+            if(veredSub) { veredSub.textContent = 'Nenhum setup atingiu confluencia 4/7 neste pregao. Dia de ficar de fora.'; }
             var _vb2 = document.getElementById('simRealVeredicto'); if(_vb2) _vb2.style.borderColor = '#ca8a04';
         }
         
         // ---- TRIPLE SCREEN (ultimo estado) ----
         const lv = velas[velas.length - 1];
-        let tsH = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;">';
+        const tm = simRes.tend_macro || {};
+        let tsH = '';
+        if (tm.tendencia) {
+            const tmCor = tm.tendencia==='ALTA'?'#22c55e':tm.tendencia==='BAIXA'?'#ef4444':'#888';
+            tsH += '<div style="background:' + tmCor + '15;border:1px solid ' + tmCor + '40;border-radius:6px;padding:6px 8px;margin-bottom:6px;font-size:10px;">';
+            tsH += '<span style="font-weight:800;color:' + tmCor + ';">MACRO: ' + tm.tendencia + '</span>';
+            tsH += ' <span style="color:var(--text-muted);">(forca ' + tm.forca + '/3)</span>';
+            tsH += '<div style="font-size:9px;color:var(--text-muted);margin-top:2px;">' + (tm.descricao||'') + '</div>';
+            tsH += '</div>';
+        }
+        tsH += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;">';
         const items = [
             ['Tendencia', lv.tendencia, lv.tendencia==='ALTA'?'#22c55e':lv.tendencia==='BAIXA'?'#ef4444':'#888'],
             ['RSI', lv.rsi, lv.rsi<30?'#22c55e':lv.rsi>70?'#ef4444':'#888'],
@@ -3740,7 +3842,7 @@ async function simRealAnalisar() {
         confH += '<div style="display:flex;gap:1px;height:24px;border-radius:4px;overflow:hidden;">';
         velas.forEach(v => {
             const c2 = v.decisao==='OPERAR'?'#22c55e':v.score>=3?'#ca8a04':'rgba(239,68,68,0.4)';
-            confH += '<div title="' + v.hora + ' | Score:' + v.score + '/15 | ' + v.decisao + '" style="flex:1;background:' + c2 + ';min-width:2px;cursor:pointer;"></div>';
+            confH += '<div title="' + v.hora + ' | Score:' + v.score + '/7 | ' + v.decisao + '" style="flex:1;background:' + c2 + ';min-width:2px;cursor:pointer;"></div>';
         });
         confH += '</div><div style="display:flex;justify-content:space-between;font-size:9px;color:var(--text-muted);margin-top:2px;"><span>09:00</span><span>11:00</span><span>13:00</span><span>15:00</span><span>17:00</span></div>';
         document.getElementById('simRealConf').innerHTML = confH;
@@ -3839,7 +3941,7 @@ async function simRealAnalisar() {
                 oH += '<span style="background:rgba(255,255,255,0.05);padding:2px 6px;border-radius:3px;">Stop: ' + op.stop_pts + 'pts</span>';
                 oH += '<span style="background:rgba(255,255,255,0.05);padding:2px 6px;border-radius:3px;">Alvo: ' + op.alvo_pts + 'pts</span>';
                 oH += '<span style="background:rgba(255,255,255,0.05);padding:2px 6px;border-radius:3px;">R:R ' + op.rr + '</span>';
-                oH += '<span style="background:rgba(255,255,255,0.05);padding:2px 6px;border-radius:3px;">Confianca: ' + op.confianca + '/5 ' + op.conf_label + '</span>';
+                oH += '<span style="background:rgba(255,255,255,0.05);padding:2px 6px;border-radius:3px;">Confianca: ' + op.conf_label + ' (' + op.score + '/7)' + '</span>';
                 oH += '<span style="background:rgba(255,255,255,0.05);padding:2px 6px;border-radius:3px;">' + op.velas_na_op + ' velas</span>';
                 if (op.slippage) { oH += '<span style="background:rgba(239,68,68,0.1);color:#fca5a5;padding:2px 6px;border-radius:3px;">Slippage: ' + op.slippage + 'pts</span>'; }
                 if (op.custo_pts) { oH += '<span style="background:rgba(239,68,68,0.1);color:#fca5a5;padding:2px 6px;border-radius:3px;">Custo: ' + op.custo_pts + 'pts</span>'; }
@@ -3885,7 +3987,7 @@ async function simRealAnalisar() {
             oH += '<div style="text-align:center;"><div style="font-size:9px;color:var(--text-muted);">Sessoes</div><div style="font-size:18px;font-weight:800;color:#a855f7;">' + ap.total_sessoes + '</div></div>';
             oH += '<div style="text-align:center;"><div style="font-size:9px;color:var(--text-muted);">Total Ops</div><div style="font-size:18px;font-weight:800;">' + ap.total_operacoes + '</div></div>';
             oH += '<div style="text-align:center;"><div style="font-size:9px;color:var(--text-muted);">WR Global</div><div style="font-size:18px;font-weight:800;color:' + (ap.win_rate_global>=60?'#22c55e':'#ca8a04') + ';">' + ap.win_rate_global + '%</div></div>';
-            oH += '<div style="text-align:center;"><div style="font-size:9px;color:var(--text-muted);">Score Min</div><div style="font-size:18px;font-weight:800;color:#60a5fa;">' + ap.score_minimo + '</div></div>';
+            oH += '<div style="text-align:center;"><div style="font-size:9px;color:var(--text-muted);">Score Min</div><div style="font-size:18px;font-weight:800;color:#60a5fa;">' + (ap.memoria_erros_total||0) + '</div></div>';
             oH += '<div style="text-align:center;"><div style="font-size:9px;color:var(--text-muted);">P&L Total</div><div style="font-size:18px;font-weight:800;color:' + (ap.total_rs>=0?'#22c55e':'#ef4444') + ';">R$ ' + ap.total_rs.toFixed(2) + '</div></div>';
             oH += '</div>';
             
@@ -3901,21 +4003,25 @@ async function simRealAnalisar() {
                 oH += '</div>';
             }
             
-            // Insights
-            if (ap.insights && ap.insights.length > 0) {
-                oH += '<div style="font-size:10px;font-weight:700;color:#a855f7;margin:8px 0 4px;">INSIGHTS (aprendizados):</div>';
-                ap.insights.slice(-5).forEach(ins => {
-                    const corIns = ins.tipo === 'POSITIVO' ? '#22c55e' : ins.tipo === 'ALERTA' ? '#ef4444' : '#60a5fa';
-                    oH += '<div style="font-size:9px;color:' + corIns + ';margin:2px 0;">• [' + ins.tipo + '] ' + ins.mensagem + '</div>';
+            // Regras Aprendidas
+            if (ap.regras_aprendidas && ap.regras_aprendidas.length > 0) {
+                oH += '<div style="font-size:10px;font-weight:700;color:#a855f7;margin:8px 0 4px;">REGRAS APRENDIDAS (auto-geradas):</div>';
+                ap.regras_aprendidas.slice(-5).forEach(regra => {
+                    const corR = regra.tipo === 'FAVORAVEL' ? '#22c55e' : '#ef4444';
+                    oH += '<div style="font-size:9px;color:' + corR + ';margin:2px 0;">• [' + regra.tipo + '] ' + regra.descricao + '</div>';
                 });
             }
+            // Evolução
+            if (ap.evolucao && ap.evolucao.length > 0) {
+                const lastEv = ap.evolucao[ap.evolucao.length - 1];
+                oH += '<div style="font-size:10px;font-weight:700;color:#a855f7;margin:8px 0 4px;">EVOLUÇÃO:</div>';
+                oH += '<div style="font-size:9px;color:var(--text-muted);">WR Global: ' + lastEv.win_rate_global + '% | Erros na memória: ' + lastEv.total_erros_memoria + ' | Regras ativas: ' + lastEv.regras_ativas + '</div>';
+            }
             
-            // Livros estudados
-            if (ap.livros_estudados && ap.livros_estudados.length > 0) {
-                oH += '<div style="font-size:10px;font-weight:700;color:#a855f7;margin:8px 0 4px;">LIVROS ESTUDADOS:</div>';
-                ap.livros_estudados.forEach(livro => {
-                    oH += '<div style="font-size:9px;color:var(--text-muted);margin:2px 0;">📚 ' + livro.titulo + ' (' + livro.autor + ') - ' + livro.conceitos.length + ' conceitos</div>';
-                });
+            // Memória de erros
+            if (ap.memoria_erros_total > 0) {
+                oH += '<div style="font-size:10px;font-weight:700;color:#a855f7;margin:8px 0 4px;">MEMORIA DE ERROS: ' + ap.memoria_erros_total + ' erros registrados</div>';
+                oH += '<div style="font-size:9px;color:var(--text-muted);">A AI compara cada nova entrada com erros passados (similaridade >= 70% = alerta)</div>';
             }
             
             oH += '</div>';
