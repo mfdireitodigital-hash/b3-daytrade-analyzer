@@ -1,39 +1,57 @@
 """
-B3 Day Trade Analyzer - Provedor de Dados v4.0
-Multi-source: TradingView (futuro real) + yfinance (candles) + HG Brasil (fallback).
+B3 Day Trade Analyzer - Provedor de Dados v5.0 (Profit API + yfinance)
+Sistema híbrido otimizado:
+- Profit API Quote: preço real-time preciso (BVSP.INDX / USDBRL.FOREX)
+- Profit API Economic Calendar: calendário econômico para Notícias de Impacto
+- yfinance: candles OHLCV históricos 5min (^BVSP / BRL=X) - dados recentes grátis
 
-Estratégia de preço tempo real:
-0. TradingView Scanner API: preço real do contrato futuro (WIN1!/WDO1!)
-1. HG Brasil + Basis estimado: calcula futuro a partir do spot
-2. HG Brasil spot puro: último fallback
-
-Candles OHLCV: yfinance (^BVSP / BRL=X) com delay ~15min.
-Rolagem automática de contratos B3 (WIN/WDO) por mês.
-Filtro estrito de horário B3: 09:00-18:00 BRT (UTC-3).
+Auth Profit: query param ?token=API_KEY
 """
 
 import pandas as pd
 import numpy as np
-import yfinance as yf
 import httpx
 import os
 import json
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 import logging
-import re
 
 logger = logging.getLogger(__name__)
 
 BRT = timezone(timedelta(hours=-3))
+
+# ========================
+# Configuração Profit API
+# ========================
+PROFIT_BASE_URL = "https://api.profit.com"
+PROFIT_API_TOKEN = os.getenv("PROFIT_API_TOKEN", "")
+
+# Tickers na Profit API
+PROFIT_QUOTE_TICKERS = {
+    "WIN": "BVSP.INDX",
+    "WDO": "USDBRL.FOREX",
+}
 
 # Mapeamento de meses B3
 MESES_B3 = {
     1: "F", 2: "G", 3: "H", 4: "J", 5: "K", 6: "M",
     7: "N", 8: "Q", 9: "U", 10: "V", 11: "X", 12: "Z"
 }
+VENCIMENTOS_WIN = [2, 4, 6, 8, 10, 12]
 
-VENCIMENTOS_WIN = [2, 4, 6, 8, 10, 12]  # Meses pares
+# yfinance config
+YFINANCE_TICKERS = {
+    "WIN": "^BVSP",
+    "WDO": "BRL=X",
+}
+TIMEFRAME_MAP = {
+    "5m": {"interval": "5m", "period": "5d"},
+    "15m": {"interval": "15m", "period": "5d"},
+    "1h": {"interval": "1h", "period": "1mo"},
+    "4h": {"interval": "1h", "period": "3mo"},
+    "1d": {"interval": "1d", "period": "6mo"},
+}
 
 
 def obter_contrato_vigente(ativo: str) -> dict:
@@ -57,6 +75,7 @@ def obter_contrato_vigente(ativo: str) -> dict:
         ticker_b3 = f"WIN{letra}{ano}"
         return {
             "ticker_b3": ticker_b3,
+            "profit_quote": PROFIT_QUOTE_TICKERS["WIN"],
             "yfinance": "^BVSP",
             "nome": f"Mini-Índice ({ticker_b3})",
             "tick": 5,
@@ -77,6 +96,7 @@ def obter_contrato_vigente(ativo: str) -> dict:
         ticker_b3 = f"WDO{letra}{proximo_ano}"
         return {
             "ticker_b3": ticker_b3,
+            "profit_quote": PROFIT_QUOTE_TICKERS["WDO"],
             "yfinance": "BRL=X",
             "nome": f"Mini-Dólar ({ticker_b3})",
             "tick": 0.5,
@@ -85,194 +105,126 @@ def obter_contrato_vigente(ativo: str) -> dict:
             "vencimento_mes": proximo_mes,
             "vencimento_ano": 2000 + proximo_ano,
         }
-    return {"ticker_b3": ativo, "yfinance": ativo, "nome": ativo, "tick": 1, "valor_tick": 1.0, "contrato": ativo}
-
-
-# Timeframes para yfinance
-TIMEFRAME_MAP = {
-    "5m": {"interval": "5m", "period": "5d"},
-    "15m": {"interval": "15m", "period": "5d"},
-    "1h": {"interval": "1h", "period": "1mo"},
-    "4h": {"interval": "1h", "period": "3mo"},
-    "1d": {"interval": "1d", "period": "6mo"},
-}
-
-# URLs Investing.com para preço real dos futuros B3
-INVESTING_URLS = {
-    "WIN": "https://br.investing.com/indices/bovespa-win-futures",
-    "WDO": "https://br.investing.com/currencies/usd-brl-mini-futures",
-}
-INVESTING_HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-    "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
-}
-
-
-# Cálculo do basis (prêmio do futuro) para quando scraping falha
-def calcular_preco_futuro(preco_spot: float, ativo: str) -> float:
-    """
-    Estima o preço do contrato futuro a partir do spot.
-    WIN: Spot * (1 + (SELIC - DivYield) * dias_uteis/252)
-    WDO: Spot * 1000 * (1 + cupom_cambial)
-    """
-    from datetime import date
-    hoje = date.today()
-    
-    if ativo == "WIN":
-        # Vencimento WINM26 = ~3a quarta de junho = 17/jun/2026
-        # Pegar o mês de vencimento do contrato vigente
-        vencimentos_win = {2: 18, 4: 15, 6: 17, 8: 19, 10: 14, 12: 16}  # datas aprox 2026
-        mes_atual = hoje.month
-        ano = hoje.year
-        
-        # Achar próximo vencimento
-        for m in [2, 4, 6, 8, 10, 12]:
-            if m >= mes_atual:
-                venc_mes = m
-                break
-        else:
-            venc_mes = 2
-            ano += 1
-        
-        dia_venc = vencimentos_win.get(venc_mes, 17)
-        try:
-            vencimento = date(ano, venc_mes, dia_venc)
-        except:
-            vencimento = date(ano, venc_mes, 15)
-        
-        dias_corridos = max(1, (vencimento - hoje).days)
-        dias_uteis = max(1, int(dias_corridos * 5 / 7))
-        
-        # SELIC 14.25% - Dividend yield ~3.5% = ~10.75% net
-        taxa_net = 0.1075
-        taxa_periodo = taxa_net * dias_uteis / 252
-        return round(preco_spot * (1 + taxa_periodo), 2)
-    
-    elif ativo == "WDO":
-        # Mini-dólar: USD/BRL spot * 1000 com cupom cambial (~1% ao ano)
-        # O prêmio é pequeno, tipicamente 0.3-1.0% acima do spot
-        return round(preco_spot * 1000 * 1.005, 1)
-    
-    return preco_spot
+    return {"ticker_b3": ativo, "profit_quote": ativo, "yfinance": ativo,
+            "nome": ativo, "tick": 1, "valor_tick": 1.0, "contrato": ativo}
 
 
 class DataProvider:
-    """Provedor de dados multi-source para B3"""
+    """Provedor de dados — Profit API (quote/calendar) + yfinance (candles)"""
 
     def __init__(self, source: str = "yfinance"):
         self.source = source
         self.cache = {}
-        self.cache_ttl = 60  # segundos
-        self.bridge_url = os.getenv("BRIDGE_URL", "http://localhost:8081")
-        self.hg_api_key = os.getenv("HG_API_KEY", "demo")
+        self.cache_ttl = 60
+        self.profit_token = PROFIT_API_TOKEN
         self.contratos = {}
-        self.preco_realtime = {}  # Cache de preço tempo real do HG Brasil
+        self.preco_realtime = {}
         for ativo in ["WIN", "WDO"]:
             self.contratos[ativo] = obter_contrato_vigente(ativo)
             logger.info(f"Contrato vigente {ativo}: {self.contratos[ativo]['ticker_b3']}")
 
+        if self.profit_token:
+            logger.info(f"Profit API configurada (quote + calendar). Token: {self.profit_token[:8]}...")
+        else:
+            logger.warning("PROFIT_API_TOKEN não configurado. Usando fallbacks para preço real-time.")
+
     def get_contrato_info(self, ativo: str) -> dict:
         return self.contratos.get(ativo, obter_contrato_vigente(ativo))
 
+    # ========================================
+    # PROFIT API — Quote (Preço Real-time)
+    # ========================================
     async def obter_preco_realtime(self) -> dict:
         """
-        Obtém preço em tempo real dos FUTUROS B3 (WIN/WDO).
-        Estratégia multi-source com fallback:
-        0. TradingView Scanner API (preço real do contrato futuro contínuo)
-        1. HG Brasil + Basis estimado (fallback)
-        2. HG Brasil spot puro (último fallback)
+        Obtém preço em tempo real.
+        Prioridade: Profit API Quote > TradingView Scanner > HG Brasil
         """
         precos = {}
 
-        # === SOURCE 0: TradingView Scanner API (PRINCIPAL - preço real do futuro) ===
-        try:
-            async with httpx.AsyncClient(timeout=10) as client:
-                resp = await client.post(
-                    "https://scanner.tradingview.com/futures/scan",
-                    headers={"Content-Type": "application/json"},
-                    json={
-                        "symbols": {"tickers": ["BMFBOVESPA:WIN1!", "BMFBOVESPA:WDO1!"]},
-                        "columns": ["close", "change", "change_abs", "high", "low", "open", "volume"]
-                    }
-                )
-                if resp.status_code == 200:
-                    data = resp.json()
-                    for item in data.get("data", []):
-                        ticker = item["s"]  # e.g. "BMFBOVESPA:WIN1!"
-                        cols = item["d"]    # [close, change%, change_abs, high, low, open, volume]
-                        if "WIN" in ticker:
-                            precos["WIN"] = {
-                                "preco": float(cols[0]),
-                                "variacao": round(float(cols[1]), 2),
-                                "variacao_pts": float(cols[2]),
-                                "high": float(cols[3]),
-                                "low": float(cols[4]),
-                                "open": float(cols[5]),
-                                "volume": int(cols[6]) if cols[6] else 0,
-                                "fonte": "TradingView (futuro real)",
-                            }
-                            logger.info(f"TradingView WIN: {cols[0]} ({cols[1]:+.2f}%)")
-                        elif "WDO" in ticker:
-                            precos["WDO"] = {
-                                "preco": float(cols[0]),
-                                "variacao": round(float(cols[1]), 2),
-                                "variacao_pts": round(float(cols[2]), 1),
-                                "high": float(cols[3]),
-                                "low": float(cols[4]),
-                                "open": float(cols[5]),
-                                "volume": int(cols[6]) if cols[6] else 0,
-                                "fonte": "TradingView (futuro real)",
-                            }
-                            logger.info(f"TradingView WDO: {cols[0]} ({cols[1]:+.2f}%)")
-        except Exception as e:
-            logger.warning(f"Erro TradingView Scanner: {e}")
+        # === SOURCE 0: Profit API Quote (PRINCIPAL — mais preciso) ===
+        if self.profit_token:
+            for ativo in ["WIN", "WDO"]:
+                ticker = PROFIT_QUOTE_TICKERS.get(ativo)
+                if not ticker:
+                    continue
+                try:
+                    url = f"{PROFIT_BASE_URL}/data-api/market-data/quote/{ticker}"
+                    async with httpx.AsyncClient(timeout=10) as client:
+                        resp = await client.get(url, params={"token": self.profit_token})
+                        if resp.status_code == 200:
+                            data = resp.json()
+                            price = data.get("price")
+                            if price:
+                                # WDO: USDBRL.FOREX retorna ~5.65, precisamos * 1000 para pontos
+                                preco_final = float(price) * 1000 if ativo == "WDO" else float(price)
+                                
+                                ohlc = data.get("ohlc_week", {})
+                                precos[ativo] = {
+                                    "preco": preco_final,
+                                    "variacao": round(float(data.get("daily_percentage_change", 0)), 2),
+                                    "variacao_pts": float(data.get("daily_price_change", 0)) * (1000 if ativo == "WDO" else 1),
+                                    "high": float(ohlc.get("high", price)) * (1000 if ativo == "WDO" else 1),
+                                    "low": float(ohlc.get("low", price)) * (1000 if ativo == "WDO" else 1),
+                                    "open": float(ohlc.get("open", price)) * (1000 if ativo == "WDO" else 1),
+                                    "volume": int(data.get("volume", 0)),
+                                    "fonte": "Profit API (real-time)",
+                                }
+                                logger.info(f"Profit Quote {ativo} ({ticker}): {preco_final}")
+                except Exception as e:
+                    logger.warning(f"Erro Profit quote {ativo}: {e}")
 
-        # === SOURCE 1: HG Brasil + Basis (fallback) ===
+        # === SOURCE 1: TradingView Scanner API (fallback) ===
         ativos_faltando = [a for a in ["WIN", "WDO"] if a not in precos]
         if ativos_faltando:
             try:
-                async with httpx.AsyncClient(timeout=8) as client:
-                    resp = await client.get(
-                        "https://api.hgbrasil.com/finance",
-                        params={"format": "json", "key": self.hg_api_key}
+                async with httpx.AsyncClient(timeout=10) as client:
+                    resp = await client.post(
+                        "https://scanner.tradingview.com/futures/scan",
+                        headers={"Content-Type": "application/json"},
+                        json={
+                            "symbols": {"tickers": ["BMFBOVESPA:WIN1!", "BMFBOVESPA:WDO1!"]},
+                            "columns": ["close", "change", "change_abs", "high", "low", "open", "volume"]
+                        }
                     )
                     if resp.status_code == 200:
                         data = resp.json()
-                        results = data.get("results", {})
-                        if "WIN" in ativos_faltando:
-                            ibov = results.get("stocks", {}).get("IBOVESPA", {})
-                            if ibov and ibov.get("points"):
-                                spot = float(ibov["points"])
-                                futuro_est = calcular_preco_futuro(spot, "WIN")
+                        for item in data.get("data", []):
+                            ticker = item["s"]
+                            cols = item["d"]
+                            if "WIN" in ticker and "WIN" in ativos_faltando:
                                 precos["WIN"] = {
-                                    "preco": futuro_est,
-                                    "variacao": float(ibov.get("variation", 0)),
-                                    "fonte": "HG Brasil + Basis estimado",
+                                    "preco": float(cols[0]),
+                                    "variacao": round(float(cols[1]), 2),
+                                    "variacao_pts": float(cols[2]),
+                                    "high": float(cols[3]),
+                                    "low": float(cols[4]),
+                                    "open": float(cols[5]),
+                                    "volume": int(cols[6]) if cols[6] else 0,
+                                    "fonte": "TradingView (futuro real)",
                                 }
-                                logger.info(f"Basis WIN: spot={spot} -> futuro={futuro_est}")
-                        if "WDO" in ativos_faltando:
-                            usd = results.get("currencies", {}).get("USD", {})
-                            if usd and usd.get("buy"):
-                                spot = float(usd["buy"])
-                                futuro_est = calcular_preco_futuro(spot, "WDO")
+                            elif "WDO" in ticker and "WDO" in ativos_faltando:
                                 precos["WDO"] = {
-                                    "preco": futuro_est,
-                                    "variacao": float(usd.get("variation", 0)),
-                                    "fonte": "HG Brasil + Basis estimado",
+                                    "preco": float(cols[0]),
+                                    "variacao": round(float(cols[1]), 2),
+                                    "variacao_pts": round(float(cols[2]), 1),
+                                    "high": float(cols[3]),
+                                    "low": float(cols[4]),
+                                    "open": float(cols[5]),
+                                    "volume": int(cols[6]) if cols[6] else 0,
+                                    "fonte": "TradingView (futuro real)",
                                 }
-                                logger.info(f"Basis WDO: spot={spot} -> futuro={futuro_est}")
             except Exception as e:
-                logger.error(f"Erro HG Brasil + Basis: {e}")
+                logger.warning(f"Erro TradingView Scanner: {e}")
 
-        # === SOURCE 2: HG Brasil spot puro (último fallback) ===
+        # === SOURCE 2: HG Brasil (último fallback) ===
         ativos_faltando = [a for a in ["WIN", "WDO"] if a not in precos]
         if ativos_faltando:
             try:
+                hg_key = os.getenv("HG_API_KEY", "demo")
                 async with httpx.AsyncClient(timeout=8) as client:
                     resp = await client.get(
                         "https://api.hgbrasil.com/finance",
-                        params={"format": "json", "key": self.hg_api_key}
+                        params={"format": "json", "key": hg_key}
                     )
                     if resp.status_code == 200:
                         data = resp.json()
@@ -303,6 +255,53 @@ class DataProvider:
 
         return self.preco_realtime
 
+    # ========================================
+    # PROFIT API — Economic Calendar
+    # ========================================
+    async def obter_calendario_economico(self, dias: int = 7) -> list:
+        """Obtém calendário econômico da Profit API para Notícias de Impacto"""
+        if not self.profit_token:
+            return []
+
+        eventos = []
+        try:
+            # Buscar eventos forex (inclui todos os macro: payroll, FOMC, CPI, etc)
+            end_ts = int(datetime.now().timestamp())
+            start_ts = end_ts - (dias * 86400)
+
+            async with httpx.AsyncClient(timeout=15) as client:
+                resp = await client.get(
+                    f"{PROFIT_BASE_URL}/data-api/economic_calendar/forex",
+                    params={
+                        "token": self.profit_token,
+                        "start_date": start_ts,
+                        "end_date": end_ts + 86400,  # +1 dia para pegar eventos futuros
+                        "limit": 100,
+                    }
+                )
+                if resp.status_code == 200:
+                    data = resp.json()
+                    if isinstance(data, list):
+                        for ev in data:
+                            eventos.append({
+                                "nome": ev.get("name", ""),
+                                "pais": ev.get("country_iso", ""),
+                                "moeda": ev.get("currency", ""),
+                                "hora": ev.get("time", 0),
+                                "impacto": ev.get("impact", "low"),
+                                "atual": ev.get("actual"),
+                                "estimativa": ev.get("estimate"),
+                                "anterior": ev.get("previous"),
+                            })
+                        logger.info(f"Profit Calendar: {len(eventos)} eventos")
+        except Exception as e:
+            logger.error(f"Erro Profit Calendar: {e}")
+
+        return eventos
+
+    # ========================================
+    # Interface Principal — obter_dados (yfinance)
+    # ========================================
     async def obter_candles_json(self, ativo: str, timeframe: str) -> list:
         """Retorna candles em formato JSON para gráficos frontend"""
         dados = await self.obter_dados(ativo, timeframe)
@@ -311,12 +310,10 @@ class DataProvider:
 
         candles = []
         for idx, row in dados.iterrows():
-            # Converter timestamp para ISO com timezone
             if hasattr(idx, 'isoformat'):
                 ts = idx.isoformat()
             else:
                 ts = str(idx)
-
             candles.append({
                 "time": ts,
                 "open": round(float(row["open"]), 2),
@@ -328,7 +325,7 @@ class DataProvider:
         return candles
 
     async def obter_dados(self, ativo: str, timeframe: str) -> pd.DataFrame:
-        """Obtém dados de mercado com fallback multi-source"""
+        """Obtém dados OHLCV via yfinance (candles históricos)"""
         cache_key = f"{ativo}_{timeframe}"
         if cache_key in self.cache:
             cached_time, cached_data = self.cache[cache_key]
@@ -337,15 +334,11 @@ class DataProvider:
 
         dados = None
         try:
-            if self.source == "bridge":
-                dados = await self._obter_bridge(ativo, timeframe)
-            else:
-                dados = self._obter_yfinance(ativo, timeframe)
+            dados = self._obter_yfinance(ativo, timeframe)
         except Exception as e:
             logger.error(f"Erro ao obter dados {ativo}/{timeframe}: {e}")
 
         if dados is not None and len(dados) > 0:
-            # Filtrar horário B3 para intraday
             if timeframe in ["5m", "15m", "1h"]:
                 dados = self._filtrar_horario_b3(dados)
 
@@ -364,9 +357,10 @@ class DataProvider:
         return self._gerar_dados_simulados(ativo, timeframe)
 
     def _obter_yfinance(self, ativo: str, timeframe: str) -> pd.DataFrame:
-        """Obtém dados via Yahoo Finance - yf.download()"""
-        contrato = self.contratos.get(ativo, {})
-        symbol = contrato.get("yfinance", "^BVSP" if ativo == "WIN" else "BRL=X")
+        """Obtém dados via Yahoo Finance"""
+        import yfinance as yf
+
+        symbol = YFINANCE_TICKERS.get(ativo, "^BVSP" if ativo == "WIN" else "BRL=X")
         tf_config = TIMEFRAME_MAP.get(timeframe, TIMEFRAME_MAP["5m"])
         is_wdo = (ativo == "WDO")
 
@@ -383,12 +377,10 @@ class DataProvider:
                 logger.warning(f"yfinance retornou vazio para {symbol}")
                 return None
 
-            # Normalizar colunas (MultiIndex)
             if hasattr(dados.columns, 'nlevels') and dados.columns.nlevels > 1:
                 dados.columns = dados.columns.get_level_values(0)
             dados.columns = [c.lower() for c in dados.columns]
 
-            # Remover colunas extras
             for col in ['adj close', 'dividends', 'stock splits', 'capital gains']:
                 if col in dados.columns:
                     dados = dados.drop(columns=[col])
@@ -399,7 +391,6 @@ class DataProvider:
                     if col in dados.columns:
                         dados[col] = dados[col] * 1000
 
-            # Agregar para 4h se necessário
             if timeframe == "4h":
                 dados = self._agregar_timeframe(dados, "4h")
 
@@ -418,13 +409,10 @@ class DataProvider:
         try:
             idx = dados.index
             if hasattr(idx, 'tz') and idx.tz is not None:
-                # Converter para BRT
                 idx_brt = idx.tz_convert(BRT)
             else:
-                # Assumir UTC e converter
                 idx_brt = idx.tz_localize('UTC').tz_convert(BRT)
 
-            # Filtrar: 09:00-18:00 BRT, seg-sex
             mask = (idx_brt.hour >= 9) & (idx_brt.hour < 18) & (idx_brt.weekday < 5)
             dados_filtrados = dados[mask]
 
@@ -437,29 +425,6 @@ class DataProvider:
         except Exception as e:
             logger.error(f"Erro filtro B3: {e}")
             return dados
-
-    async def _obter_bridge(self, ativo: str, timeframe: str) -> pd.DataFrame:
-        """Obtém dados via bridge HTTP do Profit Pro / Tryd"""
-        try:
-            contrato = self.contratos.get(ativo, {})
-            async with httpx.AsyncClient(timeout=10) as client:
-                response = await client.get(
-                    f"{self.bridge_url}/api/candles",
-                    params={
-                        "symbol": contrato.get("contrato", ativo),
-                        "timeframe": timeframe,
-                        "count": 300
-                    }
-                )
-                if response.status_code == 200:
-                    data = response.json()
-                    df = pd.DataFrame(data["candles"])
-                    df['time'] = pd.to_datetime(df['time'])
-                    df = df.set_index('time')
-                    return df
-        except Exception as e:
-            logger.error(f"Erro bridge: {e}")
-        return None
 
     def _agregar_timeframe(self, dados: pd.DataFrame, target: str) -> pd.DataFrame:
         """Agrega dados de timeframe menor para maior"""
@@ -474,13 +439,9 @@ class DataProvider:
         return dados
 
     def _gerar_dados_simulados(self, ativo: str, timeframe: str) -> pd.DataFrame:
-        """
-        Gera dados simulados realistas como ÚLTIMO recurso.
-        Usa preços reais do HG Brasil quando disponível.
-        """
+        """Gera dados simulados realistas como ÚLTIMO recurso."""
         np.random.seed(42)
 
-        # Usar preço real se disponível
         rt = self.preco_realtime.get(ativo, {})
         if ativo == "WIN":
             base_price = rt.get("preco", 187000)
@@ -493,7 +454,6 @@ class DataProvider:
         tf_minutes = {"5m": 5, "15m": 15, "1h": 60, "4h": 240, "1d": 1440}
         minutes = tf_minutes.get(timeframe, 5)
 
-        # Gerar timestamps estritamente dentro do pregão B3 (09:00-18:00 BRT)
         agora = datetime.now(BRT)
         timestamps = []
         t = agora
@@ -508,37 +468,24 @@ class DataProvider:
             timestamps.insert(0, t)
             count += 1
 
-        # Gerar preços com transição suave
         prices = [base_price]
         trend = np.random.choice([-1, 1]) * volatilidade * 0.05
-
         for i in range(1, len(timestamps)):
             change = np.random.normal(trend, volatilidade * 0.3)
-            new_price = prices[-1] + change
-            prices.append(new_price)
+            prices.append(prices[-1] + change)
 
         data = []
         for i, (t, close_p) in enumerate(zip(timestamps, prices)):
             hl_range = abs(np.random.normal(0, volatilidade * 0.3))
             body = np.random.normal(0, volatilidade * 0.15)
-
-            if i > 0:
-                open_p = data[-1]['close']  # Continuidade: open = close anterior
-            else:
-                open_p = close_p - body
-
+            open_p = data[-1]['close'] if i > 0 else close_p - body
             high = max(open_p, close_p) + abs(np.random.normal(0, hl_range * 0.3))
             low = min(open_p, close_p) - abs(np.random.normal(0, hl_range * 0.3))
-
             base_vol = 5000 if ativo == "WIN" else 3000
             volume = max(100, int(np.random.lognormal(np.log(base_vol), 0.6)))
-
             data.append({
-                'open': round(open_p, 2),
-                'high': round(high, 2),
-                'low': round(low, 2),
-                'close': round(close_p, 2),
-                'volume': volume
+                'open': round(open_p, 2), 'high': round(high, 2),
+                'low': round(low, 2), 'close': round(close_p, 2), 'volume': volume
             })
 
         df = pd.DataFrame(data, index=pd.DatetimeIndex(timestamps))
