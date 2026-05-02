@@ -2145,9 +2145,12 @@ async function carregarDados() {
 function atualizarUI() {
     if (!state.analise) return;
     const a = state.analise.analise || state.analise;
-    const preco = a.preco_atual || 0;
-    document.getElementById('precoDisplay').textContent = preco ? preco.toLocaleString('pt-BR') : '--';
-    // Override com preço real do TradingView (futuro)
+    // Priorizar preço Profit API realtime, yfinance só como fallback
+    const precoYF = a.preco_atual || 0;
+    if (!state._precoRT) {
+        // Sem realtime ainda, usar yfinance temporariamente
+        document.getElementById('precoDisplay').textContent = precoYF ? precoYF.toLocaleString('pt-BR') : '--';
+    }
     atualizarPrecoRealtime();
     const vp = a.variacao_percentual || 0;
     const pc = document.getElementById('precoChange');
@@ -2639,9 +2642,12 @@ async function atualizarPrecoRealtime() {
         const data = await res.json();
         if (data.precos && data.precos[state.ativo]) {
             const rt = data.precos[state.ativo];
-            const el = document.getElementById('precoDisplay');
-            if (el && rt.preco) {
-                el.textContent = rt.preco.toLocaleString('pt-BR');
+            if (rt.preco) {
+                // Guardar preço RT no state para não ser sobrescrito pelo yfinance
+                state._precoRT = rt.preco;
+                state._precoRTFonte = rt.fonte || 'Profit API';
+                const el = document.getElementById('precoDisplay');
+                if (el) el.textContent = rt.preco.toLocaleString('pt-BR');
                 const pc = document.getElementById('precoChange');
                 if (pc && rt.variacao !== undefined) {
                     pc.textContent = (rt.variacao >= 0 ? '+' : '') + rt.variacao.toFixed(2) + '%';
