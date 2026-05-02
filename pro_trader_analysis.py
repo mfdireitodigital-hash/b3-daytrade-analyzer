@@ -547,7 +547,7 @@ def _analisar_price_action(w, c, o, h, l, direcao, ativo) -> Dict:
     """
     Análise completa de Price Action:
     - Candlestick patterns (Nison)
-    - LTA/LTD (Tendência)
+    - LTA/LTB (Tendência)
     - Rompimento de topo/fundo
     - Quebra de estrutura (BOS)
     """
@@ -614,9 +614,9 @@ def _analisar_price_action(w, c, o, h, l, direcao, ativo) -> Dict:
         if h <= prev_h and l >= prev_l:
             patterns_found.append("Inside Bar (compressão = movimento iminente)")
     
-    # ===== LTA/LTD =====
+    # ===== LTA/LTB =====
     if len(w) >= 10:
-        # Swing points para LTA/LTD
+        # Swing points para LTA/LTB
         sw_highs = []
         sw_lows = []
         for i in range(1, min(len(highs) - 1, 20)):
@@ -636,7 +636,7 @@ def _analisar_price_action(w, c, o, h, l, direcao, ativo) -> Dict:
             result["detalhes"]["ltd"] = True
             result["detalhes"]["ltd_pontos"] = [sw_highs[1], sw_highs[0]]
             if direcao == "VENDA":
-                patterns_found.append("LTD ativa (topos descendentes)")
+                patterns_found.append("LTB ativa (topos descendentes)")
         
         # Rompimento de topo/fundo
         if sw_highs and c > max(sw_highs):

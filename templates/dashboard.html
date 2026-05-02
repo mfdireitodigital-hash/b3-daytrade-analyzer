@@ -3313,8 +3313,11 @@ function renderNotEventos(eventos, containerId, isPast) {
 // =====================================================
 function abrirSimuladorReal() {
     var _sro = document.getElementById('simRealOverlay'); if(_sro) _sro.style.display = 'block';
-    simRealCheckMarket();
-    simRealAnalisar();
+    const marketOpen = simRealCheckMarket();
+    if (marketOpen) {
+        simRealAnalisar();
+    }
+    // If closed, simRealCheckMarket already shows the message
 }
 function fecharSimuladorReal() {
     var _sro2 = document.getElementById('simRealOverlay'); if(_sro2) _sro2.style.display = 'none';
@@ -3330,11 +3333,35 @@ function simRealCheckMarket() {
     const dot = document.getElementById('simRealDot');
     const label = document.getElementById('simRealModoLabel');
     if (isOpen) {
-        dot.style.background = '#22c55e';
-        label.innerHTML = '<span style="color:#22c55e;">MERCADO ABERTO</span> - Analise em Tempo Real';
+        if(dot) dot.style.background = '#22c55e';
+        if(label) label.innerHTML = '<span style="color:#22c55e;">AO VIVO</span> - Operando em Tempo Real | Modo Hard';
+        return true;
     } else {
-        dot.style.background = '#3b82f6';
-        label.innerHTML = '<span style="color:#3b82f6;">MODO REPLAY</span> - Relatorio Completo do Ultimo Pregao (09:00-18:00)';
+        if(dot) dot.style.background = '#ef4444';
+        if(label) label.innerHTML = '<span style="color:#ef4444;">MERCADO FECHADO</span>';
+        // Show closed message
+        var _opsEl = document.getElementById('simRealOps');
+        if(_opsEl) _opsEl.innerHTML = '<div style="text-align:center;padding:40px 20px;">' +
+            '<div style="font-size:48px;margin-bottom:16px;">🔒</div>' +
+            '<div style="font-size:20px;font-weight:900;color:#ef4444;margin-bottom:12px;">MERCADO FECHADO</div>' +
+            '<div style="font-size:14px;color:var(--text-muted);margin-bottom:20px;">O Simulador Real funciona <strong style="color:#22c55e;">APENAS AO VIVO</strong> com o mercado aberto.</div>' +
+            '<div style="font-size:13px;color:var(--text-muted);margin-bottom:8px;">Isso aqui não é cassino. É coisa séria.</div>' +
+            '<div style="font-size:13px;color:var(--text-muted);margin-bottom:20px;">Cada entrada precisa de justificativa técnica, cada erro vira aprendizado.</div>' +
+            '<div style="background:rgba(59,130,246,0.1);border:1px solid rgba(59,130,246,0.3);border-radius:8px;padding:14px;max-width:400px;margin:0 auto;">' +
+            '<div style="font-size:12px;font-weight:700;color:var(--accent-blue);margin-bottom:6px;">HORARIO DE OPERACAO</div>' +
+            '<div style="font-size:14px;font-weight:600;">Segunda a Sexta: 09:00 - 18:00 (BRT)</div>' +
+            '<div style="font-size:11px;color:var(--text-muted);margin-top:6px;">Use o <strong>TREINAMENTO</strong> para praticar com dados do último pregão.</div>' +
+            '</div></div>';
+        var _veredEl = document.getElementById('simRealVeredictoText');
+        if(_veredEl) { _veredEl.textContent = 'MERCADO FECHADO'; _veredEl.style.color = '#ef4444'; }
+        var _veredSub = document.getElementById('simRealVeredictoSub');
+        if(_veredSub) _veredSub.textContent = 'Disponível seg-sex 09:00 às 18:00 BRT';
+        // Clear other panels
+        var _tripleEl = document.getElementById('simRealTriple'); if(_tripleEl) _tripleEl.innerHTML = '';
+        var _confEl = document.getElementById('simRealConf'); if(_confEl) _confEl.innerHTML = '';
+        var _newsEl = document.getElementById('simRealNews'); if(_newsEl) _newsEl.innerHTML = '';
+        var _heatEl = document.getElementById('simRealHeat'); if(_heatEl) _heatEl.innerHTML = '';
+        return false;
     }
 }
 
@@ -3613,7 +3640,7 @@ function simChartRender() {
             }
         });
         
-        // LTA (linha de tendencia de alta) - connect ascending lows
+        // LTA (Linha de Tendencia de Alta) / LTB (Linha de Tendencia de Baixa) - connect ascending lows
         const ltaPoints = [];
         const ltdPoints = [];
         d.forEach((v, i) => {
@@ -3642,7 +3669,7 @@ function simChartRender() {
             ctx.fillText('LTA', pad.l + 4, lp.y1 - 4);
         }
         
-        // Draw LTD line (red, solid)
+        // Draw LTB line (red, solid) - Linha de Tendencia de Baixa
         if (ltdPoints.length > 0) {
             const lp = ltdPoints[ltdPoints.length - 1];
             ctx.strokeStyle = '#ef4444';
@@ -3654,7 +3681,7 @@ function simChartRender() {
             ctx.stroke();
             ctx.font = 'bold 14px sans-serif';
             ctx.fillStyle = '#ef4444';
-            ctx.fillText('LTD', pad.l + 4, lp.y1 - 4);
+            ctx.fillText('LTB', pad.l + 4, lp.y1 - 4);
         }
     }
     
