@@ -1991,89 +1991,81 @@ async def _buscar_noticias_profit():
         logger.error(f"Erro Profit Calendar: {e}")
         return []
 
-def _buscar_noticias_investing():
-    """Busca eventos via scraping Investing.com (fallback)"""
-    import re as _re
+def _buscar_noticias_forexfactory():
+    """Busca eventos via ForexFactory JSON API (fallback confiavel, sem scraping)"""
     try:
-        import urllib.request, urllib.parse
+        import urllib.request
+        from datetime import timezone, timedelta
+        BRT = timezone(timedelta(hours=-3))
         
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-            "X-Requested-With": "XMLHttpRequest",
-            "Referer": "https://br.investing.com/economic-calendar/",
-            "Accept": "application/json, text/javascript, */*",
-        }
+        url = "https://nfs.faireconomy.media/ff_calendar_thisweek.json"
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read().decode())
+        
+        if not isinstance(data, list):
+            return []
         
         eventos = []
-        for tab_filter in ["today", "thisWeek"]:
-            try:
-                params = urllib.parse.urlencode({
-                    "country[]": ["25", "5"],
-                    "importance[]": "3",
-                    "timeZone": "12",
-                    "timeFilter": "timeRemain",
-                    "currentTab": tab_filter,
-                }, doseq=True)
-                
-                req = urllib.request.Request(
-                    "https://br.investing.com/economic-calendar/Service/getCalendarFilteredData",
-                    data=params.encode(),
-                    headers=headers,
-                    method="POST"
-                )
-                with urllib.request.urlopen(req, timeout=10) as resp:
-                    raw = json.loads(resp.read().decode())
-                    html_data = raw.get("data", "")
-                
-                rows = html_data.split('js-event-item')
-                for row in rows[1:]:
-                    try:
-                        time_m = _re.search(r'js-time"[^>]*>([^<]*)<', row)
-                        evt_time = time_m.group(1).strip() if time_m else ""
-                        
-                        dt_m = _re.search(r'data-event-datetime="([^"]+)"', row)
-                        evt_dt = dt_m.group(1) if dt_m else ""
-                        
-                        cur_m = _re.search(r'ceFlags[^>]*>[^<]*</span>\s*(\w{3})', row)
-                        currency = cur_m.group(1).strip() if cur_m else ""
-                        
-                        name_m = _re.search(r'class="[^"]*event[^"]*"[^>]*>([^<]+)<', row)
-                        evt_name = name_m.group(1).strip() if name_m else ""
-                        evt_name = evt_name.replace("&amp;", "&").replace("&nbsp;", " ").replace("&#39;", "'")
-                        
-                        bold_vals = _re.findall(r'bold[^>]*>([^<]*)<', row)
-                        actual = bold_vals[0].strip().replace("&nbsp;","") if len(bold_vals) >= 1 else ""
-                        forecast = bold_vals[1].strip().replace("&nbsp;","") if len(bold_vals) >= 2 else ""
-                        previous = bold_vals[2].strip().replace("&nbsp;","") if len(bold_vals) >= 3 else ""
-                        
-                        country_m = _re.search(r'title="([^"]*)"[^>]*class="ceFlags', row)
-                        country = country_m.group(1).strip() if country_m else ""
-                        
-                        eid_m = _re.search(r'event_attr_ID="(\d+)"', row)
-                        eid = eid_m.group(1) if eid_m else str(len(eventos))
-                        
-                        if evt_name and evt_time:
-                            eventos.append({
-                                "id": eid,
-                                "datetime": evt_dt,
-                                "hora": evt_time,
-                                "pais": country,
-                                "moeda": currency,
-                                "evento": evt_name,
-                                "actual": actual,
-                                "previsao": forecast,
-                                "anterior": previous,
-                                "fonte": "investing",
-                            })
-                    except:
-                        continue
-            except Exception as e:
-                logger.warning(f"Erro investing.com {tab_filter}: {e}")
+        for evt in data:
+            country = evt.get("country", "")
+            if country not in ("USD", "BRL"):
                 continue
+            
+            impact = evt.get("impact", "")
+            if impact in ("Holiday", "Non-Economic"):
+                continue
+            
+            title = evt.get("title", "")
+            if not title:
+                continue
+            
+            # Parse date: "2026-05-01T09:30:00-04:00"
+            date_str = evt.get("date", "")
+            evt_time = ""
+            evt_dt = ""
+            try:
+                if "T" in date_str:
+                    dt_part = date_str[:19]
+                    tz_part = date_str[19:]
+                    base_dt = datetime.strptime(dt_part, "%Y-%m-%dT%H:%M:%S")
+                    if tz_part and tz_part != "Z":
+                        sign = 1 if tz_part[0] == "+" else -1
+                        tz_h = int(tz_part[1:3])
+                        tz_m = int(tz_part[4:6]) if len(tz_part) > 4 else 0
+                        offset = timedelta(hours=tz_h, minutes=tz_m) * sign
+                        base_dt = base_dt.replace(tzinfo=timezone(offset))
+                    else:
+                        base_dt = base_dt.replace(tzinfo=timezone.utc)
+                    base_dt = base_dt.astimezone(BRT)
+                    evt_time = base_dt.strftime("%H:%M")
+                    evt_dt = base_dt.strftime("%Y/%m/%d %H:%M:%S")
+                else:
+                    continue
+            except Exception:
+                continue
+            
+            pais = "EUA" if country == "USD" else "Brasil"
+            impacto_map = {"High": 3, "Medium": 2, "Low": 1}
+            
+            eventos.append({
+                "id": f"ff_{hash(title + date_str) % 100000}",
+                "datetime": evt_dt,
+                "hora": evt_time,
+                "pais": pais,
+                "moeda": country,
+                "evento": title,
+                "actual": "",
+                "previsao": evt.get("forecast", ""),
+                "anterior": evt.get("previous", ""),
+                "impacto_nivel": impacto_map.get(impact, 1),
+                "fonte": "forexfactory",
+            })
         
+        logger.info(f"ForexFactory: {len(eventos)} eventos USD/BRL")
         return eventos
     except Exception as e:
-        logger.error(f"Erro investing.com: {e}")
+        logger.error(f"Erro ForexFactory: {e}")
         return []
 
 def _processar_evento(evt, agora, fonte="profit"):
@@ -2102,10 +2094,10 @@ def _processar_evento(evt, agora, fonte="profit"):
         eid = f"p_{ts}_{currency}"
         
         # Filtrar: apenas high impact OU USD/BRL
-        if impact not in ("high",) and currency not in ("USD", "BRL"):
+        if impact.lower() not in ("high",) and currency not in ("USD", "BRL"):
             return None
     else:
-        # Investing format (already parsed)
+        # ForexFactory / Investing format (already parsed)
         evt_name = evt.get("evento", "")
         currency = evt.get("moeda", "")
         actual = evt.get("actual", "")
@@ -2280,16 +2272,16 @@ async def get_noticias_impacto():
                     eventos_processados.append(processed)
             logger.info(f"Profit Calendar: {len(eventos_processados)} eventos relevantes de {len(raw_profit)} total")
         
-        # === FONTE 2: Investing.com (fallback) ===
+        # === FONTE 2: ForexFactory JSON (fallback confiavel) ===
         if not eventos_processados:
-            raw_inv = _buscar_noticias_investing()
+            raw_inv = _buscar_noticias_forexfactory()
             if raw_inv:
-                fonte_usada = "Investing.com"
+                fonte_usada = "ForexFactory"
                 for evt in raw_inv:
-                    processed = _processar_evento(evt, agora, fonte="investing")
+                    processed = _processar_evento(evt, agora, fonte="forexfactory")
                     if processed:
                         eventos_processados.append(processed)
-                logger.info(f"Investing.com: {len(eventos_processados)} eventos")
+                logger.info(f"ForexFactory: {len(eventos_processados)} eventos")
         
         # Deduplicate by similar name+time
         seen_keys = set()
