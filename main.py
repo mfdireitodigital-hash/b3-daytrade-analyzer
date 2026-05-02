@@ -2835,6 +2835,446 @@ async def simulador_real(ativo: str = Query("WIN")):
         return JSONResponse({"erro": str(e)}, status_code=500)
 
 
+
+@app.get("/api/treinamento-ia")
+async def treinamento_ia(ativo: str = Query("WIN")):
+    """
+    TREINAMENTO: IA opera com filtros ABERTOS para aprender.
+    Diferente do Simulador Real (só A+/B+), aqui entra em C+ também.
+    Objetivo: experimentar mais, errar mais, aprender mais.
+    Registra tudo na memória para nunca repetir os mesmos erros.
+    """
+    try:
+        from datetime import timezone, timedelta
+        BRT_tz = timezone(timedelta(hours=-3))
+        ativo = ativo.upper()
+        ticker = "^BVSP" if ativo == "WIN" else "USDBRL=X"
+        valor_ponto = 0.20 if ativo == "WIN" else 10.00
+        
+        from data_provider import obter_contrato_vigente as _ocv
+        contrato_info = _ocv(ativo)
+        contrato_nome = contrato_info.get('ticker_b3', ativo)
+        
+        from pro_trader_analysis import (
+            calcular_tendencia_macro, detectar_setup_profissional,
+            gerar_analise_completa
+        )
+        from learning_engine import consultar_memoria
+        
+        dados = yf.download(ticker, period="5d", interval="5m", progress=False)
+        if dados.empty:
+            return JSONResponse({"erro": "Sem dados do yfinance"})
+        
+        if isinstance(dados.columns, pd.MultiIndex):
+            dados.columns = dados.columns.get_level_values(0)
+        dados.columns = [c.lower() for c in dados.columns]
+        dados.index = dados.index.tz_convert(BRT_tz)
+        
+        hoje = datetime.now(BRT_tz).date()
+        dates = sorted(set(dados.index.date))
+        dia_anterior = None
+        for d in reversed(dates):
+            if d < hoje:
+                dia_anterior = d
+                break
+        if not dia_anterior:
+            return JSONResponse({"erro": "Dia anterior nao encontrado"})
+        
+        day_indices = [i for i, d in enumerate(dados.index.date) if d == dia_anterior]
+        if not day_indices:
+            return JSONResponse({"erro": "Sem velas do dia anterior"})
+        
+        from analysis_engine import calcular_rsi, calcular_macd, calcular_atr_series
+        
+        # ---- TREINAMENTO: FILTROS ABERTOS ----
+        # Diferente do Simulador Real:
+        # - Entra em C+ (3/7 confluências) pra cima
+        # - Mais operações por dia (até 15)
+        # - Permite contra-tendência em C+ com alerta
+        # - Consulta memória de erros antes de cada entrada
+        MAX_OPS_DIA = 15   # Mais que o Simulador Real (8)
+        MAX_LOSSES_CONSECUTIVOS = 5  # Mais tolerante
+        losses_consecutivos = 0
+        total_pts_dia = 0
+        
+        # Tendência macro
+        macro_window = dados.iloc[:day_indices[-1]+1]
+        tend_macro = calcular_tendencia_macro(macro_window, ativo)
+        
+        velas_analisadas = []
+        operacoes = []
+        posicao_aberta = None
+        
+        for pos_idx in day_indices:
+            w = dados.iloc[max(0, pos_idx - 100):pos_idx + 1]
+            vela = dados.iloc[pos_idx]
+            ts = dados.index[pos_idx]
+            hora = ts.strftime("%H:%M")
+            hora_int = ts.hour
+            minuto = ts.minute
+            
+            o = float(vela['open']); h = float(vela['high'])
+            l = float(vela['low']); c = float(vela['close'])
+            vol = int(vela.get('volume', 0))
+            
+            rsi_v = 50; macd_h = 0; ema9 = 0; ema21 = 0; atr_v = 150
+            tend = "LATERAL"
+            
+            if len(w) >= 20:
+                try:
+                    rsi_s = calcular_rsi(w)
+                    rsi_v = round(float(rsi_s.iloc[-1]), 1)
+                    ml, ms, mh = calcular_macd(w)
+                    macd_h = round(float(mh.iloc[-1]), 1)
+                    ema9 = round(float(w['close'].ewm(span=9, adjust=False).mean().iloc[-1]), 2)
+                    ema21 = round(float(w['close'].ewm(span=21, adjust=False).mean().iloc[-1]), 2)
+                    atr_s = calcular_atr_series(w)
+                    atr_v = round(float(atr_s.iloc[-1]), 1) if len(atr_s) > 0 else 150
+                    
+                    if ema9 > ema21 and c > ema9: tend = "ALTA"
+                    elif ema9 < ema21 and c < ema9: tend = "BAIXA"
+                    elif ema9 > ema21: tend = "ALTA"
+                    elif ema9 < ema21: tend = "BAIXA"
+                except: pass
+            
+            # Análise PRO (mesma do simulador real)
+            setup = detectar_setup_profissional(
+                w=w, vela=vela, pos_idx=pos_idx, dados=dados,
+                day_indices=day_indices, ativo=ativo,
+                tend_macro=tend_macro, rsi_v=rsi_v, macd_h=macd_h,
+                ema9=ema9, ema21=ema21, atr_v=atr_v,
+                operacoes_anteriores=operacoes,
+            )
+            
+            tipo_sinal = setup["direcao"]
+            score = setup["total_confluencia"]
+            conf_label = setup["qualidade"]
+            
+            # ---- TREINAMENTO: REGRAS MAIS ABERTAS ----
+            # C+ (3/7) pra cima = ENTRA (no simulador real seria SKIP)
+            # Contra-tendência: entra se tiver 3+ confluências (para aprender)
+            operar_treino = (
+                tipo_sinal is not None
+                and score >= 3  # C+ mínimo (simulador real exige 4)
+                and not setup["entrada_repetida"]
+            )
+            
+            # Contra-tendência: PERMITE no treino, mas marca como aprendizado
+            alerta_contra = ""
+            if setup["contra_tendencia"] and score >= 3:
+                operar_treino = True  # Entra mesmo contra tendência para APRENDER
+                alerta_contra = f"⚠ CONTRA TENDÊNCIA - entrada de APRENDIZADO (Elder proibiria no real)"
+            
+            # Consultar memória de erros
+            alerta_memoria = None
+            if operar_treino:
+                mem_check = consultar_memoria({
+                    "tipo": tipo_sinal,
+                    "hora_entrada": hora,
+                    "tendencia": tend,
+                    "rsi": rsi_v,
+                    "macd_hist": macd_h,
+                    "score": score,
+                    "conf_label": conf_label,
+                })
+                if mem_check["tem_alerta"]:
+                    alerta_memoria = mem_check
+            
+            decisao = "OPERAR" if operar_treino else "NAO OPERAR"
+            
+            # SMC (complementar)
+            smc_data = {}
+            try:
+                _smc_score, _smc_motivos, smc_data = aplicar_smc_scoring(dados, pos_idx, tipo_sinal, tend)
+                if _smc_motivos:
+                    setup["motivos_operar"].extend(_smc_motivos)
+            except: pass
+            
+            vela_info = {
+                "idx": len(velas_analisadas),
+                "hora": hora,
+                "open": round(o, 2), "high": round(h, 2),
+                "low": round(l, 2), "close": round(c, 2),
+                "rsi": rsi_v, "macd_hist": macd_h,
+                "ema9": ema9, "ema21": ema21, "atr": atr_v,
+                "tendencia": tend, "score": score,
+                "decisao": decisao,
+                "tipo_sinal": tipo_sinal,
+                "confianca": setup["confianca"],
+                "conf_label": conf_label,
+                "motivos_operar": setup["motivos_operar"],
+                "motivos_nao_operar": setup["motivos_nao_operar"],
+                "suporte": round(setup["suporte"], 0) if setup["suporte"] else None,
+                "resistencia": round(setup["resistencia"], 0) if setup["resistencia"] else None,
+                "vwap": round(setup["vwap"], 0) if setup["vwap"] else None,
+                "fib_level": setup["fib_level"],
+                "smc": smc_data,
+                "price_action": setup["price_action"],
+                "confluencia": setup["confluencia"],
+                "alerta_contra": alerta_contra,
+                "alerta_memoria": alerta_memoria,
+            }
+            velas_analisadas.append(vela_info)
+            
+            # Cooldown
+            if posicao_aberta:
+                current_day_idx = day_indices.index(pos_idx) if pos_idx in day_indices else 0
+                if current_day_idx >= posicao_aberta.get("close_idx", 0):
+                    posicao_aberta = None
+            
+            # ===== EXECUTAR OPERAÇÃO =====
+            pode_operar = (
+                operar_treino and tipo_sinal
+                and posicao_aberta is None
+                and hora_int < 17
+                and not (hora_int == 16 and minuto > 30)
+                and len(operacoes) < MAX_OPS_DIA
+                and losses_consecutivos < MAX_LOSSES_CONSECUTIVOS
+            )
+            
+            if pode_operar:
+                stop_pts = round(atr_v * 1.5)
+                if ativo == "WIN":
+                    stop_pts = max(round(stop_pts / 5) * 5, 80)
+                    stop_pts = min(stop_pts, 350)
+                else:
+                    stop_pts = max(round(stop_pts * 200) / 200, 0.005)
+                    stop_pts = min(stop_pts, 0.10)
+                
+                alvo_pts = round(stop_pts * 2.0, 4)
+                is_compra = tipo_sinal == "COMPRA"
+                
+                # Entrada realista
+                _signal_idx = day_indices.index(pos_idx)
+                _next_idx = _signal_idx + 1
+                if _next_idx >= len(day_indices):
+                    posicao_aberta = {"close_idx": _signal_idx + 3}
+                    continue
+                
+                _next_vela = dados.iloc[day_indices[_next_idx]]
+                _entry_open = float(_next_vela['open'])
+                _hora_real = dados.index[day_indices[_next_idx]].strftime("%H:%M")
+                
+                import random as _rnd
+                _slippage = _rnd.randint(5, 15) if ativo == "WIN" else round(_rnd.uniform(0.0005, 0.0015), 4)
+                
+                preco_op = round(_entry_open + (_slippage if is_compra else -_slippage), 2)
+                _custo_pts = 5 if ativo == "WIN" else 1
+                _preco_sinal = c
+                
+                stop_price = round(preco_op - stop_pts, 2) if is_compra else round(preco_op + stop_pts, 2)
+                alvo_price = round(preco_op + alvo_pts, 2) if is_compra else round(preco_op - alvo_pts, 2)
+                
+                # Walk forward
+                resultado = None; preco_saida = 0; hora_saida = ""; velas_na_op = 0
+                _best_price = preco_op; _trailing_active = False
+                
+                future_start = _next_idx + 1
+                for fi in range(future_start, len(day_indices)):
+                    fv = dados.iloc[day_indices[fi]]
+                    fh = float(fv['high']); fl = float(fv['low']); fc = float(fv['close'])
+                    f_hora = dados.index[day_indices[fi]].strftime("%H:%M")
+                    velas_na_op += 1
+                    
+                    if velas_na_op >= 24:
+                        preco_saida = fc; hora_saida = f_hora
+                        resultado = "WIN" if ((preco_saida - preco_op) if is_compra else (preco_op - preco_saida)) > 0 else "LOSS"
+                        break
+                    
+                    if is_compra:
+                        if fh > _best_price: _best_price = fh
+                        _lucro = _best_price - preco_op
+                        if _lucro >= stop_pts and not _trailing_active:
+                            _trailing_active = True
+                            _ns = preco_op + _lucro * 0.2
+                            if _ns > stop_price: stop_price = round(_ns, 2)
+                        elif _trailing_active and _lucro >= stop_pts * 1.5:
+                            _ns = preco_op + _lucro * 0.5
+                            if _ns > stop_price: stop_price = round(_ns, 2)
+                        if fh >= alvo_price:
+                            resultado = "WIN"; preco_saida = alvo_price; hora_saida = f_hora; break
+                        if fl <= stop_price:
+                            preco_saida = stop_price; hora_saida = f_hora
+                            resultado = "WIN" if (preco_saida - preco_op) > 0 else "LOSS"; break
+                    else:
+                        if fl < _best_price: _best_price = fl
+                        _lucro = preco_op - _best_price
+                        if _lucro >= stop_pts and not _trailing_active:
+                            _trailing_active = True
+                            _ns = preco_op - _lucro * 0.2
+                            if _ns < stop_price: stop_price = round(_ns, 2)
+                        elif _trailing_active and _lucro >= stop_pts * 1.5:
+                            _ns = preco_op - _lucro * 0.5
+                            if _ns < stop_price: stop_price = round(_ns, 2)
+                        if fl <= alvo_price:
+                            resultado = "WIN"; preco_saida = alvo_price; hora_saida = f_hora; break
+                        if fh >= stop_price:
+                            preco_saida = stop_price; hora_saida = f_hora
+                            resultado = "WIN" if (preco_op - preco_saida) > 0 else "LOSS"; break
+                
+                if resultado is None:
+                    last_v = dados.iloc[day_indices[-1]]
+                    preco_saida = float(last_v['close']); hora_saida = dados.index[day_indices[-1]].strftime("%H:%M")
+                    resultado = "WIN" if ((preco_saida - preco_op) if is_compra else (preco_op - preco_saida)) > 0 else "LOSS"
+                
+                _raw = (preco_saida - preco_op) if is_compra else (preco_op - preco_saida)
+                pts_bruto = round(_raw * 1000, 1) if ativo == "WDO" else round(_raw, 1)
+                pts = round(pts_bruto - _custo_pts, 4)
+                rs = round(pts * valor_ponto, 2)
+                
+                # Análise completa
+                analise = gerar_analise_completa(setup, vela_info, ativo)
+                analise += f"\nRESULTADO: {resultado} | {round(abs(pts),1)}pts | R${round(abs(rs),2)}"
+                analise += f"\nEntrada: {preco_op} ({_hora_real}) | Saída: {round(preco_saida,2)} ({hora_saida})"
+                
+                # Detalhes
+                detalhes_perda = ""
+                detalhes_vitoria = ""
+                licao_treino = ""
+                
+                if resultado == "LOSS":
+                    detalhes_perda = f"STOP em {hora_saida} | -{round(abs(pts),1)}pts | "
+                    if setup["contra_tendencia"]:
+                        detalhes_perda += "CONTRA TENDÊNCIA - confirma que Elder tinha razão. "
+                        licao_treino = "Aprendizado: não operar contra tendência macro no Simulador Real"
+                    elif score <= 3:
+                        detalhes_perda += f"Setup fraco ({conf_label}, {score}/7). "
+                        licao_treino = "Aprendizado: C+ não é confiável - no Simulador Real, mínimo B+"
+                    else:
+                        detalhes_perda += f"Setup {conf_label} mas mercado não respondeu. "
+                        licao_treino = "Loss com setup correto faz parte (Douglas)"
+                    if alerta_memoria and alerta_memoria["tem_alerta"]:
+                        licao_treino += f" | MEMÓRIA ALERTOU: {alerta_memoria['alertas'][0]['licao']}"
+                else:
+                    detalhes_vitoria = f"Alvo em {hora_saida} | +{round(abs(pts),1)}pts R${round(abs(rs),2)} | "
+                    detalhes_vitoria += f"Setup {conf_label} ({score}/7). "
+                    if score >= 5:
+                        licao_treino = "Aprendizado: A+ e A confirmam alta taxa de acerto"
+                    elif score >= 4:
+                        licao_treino = "Aprendizado: B+ funciona bem com tendência alinhada"
+                    else:
+                        licao_treino = "Aprendizado: C+ pode funcionar mas é arriscado - cautela no real"
+                
+                operacoes.append({
+                    "tipo": tipo_sinal,
+                    "hora_entrada": _hora_real,
+                    "preco_entrada": round(preco_op, 2),
+                    "preco_sinal": round(_preco_sinal, 2),
+                    "slippage": _slippage,
+                    "custo_pts": _custo_pts,
+                    "stop_loss": stop_price,
+                    "take_profit": alvo_price,
+                    "stop_pts": round(stop_pts * 1000, 1) if ativo == "WDO" else stop_pts,
+                    "alvo_pts": round(alvo_pts * 1000, 1) if ativo == "WDO" else alvo_pts,
+                    "rr": f"1:{round(alvo_pts/stop_pts, 1)}",
+                    "hora_saida": hora_saida,
+                    "preco_saida": round(preco_saida, 2),
+                    "resultado": resultado,
+                    "pts": pts,
+                    "resultado_rs": rs,
+                    "velas_na_op": velas_na_op,
+                    "score": score,
+                    "confianca": setup["confianca"],
+                    "conf_label": conf_label,
+                    "motivos": setup["motivos_operar"],
+                    "detalhes_perda": detalhes_perda,
+                    "detalhes_vitoria": detalhes_vitoria,
+                    "analise_completa": analise,
+                    "licao_treino": licao_treino,
+                    "alerta_contra": alerta_contra,
+                    "alerta_memoria": alerta_memoria,
+                    "suporte": round(setup["suporte"], 0) if setup["suporte"] else None,
+                    "resistencia": round(setup["resistencia"], 0) if setup["resistencia"] else None,
+                    "vwap": round(setup["vwap"], 0) if setup["vwap"] else None,
+                    "fib_level": setup["fib_level"],
+                    "rsi": rsi_v, "macd_hist": macd_h,
+                    "ema9": ema9, "ema21": ema21, "atr": atr_v,
+                    "tendencia": tend,
+                    "confluencia_detalhes": setup["confluencia"],
+                })
+                
+                total_pts_dia += pts
+                if resultado == "LOSS":
+                    losses_consecutivos += 1
+                    cooldown = 2  # Menor cooldown no treino
+                else:
+                    losses_consecutivos = 0
+                    cooldown = 1  # Cooldown mínimo
+                
+                posicao_aberta = {"close_idx": future_start + velas_na_op + cooldown}
+        
+        # Registrar na memória
+        if operacoes:
+            try:
+                wins = sum(1 for op in operacoes if op["resultado"] == "WIN")
+                total_ops = len(operacoes)
+                wr = round(wins / total_ops * 100) if total_ops > 0 else 0
+                registrar_sessao(ativo, dia_anterior.strftime("%d/%m/%Y"), operacoes, {"win_rate": wr, "total_pts": sum(op["pts"] for op in operacoes)})
+            except: pass
+        
+        # Resumo
+        total_ops = len(operacoes)
+        wins = sum(1 for op in operacoes if op["resultado"] == "WIN")
+        losses = total_ops - wins
+        win_rate = round(wins / total_ops * 100) if total_ops > 0 else 0
+        total_pts = sum(op["pts"] for op in operacoes)
+        total_rs = sum(op["resultado_rs"] for op in operacoes)
+        
+        # Comparação com Simulador Real
+        ops_a_plus = [op for op in operacoes if op["score"] >= 5]
+        ops_b_plus = [op for op in operacoes if op["score"] == 4]
+        ops_c_plus = [op for op in operacoes if op["score"] == 3]
+        
+        wr_a = round(sum(1 for op in ops_a_plus if op["resultado"] == "WIN") / len(ops_a_plus) * 100) if ops_a_plus else 0
+        wr_b = round(sum(1 for op in ops_b_plus if op["resultado"] == "WIN") / len(ops_b_plus) * 100) if ops_b_plus else 0
+        wr_c = round(sum(1 for op in ops_c_plus if op["resultado"] == "WIN") / len(ops_c_plus) * 100) if ops_c_plus else 0
+        
+        aprendizados = []
+        if wr_a >= 60:
+            aprendizados.append(f"Setups A+/A ({len(ops_a_plus)} ops) = {wr_a}% WR - CONFIÁVEIS para Simulador Real")
+        if wr_b >= 50:
+            aprendizados.append(f"Setups B+ ({len(ops_b_plus)} ops) = {wr_b}% WR - OK para Simulador Real")
+        if ops_c_plus:
+            aprendizados.append(f"Setups C+ ({len(ops_c_plus)} ops) = {wr_c}% WR - {'ARRISCADO' if wr_c < 50 else 'surpreendeu'} no real")
+        
+        contra_ops = [op for op in operacoes if op.get("alerta_contra")]
+        if contra_ops:
+            wr_contra = round(sum(1 for op in contra_ops if op["resultado"] == "WIN") / len(contra_ops) * 100)
+            aprendizados.append(f"Contra tendência ({len(contra_ops)} ops) = {wr_contra}% WR - {'CONFIRMA: evitar' if wr_contra < 40 else 'pode funcionar em exceções'}")
+        
+        return JSONResponse({
+            "modo": "TREINAMENTO",
+            "dia": dia_anterior.strftime("%d/%m/%Y"),
+            "ativo": ativo,
+            "contrato": contrato_nome,
+            "valor_ponto": valor_ponto,
+            "tend_macro": {
+                "tendencia": tend_macro["tendencia"],
+                "forca": tend_macro["forca"],
+                "descricao": tend_macro["descricao"],
+            },
+            "performance": {
+                "total_operacoes": total_ops,
+                "wins": wins, "losses": losses,
+                "win_rate": win_rate,
+                "total_pts": round(total_pts, 1),
+                "total_rs": round(total_rs, 2),
+            },
+            "comparacao_qualidade": {
+                "a_plus": {"ops": len(ops_a_plus), "wr": wr_a},
+                "b_plus": {"ops": len(ops_b_plus), "wr": wr_b},
+                "c_plus": {"ops": len(ops_c_plus), "wr": wr_c},
+            },
+            "aprendizados": aprendizados,
+            "operacoes": operacoes,
+            "total_velas": len(velas_analisadas),
+        })
+    except Exception as e:
+        logger.error(f"Erro treinamento-ia: {e}")
+        import traceback; traceback.print_exc()
+        return JSONResponse({"erro": str(e)}, status_code=500)
+
+
 @app.get("/api/livros")
 async def get_livros():
     """Lista todos os livros estudados pela AI"""
