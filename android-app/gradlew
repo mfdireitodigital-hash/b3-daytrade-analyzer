@@ -1,2 +1,16 @@
 #!/bin/sh
-exec gradle "$@"
+# Auto-download Gradle if not present
+GRADLE_VERSION="8.2"
+GRADLE_HOME="$HOME/.gradle/wrapper/dists/gradle-${GRADLE_VERSION}"
+GRADLE_BIN="$GRADLE_HOME/bin/gradle"
+
+if [ ! -f "$GRADLE_BIN" ]; then
+    echo "Downloading Gradle $GRADLE_VERSION..."
+    mkdir -p "$GRADLE_HOME"
+    curl -sL "https://services.gradle.org/distributions/gradle-${GRADLE_VERSION}-bin.zip" -o /tmp/gradle.zip
+    unzip -q /tmp/gradle.zip -d "$GRADLE_HOME"
+    mv "$GRADLE_HOME/gradle-${GRADLE_VERSION}/"* "$GRADLE_HOME/"
+    rm /tmp/gradle.zip
+fi
+
+exec "$GRADLE_BIN" "$@"
