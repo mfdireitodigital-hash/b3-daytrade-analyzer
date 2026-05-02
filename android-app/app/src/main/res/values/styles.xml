@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="AppTheme" parent="Theme.AppCompat.NoActionBar">
+        <item name="android:windowBackground">#0a0f1a</item>
+        <item name="android:statusBarColor">#0a0f1a</item>
+        <item name="android:navigationBarColor">#0a0f1a</item>
+        <item name="android:windowFullscreen">true</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
+
+    <style name="SplashTheme" parent="Theme.AppCompat.NoActionBar">
+        <item name="android:windowBackground">#0a0f1a</item>
+        <item name="android:statusBarColor">#0a0f1a</item>
+        <item name="android:navigationBarColor">#0a0f1a</item>
+        <item name="android:windowFullscreen">true</item>
+    </style>
+</resources>

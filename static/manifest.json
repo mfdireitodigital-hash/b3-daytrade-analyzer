@@ -1,0 +1,59 @@
+{
+  "name": "B3 Day Trade Analyzer",
+  "short_name": "B3 Trade",
+  "description": "Simulador profissional de Day Trade B3 - WIN & WDO em tempo real",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0a0f1a",
+  "theme_color": "#3b82f6",
+  "categories": ["finance", "business"],
+  "icons": [
+    {
+      "src": "/static/icons/icon-72.png",
+      "sizes": "72x72",
+      "type": "image/png"
+    },
+    {
+      "src": "/static/icons/icon-96.png",
+      "sizes": "96x96",
+      "type": "image/png"
+    },
+    {
+      "src": "/static/icons/icon-128.png",
+      "sizes": "128x128",
+      "type": "image/png"
+    },
+    {
+      "src": "/static/icons/icon-144.png",
+      "sizes": "144x144",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/static/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/static/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "screenshots": [],
+  "shortcuts": [
+    {
+      "name": "WIN - Mini Índice",
+      "url": "/?ativo=WIN",
+      "description": "Abrir análise do Mini Índice"
+    },
+    {
+      "name": "WDO - Mini Dólar",
+      "url": "/?ativo=WDO",
+      "description": "Abrir análise do Mini Dólar"
+    }
+  ]
+}
