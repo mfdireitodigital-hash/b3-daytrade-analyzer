@@ -329,7 +329,7 @@ templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
 
 @app.get("/api/version")
 async def api_version():
-    return {"version": "3.6.0", "build": "20260504t", "changes": "memoria_persistente_replay,alerta_erros_similares,gravar_todo_trade_ct"}
+    return {"version": "3.6.1", "build": "20260504u", "changes": "memoria_persistente_replay,alerta_erros_similares,gravar_todo_trade_ct"}
 
 @app.get("/", response_class=HTMLResponse)
 async def dashboard(request: Request):
@@ -1747,7 +1747,7 @@ async def simular_entrada(request: Request):
                     educativa.append(f"Chegou a ter {round(max_favoravel,0)}pts a favor antes de stopar - {'considere parcial ou trailing stop' if max_favoravel > alvo_pts*0.5 else 'nao teve forca na direcao'}")
                 educativa.append(f"Axioma de Zurique #3: Corte perdas rapido. Stop bem posicionado protege o capital.")
         except Exception as ex:
-            educativa.append(f"Analise educativa indisponivel")
+            logger.error(f"Erro na analise educativa: {ex}"); educativa.append(f"Analise educativa indisponivel: {str(ex)[:100]}")
         
         # ===== GRAVAR NA MEMORIA PERSISTENTE =====
         memoria_resultado = None
@@ -1760,8 +1760,8 @@ async def simular_entrada(request: Request):
                 "resultado": resultado,
                 "pts": pts,
                 "resultado_rs": resultado_rs,
-                "tendencia": tend if 'tend' in dir() else "LATERAL",
-                "rsi": entry_rsi if 'entry_rsi' in dir() and entry_rsi else 50,
+                "tendencia": tend if 'tend' in locals() else "LATERAL",
+                "rsi": entry_rsi if 'entry_rsi' in locals() and entry_rsi else 50,
                 "macd_hist": 0,
                 "score": rr,  # usar R:R como proxy de qualidade
                 "conf_label": f"R:R {rr}:1",
