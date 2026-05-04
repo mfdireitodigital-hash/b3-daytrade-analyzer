@@ -530,6 +530,29 @@ async def get_painel(ativo: str = Query("WIN")):
         return JSONResponse({"erro": f"Ativo inválido"}, status_code=400)
 
     painel = app_state["analises"].get(ativo, {})
+    
+    # Se painel vazio e mercado aberto, forçar análise on-the-fly
+    if (not painel or all("erro" in painel.get(tf, {}) for tf in TIMEFRAMES)) and mercado_aberto():
+        try:
+            provider = app_state["provider"]
+            painel = {}
+            for tf in TIMEFRAMES:
+                try:
+                    dados = await provider.obter_dados(ativo, tf)
+                    if dados is not None and len(dados) >= 20:
+                        analise = analisar_completo(dados, tf, ativo)
+                        analise = converter_numpy(analise)
+                        painel[tf] = analise
+                except Exception as e:
+                    painel[tf] = {"erro": str(e)}
+            # Update app_state
+            if ativo not in app_state["analises"]:
+                app_state["analises"][ativo] = {}
+            app_state["analises"][ativo].update(painel)
+            logger.info(f"Painel {ativo}: análise on-the-fly atualizada")
+        except Exception as e:
+            logger.error(f"Erro painel on-the-fly {ativo}: {e}")
+    
     resumo = {
         "ativo": ativo,
         "tendencia_geral": _calcular_tendencia_geral(painel),
@@ -1477,7 +1500,7 @@ async def replay_velas(ativo: str = "WIN"):
         mercado["variacao_pct"] = round((mercado["fechamento"] / mercado["abertura"] - 1) * 100, 2)
         
         return JSONResponse({
-            "dia": dia_anterior.strftime("%d/%m/%Y"),
+            "dia": dia_analise.strftime("%d/%m/%Y"),
             "ativo": ativo,
             "contrato": contrato_nome,
             "valor_ponto": valor_ponto,
@@ -2272,11 +2295,11 @@ async def get_noticias_impacto():
                     eventos_processados.append(processed)
             logger.info(f"Profit Calendar: {len(eventos_processados)} eventos relevantes de {len(raw_profit)} total")
         
-        # === FONTE 2: ForexFactory JSON (fallback confiavel) ===
-        if not eventos_processados:
+        # === FONTE 2: ForexFactory JSON (sempre buscar para complementar) ===
+        if len(eventos_processados) < 5:  # complementar se Profit retornou poucos
             raw_inv = _buscar_noticias_forexfactory()
             if raw_inv:
-                fonte_usada = "ForexFactory"
+                fonte_usada = "ForexFactory" if not eventos_processados else fonte_usada + " + ForexFactory"
                 for evt in raw_inv:
                     processed = _processar_evento(evt, agora, fonte="forexfactory")
                     if processed:
@@ -2312,9 +2335,13 @@ async def get_noticias_impacto():
             "fonte": fonte_usada,
         }
         
-        # Save to cache
-        _noticias_cache["data"] = result
-        _noticias_cache["timestamp"] = datetime.now()
+        # Save to cache (only if we have events)
+        if len(unique) > 0:
+            _noticias_cache["data"] = result
+            _noticias_cache["timestamp"] = datetime.now()
+        else:
+            # Don't cache empty results - retry next time
+            logger.warning("Noticias: 0 eventos, não cacheando")
         
         return JSONResponse(result)
     except Exception as e:
@@ -2354,17 +2381,33 @@ async def simulador_real(ativo: str = Query("WIN")):
         
         hoje = datetime.now(BRT_tz).date()
         dates = sorted(set(dados.index.date))
-        dia_anterior = None
-        for d in reversed(dates):
-            if d < hoje:
-                dia_anterior = d
-                break
-        if not dia_anterior:
-            return JSONResponse({"erro": "Dia anterior nao encontrado"})
         
-        day_indices = [i for i, d in enumerate(dados.index.date) if d == dia_anterior and 9 <= dados.index[i].hour < 18]
-        if not day_indices:
-            return JSONResponse({"erro": "Sem velas do dia anterior"})
+        # MODO LIVE: se mercado aberto E tem candles de hoje, analisar hoje ao vivo
+        # MODO REPLAY: se mercado fechado, analisar dia anterior
+        modo_live = False
+        dia_analise = None
+        
+        if mercado_aberto():
+            today_indices = [i for i, d in enumerate(dados.index.date) if d == hoje and 9 <= dados.index[i].hour < 18]
+            if len(today_indices) >= 2:  # pelo menos 2 candles de 5min
+                dia_analise = hoje
+                day_indices = today_indices
+                modo_live = True
+                logger.info(f"SimReal LIVE: {len(day_indices)} candles de hoje {hoje}")
+        
+        if not modo_live:
+            # Fallback: dia anterior (replay)
+            dia_anterior = None
+            for d in reversed(dates):
+                if d < hoje:
+                    dia_anterior = d
+                    break
+            if not dia_anterior:
+                return JSONResponse({"erro": "Dia anterior nao encontrado"})
+            dia_analise = dia_anterior
+            day_indices = [i for i, d in enumerate(dados.index.date) if d == dia_analise and 9 <= dados.index[i].hour < 18]
+            if not day_indices:
+                return JSONResponse({"erro": "Sem velas do dia anterior"})
         
         from analysis_engine import calcular_rsi, calcular_macd, calcular_atr_series
         
@@ -2838,7 +2881,7 @@ async def simulador_real(ativo: str = Query("WIN")):
         _hora_atual = _agora.hour
         _dia_semana = _agora.weekday()
         _mercado_aberto = (_dia_semana < 5 and 9 <= _hora_atual < 18)
-        _modo = "REAL" if _mercado_aberto else "REPLAY"
+        _modo = "REAL" if modo_live else "REPLAY"
         
         return JSONResponse({
             "dia": dia_anterior.strftime("%d/%m/%Y"),
@@ -2941,17 +2984,33 @@ async def treinamento_ia(ativo: str = Query("WIN")):
         
         hoje = datetime.now(BRT_tz).date()
         dates = sorted(set(dados.index.date))
-        dia_anterior = None
-        for d in reversed(dates):
-            if d < hoje:
-                dia_anterior = d
-                break
-        if not dia_anterior:
-            return JSONResponse({"erro": "Dia anterior nao encontrado"})
         
-        day_indices = [i for i, d in enumerate(dados.index.date) if d == dia_anterior and 9 <= dados.index[i].hour < 18]
-        if not day_indices:
-            return JSONResponse({"erro": "Sem velas do dia anterior"})
+        # MODO LIVE: se mercado aberto E tem candles de hoje, analisar hoje ao vivo
+        # MODO REPLAY: se mercado fechado, analisar dia anterior
+        modo_live = False
+        dia_analise = None
+        
+        if mercado_aberto():
+            today_indices = [i for i, d in enumerate(dados.index.date) if d == hoje and 9 <= dados.index[i].hour < 18]
+            if len(today_indices) >= 2:  # pelo menos 2 candles de 5min
+                dia_analise = hoje
+                day_indices = today_indices
+                modo_live = True
+                logger.info(f"SimReal LIVE: {len(day_indices)} candles de hoje {hoje}")
+        
+        if not modo_live:
+            # Fallback: dia anterior (replay)
+            dia_anterior = None
+            for d in reversed(dates):
+                if d < hoje:
+                    dia_anterior = d
+                    break
+            if not dia_anterior:
+                return JSONResponse({"erro": "Dia anterior nao encontrado"})
+            dia_analise = dia_anterior
+            day_indices = [i for i, d in enumerate(dados.index.date) if d == dia_analise and 9 <= dados.index[i].hour < 18]
+            if not day_indices:
+                return JSONResponse({"erro": "Sem velas do dia anterior"})
         
         from analysis_engine import calcular_rsi, calcular_macd, calcular_atr_series
         
