@@ -329,7 +329,7 @@ templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
 
 @app.get("/api/version")
 async def api_version():
-    return {"version": "3.1.1", "build": "20260504h", "changes": "analise_sempre_visivel_forcar_trade_detalhes"}
+    return {"version": "3.2.0", "build": "20260504j", "changes": "fix_replay_dia_analise,banner_sinais_ia,null_check_preco,noticias_autoload"}
 
 @app.get("/", response_class=HTMLResponse)
 async def dashboard(request: Request):
@@ -1544,10 +1544,10 @@ async def replay_velas(ativo: str = "WIN"):
             "low": min(v["low"] for v in velas) if velas else 0,
         }
         mercado["amplitude_pts"] = round(mercado["high"] - mercado["low"], 0)
-        mercado["variacao_pct"] = round((mercado["fechamento"] / mercado["abertura"] - 1) * 100, 2)
+        mercado["variacao_pct"] = round((mercado["fechamento"] / mercado["abertura"] - 1) * 100, 2) if mercado["abertura"] != 0 else 0
         
         return JSONResponse({
-            "dia": dia_analise.strftime("%d/%m/%Y"),
+            "dia": dia_anterior.strftime("%d/%m/%Y"),
             "ativo": ativo,
             "contrato": contrato_nome,
             "valor_ponto": valor_ponto,

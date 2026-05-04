@@ -899,7 +899,7 @@
                 <span style="font-size:16px;">&#9203;</span> Proximos Eventos de Alto Impacto
             </div>
             <div id="notProximos" style="max-height:300px;overflow-y:auto;">
-                <div style="text-align:center;padding:20px;color:var(--text-muted);">Clique ATUALIZAR para carregar o calendario economico...</div>
+                <div style="text-align:center;padding:20px;color:var(--text-muted);">Carregando calendario economico...</div>
             </div>
         </div>
 
@@ -1601,7 +1601,8 @@ async function ptAtualizarPreco() {
         ptState.precoAtual = a.preco_atual || 0;
     }
     const fmt = ptState.precoAtual ? ptState.precoAtual.toLocaleString('pt-BR') : '--';
-    document.getElementById('ptPrecoUnified').textContent = fmt;
+    const ptEl = document.getElementById('ptPrecoUnified');
+    if (ptEl) ptEl.textContent = fmt;
 }
 
 // ---- Live Tick (every 5s) ----
@@ -2261,6 +2262,7 @@ function atualizarUI() {
     document.getElementById('ema21Val').textContent = (a.ema_21||a.ema21) ? (a.ema_21||a.ema21).toLocaleString('pt-BR') : '--';
     document.getElementById('atrVal').textContent = a.atr ? a.atr.toFixed(1) : '--';
     atualizarBanner(a);
+    atualizarBannerIA();
     atualizarGraficos(a);
     const p = state.painel;
     if (p && p.painel) {
@@ -2286,6 +2288,7 @@ function atualizarUI() {
 
 function atualizarBanner(a) {
     const banner = document.getElementById('sinalBanner'), badge = document.getElementById('sinalBadge'), texto = document.getElementById('sinalTexto'), fill = document.getElementById('confiancaFill');
+    if (!banner || !badge || !texto || !fill) return;
     const sinais = a.sinais || [];
     let sinal = 'NEUTRO', confianca = 0, motivo = 'Analisando mercado...';
     if (sinais.length > 0) {
@@ -2304,7 +2307,47 @@ function atualizarBanner(a) {
     else if (cls === 'venda') bc = 'var(--accent-red)';
     fill.style.width = confianca + '%';
     fill.style.background = bc;
-    document.getElementById('confiancaTexto').textContent = 'Confianca: ' + confianca + '%';
+    const confTexto = document.getElementById('confiancaTexto');
+    if (confTexto) confTexto.textContent = 'Confianca: ' + confianca + '%';
+}
+
+async function atualizarBannerIA() {
+    try {
+        const ativo = (state.ativo || 'WIN').toUpperCase();
+        const res = await fetch('/api/sinais-ia?ativo=' + ativo);
+        const data = await res.json();
+        if (!data.sinais || data.sinais.length === 0) return;
+        const s = data.sinais[0];
+        const sinal = s.tipo || 'NEUTRO';
+        const score = (data.confluencia || {}).score || 0;
+        const total = (data.confluencia || {}).total || 7;
+        const escala = s.escala || data.escala_confianca || {};
+        const label = escala.label || '';
+        const motivos = s.motivos || [];
+        const banner = document.getElementById('sinalBanner');
+        const badge = document.getElementById('sinalBadge');
+        const texto = document.getElementById('sinalTexto');
+        const fill = document.getElementById('confiancaFill');
+        if (!banner || !badge || !texto || !fill) return;
+        if (sinal === 'NEUTRO') {
+            banner.className = 'sinal-banner neutro';
+            badge.className = 'sinal-badge neutro';
+            badge.textContent = 'AGUARDAR';
+            texto.textContent = motivos[0] || 'Sem setup valido no momento';
+            fill.style.width = '0%';
+        } else {
+            const cls = sinal.includes('COMPRA') ? 'compra' : 'venda';
+            banner.className = 'sinal-banner ' + cls;
+            badge.className = 'sinal-badge ' + cls;
+            badge.textContent = sinal + ' ' + score + '/' + total + ' (' + label + ')';
+            texto.textContent = motivos.slice(0, 2).join(' | ');
+            const pct = Math.round((score / total) * 100);
+            fill.style.width = pct + '%';
+            fill.style.background = cls === 'compra' ? 'var(--accent-green)' : 'var(--accent-red)';
+        }
+        const confTexto = document.getElementById('confiancaTexto');
+        if (confTexto) confTexto.textContent = 'Confianca: ' + Math.round((score / total) * 100) + '%';
+    } catch(e) { console.warn('Banner IA error:', e); }
 }
 
 function atualizarGraficos(a) {
