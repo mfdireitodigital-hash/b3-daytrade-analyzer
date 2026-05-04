@@ -1,4 +1,5 @@
 """
+# Build: 1777916428
 B3 Day Trade Analyzer - API Principal
 FastAPI backend com análise automática a cada 5 minutos.
 Cache persistente: mostra dados do último pregão fora do horário.
