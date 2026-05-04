@@ -329,7 +329,7 @@ templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
 
 @app.get("/api/version")
 async def api_version():
-    return {"version": "3.1.0", "build": "20260504g", "changes": "analise_sempre_visivel_forcar_trade_detalhes"}
+    return {"version": "3.1.1", "build": "20260504h", "changes": "analise_sempre_visivel_forcar_trade_detalhes"}
 
 @app.get("/", response_class=HTMLResponse)
 async def dashboard(request: Request):
@@ -3262,6 +3262,7 @@ async def simulador_real(ativo: str = Query("WIN"), max_entradas: int = Query(5)
         # ===== MODO LIVE vs REPLAY =====
         modo_live = False
         dia_analise = None
+        dia_anterior = hoje  # default para modo live
         
         if mercado_aberto():
             today_indices = [i for i, d in enumerate(dados.index.date) if d == hoje and 9 <= dados.index[i].hour < 18]
@@ -4111,6 +4112,7 @@ async def treinamento_ia(ativo: str = Query("WIN")):
         # MODO REPLAY: se mercado fechado, analisar dia anterior
         modo_live = False
         dia_analise = None
+        dia_anterior = hoje  # default para modo live
         
         if mercado_aberto():
             today_indices = [i for i, d in enumerate(dados.index.date) if d == hoje and 9 <= dados.index[i].hour < 18]
