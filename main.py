@@ -292,6 +292,10 @@ app.mount("/static", StaticFiles(directory=os.path.join(BASE_DIR, "static")), na
 templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
 
 
+@app.get("/api/version")
+async def api_version():
+    return {"version": "2.8.4", "build": "20260504", "changes": "parecer_forcar_desempate"}
+
 @app.get("/", response_class=HTMLResponse)
 async def dashboard(request: Request):
     return templates.TemplateResponse("dashboard.html", {"request": request})
