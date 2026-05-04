@@ -2707,26 +2707,13 @@ async def operador_live(ativo: str = Query("WIN"), max_entradas: int = Query(5),
                 mins_restantes = int((cooldown_time - agora).total_seconds() / 60)
                 motivo_bloqueio = f"Cooldown ativo: aguardar {mins_restantes}min (até {cooldown_time.strftime('%H:%M')})"
         
-        if motivo_bloqueio and not forcar_entrada:
-            return JSONResponse({
-                "status": "AGUARDANDO",
-                "ativo": ativo,
-                "contrato": contrato_nome,
-                "hora_atual": hora_atual,
-                "janela": janela_nome,
-                "janela_qualidade": janela_qual,
-                "motivo": motivo_bloqueio,
-                "operacoes_dia": op_state["operacoes"],
-                "total_ops": len(op_state["operacoes"]),
-                "total_pts_dia": round(op_state["total_pts"], 1),
-                "total_rs_dia": round(op_state["total_pts"] * valor_ponto, 2),
-                "losses_consecutivos": op_state["losses_consecutivos"],
-                "dia_bloqueado": op_state["dia_bloqueado"],
-                "max_entradas": max_entradas,
-                "mercado_aberto": True,
-                "modo": "LIVE",
-                "proxima_janela": _proxima_janela_boa(t_min),
-            })
+        # Se bloqueado e NÃO forçando, marcar mas CONTINUAR a análise para mostrar na UI
+        bloqueio_ativo = motivo_bloqueio and not forcar_entrada
+        if forcar_entrada and em_cooldown:
+            # Forçar entrada bypass cooldown
+            op_state["cooldown_ate"] = None
+            motivo_bloqueio = None
+            em_cooldown = False
         
         # ===== BUSCAR DADOS ATUAIS =====
         from pro_trader_analysis import calcular_tendencia_macro, detectar_setup_profissional
@@ -2891,6 +2878,11 @@ async def operador_live(ativo: str = Query("WIN"), max_entradas: int = Query(5),
             alvo_price = round(preco_atual + alvo_pts, 2) if is_compra else round(preco_atual - alvo_pts, 2)
         
         # ===== RACIOCÍNIO DO OPERADOR =====
+        # Se bloqueio ativo (cooldown/dia bloqueado), não operar mas mostrar análise
+        if bloqueio_ativo:
+            operar = False
+            motivos_nao_operar.insert(0, motivo_bloqueio)
+        
         raciocinio = ""
         if operar and tipo_sinal:
             raciocinio = (
@@ -3020,8 +3012,9 @@ async def operador_live(ativo: str = Query("WIN"), max_entradas: int = Query(5),
             "alerta_erro": alerta_erro,
         }
         
-        # ===== AUTO-ENTRAR se aguardando_entrada e setup encontrado =====
-        if op_state.get("aguardando_entrada") and operar and tipo_sinal and not op_state.get("trade_ativo"):
+        # ===== AUTO-ENTRAR se aguardando_entrada OU forçar_entrada =====
+        deve_entrar = (op_state.get("aguardando_entrada") or forcar_entrada) and operar and tipo_sinal and not op_state.get("trade_ativo")
+        if deve_entrar:
             # Entrar automaticamente!
             trade_novo = {
                 "tipo": tipo_sinal,

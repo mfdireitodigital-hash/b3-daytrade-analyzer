@@ -4610,16 +4610,33 @@ async function operadorLiveCheck(forcar) {
                     const isW = op.resultado === 'WIN';
                     const cOp = op.tipo === 'COMPRA' ? '#22c55e' : '#ef4444';
                     const cRes = isW ? '#22c55e' : '#ef4444';
-                    oh += '<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 8px;border-left:3px solid ' + cOp + ';background:rgba(255,255,255,0.02);border-radius:4px;margin-bottom:4px;">';
+                    oh += '<div style="padding:8px;border-left:3px solid ' + cOp + ';background:rgba(255,255,255,0.02);border-radius:4px;margin-bottom:6px;">';
+                    // Linha 1: tipo, hora, estratégia, resultado
+                    oh += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">';
                     oh += '<div style="display:flex;align-items:center;gap:6px;">';
-                    oh += '<span style="font-weight:800;color:' + cOp + ';font-size:10px;">' + op.tipo + '</span>';
-                    oh += '<span style="font-family:monospace;font-size:11px;">' + (op.hora_entrada||'?') + '</span>';
-                    if (op.estrategia) oh += '<span style="font-size:9px;color:#a78bfa;background:rgba(167,139,250,0.1);padding:1px 5px;border-radius:3px;">' + op.estrategia + '</span>';
+                    oh += '<span style="font-weight:900;color:' + cOp + ';font-size:12px;">' + op.tipo + '</span>';
+                    oh += '<span style="font-family:monospace;font-size:11px;">' + (op.hora_entrada||'?') + (op.hora_saida ? ' → ' + op.hora_saida : '') + '</span>';
+                    if (op.estrategia) oh += '<span style="font-size:9px;color:#a78bfa;background:rgba(167,139,250,0.15);padding:2px 6px;border-radius:3px;font-weight:700;">' + op.estrategia + '</span>';
                     oh += '</div>';
                     oh += '<div style="display:flex;align-items:center;gap:6px;">';
-                    oh += '<span style="font-weight:900;color:' + cRes + ';">' + (op.resultado||'?') + '</span>';
-                    oh += '<span style="font-weight:800;color:' + cRes + ';">' + (op.pts>=0?'+':'') + op.pts + 'pts</span>';
+                    oh += '<span style="font-weight:900;color:' + cRes + ';font-size:13px;">' + (op.resultado||'ABERTO') + '</span>';
+                    oh += '<span style="font-weight:800;color:' + cRes + ';font-size:12px;">' + (op.pts>=0?'+':'') + (op.pts||0) + 'pts</span>';
+                    if (op.resultado_rs !== undefined) oh += '<span style="font-weight:700;color:' + cRes + ';font-size:11px;">(R$' + (op.resultado_rs>=0?'+':'') + (op.resultado_rs||0).toFixed(2) + ')</span>';
                     oh += '</div></div>';
+                    // Linha 2: detalhes - preço entrada, stop, alvo, score
+                    oh += '<div style="display:flex;gap:8px;flex-wrap:wrap;font-size:10px;color:var(--text-muted);">';
+                    if (op.preco_entrada) oh += '<span>Entrada: <strong style="color:var(--text-primary);">' + op.preco_entrada.toLocaleString('pt-BR') + '</strong></span>';
+                    if (op.stop_loss) oh += '<span>Stop: ' + op.stop_loss.toLocaleString('pt-BR') + ' (' + (op.stop_pts||'?') + 'pts)</span>';
+                    if (op.take_profit) oh += '<span>Alvo: ' + op.take_profit.toLocaleString('pt-BR') + ' (' + (op.alvo_pts||'?') + 'pts)</span>';
+                    if (op.rr) oh += '<span>R:R ' + op.rr + '</span>';
+                    if (op.score) oh += '<span>Score: ' + op.score + '/7 (' + (op.conf_label||'') + ')</span>';
+                    if (op.tend_macro) oh += '<span>Macro: ' + op.tend_macro + '</span>';
+                    oh += '</div>';
+                    // Linha 3: motivos (se disponíveis)
+                    if (op.motivos && op.motivos.length > 0) {
+                        oh += '<div style="font-size:9px;color:#a78bfa;margin-top:3px;font-style:italic;">' + op.motivos.slice(0,2).join(' | ') + '</div>';
+                    }
+                    oh += '</div>';
                 });
                 opsEl.innerHTML = oh;
             }
