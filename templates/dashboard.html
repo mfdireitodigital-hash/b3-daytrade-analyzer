@@ -1472,7 +1472,7 @@ async function ptCarregarMelhoresEntradas() {
                 h += '</div></div>';
                 h += '<div style="font-size:10px;color:var(--text-muted);margin-top:4px;">Confluencia: ' + op.motivos.join(' | ') + '</div>';
                 // Train button
-                h += '<div style="margin-top:6px;"><button onclick="ptTreinarEntrada(' + idx + ',\'' + op.tipo + '\',' + op.stop_pts + ',' + op.alvo_pts + ')" style="padding:4px 12px;background:' + cOp + ';color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:10px;font-weight:700;">TREINAR ESTA ENTRADA</button></div>';
+                h += '<div style="margin-top:6px;"><button onclick="ptTreinarEntrada(' + idx + ',\'' + op.tipo + '\',' + op.stop_pts + ',' + op.alvo_pts + ',\x27' + op.hora_entrada + '\x27)" style="padding:4px 12px;background:' + cOp + ';color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:10px;font-weight:700;">TREINAR ESTA ENTRADA</button></div>';
                 h += '</div>';
                 if (op.detalhes_perda && op.resultado === 'LOSS') {
                     h += '<div style="background:rgba(239,68,68,0.06);border:1px solid rgba(239,68,68,0.2);border-radius:4px;padding:8px;margin-top:6px;font-size:10px;color:#fca5a5;">';
@@ -1538,15 +1538,43 @@ async function ptCarregarMelhoresEntradas() {
 }
 
 // Train a specific recommended entry
-function ptTreinarEntrada(opIdx, tipo, stopPts, alvoPts) {
-    if (ptState.balance <= 0) { alert('Adicione dinheiro demonstracao primeiro!'); return; }
-    const qtd = parseInt(document.getElementById('ptQtd').value) || 1;
-    // Set stop/alvo fields
+function ptTreinarEntrada(opIdx, tipo, stopPts, alvoPts, horaEntrada) {
+    // Switch to REPLAY PREGAO tab so user can study this entry
+    // Set stop/alvo for when user clicks COMPRA/VENDA in replay
     document.getElementById('ptStop').value = stopPts;
     document.getElementById('ptAlvo').value = alvoPts;
-    // Use the operation's candle index
-    window.ptSimIdx = opIdx * 10; // approximate
-    ptSimularComDadosReais(tipo, qtd, stopPts, alvoPts);
+    
+    // Switch to replay tab
+    document.querySelectorAll('.pt-tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.pt-tab-content').forEach(c => c.classList.remove('active'));
+    document.getElementById('ptTabReplayBtn').classList.add('active');
+    document.getElementById('ptTabReplay').classList.add('active');
+    
+    // Load replay if not loaded, then scroll to the entry time
+    const scrollToEntry = function() {
+        if (!window.simVelas || !window.simVelas.velas) return;
+        const velas = window.simVelas.velas;
+        let targetIdx = -1;
+        for (let i = 0; i < velas.length; i++) {
+            if (velas[i].hora === horaEntrada) { targetIdx = i; break; }
+        }
+        if (targetIdx >= 0) {
+            const row = document.getElementById('sR' + targetIdx);
+            if (row) {
+                row.scrollIntoView({behavior: 'smooth', block: 'center'});
+                row.style.background = tipo === 'COMPRA' ? 'rgba(34,197,94,0.15)' : 'rgba(239,68,68,0.15)';
+                row.style.outline = '2px solid ' + (tipo === 'COMPRA' ? '#22c55e' : '#ef4444');
+                setTimeout(() => { row.style.outline = 'none'; row.style.background = ''; }, 5000);
+            }
+        }
+    };
+    
+    if (!window.simVelas || !window.simVelas.velas) {
+        simInit();
+        setTimeout(scrollToEntry, 3000);
+    } else {
+        setTimeout(scrollToEntry, 300);
+    }
 }
 
 // ---- Market Status ----
