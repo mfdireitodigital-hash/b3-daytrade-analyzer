@@ -2351,14 +2351,31 @@ async def get_noticias_impacto():
 
 
 @app.get("/api/simulador-real")
-async def simulador_real(ativo: str = Query("WIN")):
-    """Analise PRO do pregao: Triple Screen + Confluence Checklist + PlayBook"""
+async def simulador_real(ativo: str = Query("WIN"), max_entradas: int = Query(5)):
+    """
+    OPERADOR SENIOR AUTÔNOMO - Simulador Real PRO
+    
+    Baseado nos frameworks:
+    - Triple Screen (Elder): Tela 1 (macro) → Tela 2 (sinal) → Tela 3 (entrada)
+    - Confluence Checklist (7 fatores): 4+ para operar
+    - PlayBook (Bellafiore): 5 setups nomeados, classificação A+/B+/C+
+    - Risk Management: 1-2% por trade, R:R mínimo 1:2, max losses consecutivos
+    - Mental Game (Tendler): Controle de tilt, paradas obrigatórias
+    - Axiomas de Zurique: Corte perdas rápido, realize lucros
+    
+    O operador decide AUTONOMAMENTE:
+    - Quais horários entrar (janelas ótimas: 9:15-11:30, 14:00-16:30)
+    - Qual estratégia usar (dos 5 setups do PlayBook)
+    - Tamanho da posição baseado na qualidade do setup
+    - Quando parar (limite de perdas, tilt, horário ruim)
+    """
     try:
         from datetime import timezone, timedelta
         BRT_tz = timezone(timedelta(hours=-3))
         ativo = ativo.upper()
         ticker = "^BVSP" if ativo == "WIN" else "USDBRL=X"
         valor_ponto = 0.20 if ativo == "WIN" else 10.00
+        max_entradas = max(1, min(max_entradas, 15))  # clamp 1-15
         
         from data_provider import obter_contrato_vigente as _ocv
         contrato_info = _ocv(ativo)
@@ -2369,7 +2386,7 @@ async def simulador_real(ativo: str = Query("WIN")):
             gerar_analise_completa
         )
         
-        # Get 5 days of data
+        # ===== DADOS DO MERCADO =====
         dados = yf.download(ticker, period="5d", interval="5m", progress=False)
         if dados.empty:
             return JSONResponse({"erro": "Sem dados do yfinance"})
@@ -2382,21 +2399,19 @@ async def simulador_real(ativo: str = Query("WIN")):
         hoje = datetime.now(BRT_tz).date()
         dates = sorted(set(dados.index.date))
         
-        # MODO LIVE: se mercado aberto E tem candles de hoje, analisar hoje ao vivo
-        # MODO REPLAY: se mercado fechado, analisar dia anterior
+        # ===== MODO LIVE vs REPLAY =====
         modo_live = False
         dia_analise = None
         
         if mercado_aberto():
             today_indices = [i for i, d in enumerate(dados.index.date) if d == hoje and 9 <= dados.index[i].hour < 18]
-            if len(today_indices) >= 2:  # pelo menos 2 candles de 5min
+            if len(today_indices) >= 2:
                 dia_analise = hoje
                 day_indices = today_indices
                 modo_live = True
                 logger.info(f"SimReal LIVE: {len(day_indices)} candles de hoje {hoje}")
         
         if not modo_live:
-            # Fallback: dia anterior (replay)
             dia_anterior = None
             for d in reversed(dates):
                 if d < hoje:
@@ -2411,32 +2426,190 @@ async def simulador_real(ativo: str = Query("WIN")):
         
         from analysis_engine import calcular_rsi, calcular_macd, calcular_atr_series
         
-        # ---- PRO TRADER CONTROLS (Tendler + Elder) ----
-        MAX_OPS_DIA = 8
+        # ================================================================
+        # OPERADOR SENIOR - CONTROLES DE RISCO (Elder + Tendler + Axiomas)
+        # ================================================================
+        MAX_OPS_DIA = max_entradas
         MAX_LOSSES_CONSECUTIVOS = 3
-        LOSS_LIMIT_PTS = -400
+        LOSS_LIMIT_PTS = -400 if ativo == "WIN" else -40  # limite de perda diária
         losses_consecutivos = 0
         total_pts_dia = 0
         dia_bloqueado = False
+        motivo_parada = ""
         
-        # ---- TENDÊNCIA MACRO (Elder Tela 1) ----
-        # Usar TODAS as velas até o dia anterior para calcular tendência macro
+        # ================================================================
+        # JANELAS DE OPERAÇÃO DO OPERADOR SENIOR
+        # Baseado em Bellafiore ("In Play" = horários com volume/catalista)
+        # e experiência de traders BR (Stormer, Andre Moraes)
+        # ================================================================
+        JANELAS_OTIMAS = [
+            # (hora_ini, min_ini, hora_fim, min_fim, nome, qualidade)
+            (9, 15, 10, 30, "Abertura Pós-Leilão", "PRIME"),      # Volatilidade pós-abertura
+            (10, 30, 11, 30, "Manhã Institucional", "BOA"),        # Fluxo institucional
+            (14, 0, 15, 0, "Retomada NY Open", "PRIME"),           # NY abre + fluxo novo
+            (15, 0, 16, 30, "Tarde Institucional", "BOA"),         # Ajuste de posições
+        ]
+        JANELAS_RUINS = [
+            (9, 0, 9, 15, "Leilão/Primeiros 15min", "PROIBIDO"),  # Caótico demais
+            (11, 30, 13, 30, "Almoço", "RUIM"),                    # Sem volume
+            (12, 0, 13, 0, "Almoço Morto", "PROIBIDO"),            # Volume mínimo
+            (16, 30, 18, 0, "Pré-Fechamento", "RUIM"),             # Spreads altos
+            (17, 0, 18, 0, "Leilão Fechamento", "PROIBIDO"),       # Não operar
+        ]
+        
+        def classificar_janela(hora_int, minuto):
+            """Retorna (nome_janela, qualidade, pode_operar)"""
+            for h_ini, m_ini, h_fim, m_fim, nome, qual in JANELAS_RUINS:
+                t = hora_int * 60 + minuto
+                t_ini = h_ini * 60 + m_ini
+                t_fim = h_fim * 60 + m_fim
+                if t_ini <= t < t_fim:
+                    return nome, qual, qual != "PROIBIDO"
+            for h_ini, m_ini, h_fim, m_fim, nome, qual in JANELAS_OTIMAS:
+                t = hora_int * 60 + minuto
+                t_ini = h_ini * 60 + m_ini
+                t_fim = h_fim * 60 + m_fim
+                if t_ini <= t < t_fim:
+                    return nome, qual, True
+            return "Horário Normal", "NORMAL", True
+        
+        # ================================================================
+        # PLAYBOOK - 5 SETUPS NOMEADOS (Bellafiore)
+        # Cada setup tem: nome, condições, descrição
+        # ================================================================
+        def identificar_setup_playbook(setup_data, rsi_v, macd_h, ema9, ema21, c, vwap, atr_v, tend_macro_dir):
+            """
+            Identifica qual dos 5 setups do PlayBook está presente.
+            Retorna (nome_setup, descricao, bonus_score)
+            """
+            pa = setup_data.get("price_action", {})
+            patterns = pa.get("patterns", [])
+            confl = setup_data.get("confluencia", {})
+            direcao = setup_data.get("direcao")
+            
+            # 1. ROMPIMENTO S/R COM VOLUME
+            sr_rompido = any("ROMPIMENTO" in p for p in patterns)
+            vol_ok = confl.get("volume_confirma", False)
+            if sr_rompido and vol_ok:
+                return ("Rompimento S/R + Volume", 
+                        "Nível de S/R rompido com volume confirmando. Pullback para reteste = entrada.",
+                        1)
+            
+            # 2. VWAP BOUNCE
+            if vwap and direcao:
+                dist_vwap = abs(c - vwap)
+                if dist_vwap < atr_v * 0.5:
+                    has_reversal = any(p for p in patterns if "Martelo" in p or "Engolfo" in p or "Pin Bar" in p)
+                    if has_reversal:
+                        return ("VWAP Bounce",
+                                f"Preço retornou à VWAP ({round(vwap,0)}) com candle de reversão. A favor da tendência.",
+                                1)
+            
+            # 3. DIVERGÊNCIA RSI
+            rsi_diverge = False
+            if direcao == "COMPRA" and rsi_v < 35:
+                rsi_diverge = True
+            elif direcao == "VENDA" and rsi_v > 65:
+                rsi_diverge = True
+            if rsi_diverge and confl.get("price_action_confirma"):
+                return ("Divergência RSI",
+                        f"RSI em extremo ({rsi_v}) com confirmação de Price Action. Reversão provável.",
+                        1)
+            
+            # 4. ABSORÇÃO / CAPTURA LIQUIDEZ (SMC)
+            captura = pa.get("captura_liquidez")
+            falso_romp = pa.get("falso_rompimento")
+            if captura or falso_romp:
+                desc = "Captura de liquidez" if captura else "Falso rompimento"
+                return ("Absorção / Smart Money",
+                        f"{desc} detectado. Institucional operando contra o varejo.",
+                        1)
+            
+            # 5. EMA 21 + TENDÊNCIA (Pullback)
+            pullback = pa.get("pullback")
+            if pullback and confl.get("tendencia_tf_maior"):
+                return ("EMA 21 + Tendência",
+                        f"Pullback na EMA21 a favor da tendência macro ({tend_macro_dir}). Setup clássico Stormer.",
+                        1)
+            
+            # Setup genérico de confluência
+            if setup_data.get("total_confluencia", 0) >= 4:
+                return ("Confluência Técnica",
+                        f"Múltiplos fatores alinhados ({setup_data['total_confluencia']}/7). Entrada por confluência.",
+                        0)
+            
+            return (None, None, 0)
+        
+        # ================================================================
+        # TENDÊNCIA MACRO (Elder Tela 1)
+        # ================================================================
         macro_window = dados.iloc[:day_indices[-1]+1]
         tend_macro = calcular_tendencia_macro(macro_window, ativo)
 
-        # ---- NOTICIAS DE IMPACTO ----
+        # ================================================================
+        # BRIEFING PRÉ-MERCADO (como operador senior faria)
+        # ================================================================
+        # Dados do dia anterior para context
+        prev_day_data = None
+        for d in reversed(dates):
+            if d < dia_analise:
+                prev_indices = [i for i, dd in enumerate(dados.index.date) if dd == d]
+                if prev_indices:
+                    prev_day_data = dados.iloc[prev_indices]
+                break
+        
+        briefing = {
+            "tendencia_macro": tend_macro["tendencia"],
+            "forca_macro": tend_macro["forca"],
+            "estrutura": tend_macro["estrutura"],
+            "descricao_macro": tend_macro["descricao"],
+            "regra_elder": f"Só operar {('COMPRA' if tend_macro['tendencia'] == 'ALTA' else 'VENDA' if tend_macro['tendencia'] == 'BAIXA' else 'ambos com cautela')} - Elder Tela 1",
+            "max_entradas_config": max_entradas,
+            "risco_por_trade": "1-2% do capital",
+            "rr_minimo": "1:2",
+            "janelas_operacao": "9:15-11:30 e 14:00-16:30",
+            "plano": f"Operar máximo {max_entradas} entradas. "
+                     f"Só setups A+ e B+ a favor de {tend_macro['tendencia']}. "
+                     f"Stop máximo {'350pts' if ativo == 'WIN' else '8pts WDO'}. "
+                     f"Parar após {MAX_LOSSES_CONSECUTIVOS} losses consecutivos ou {abs(LOSS_LIMIT_PTS)}pts de prejuízo.",
+        }
+        
+        if prev_day_data is not None and len(prev_day_data) > 0:
+            prev_close = float(prev_day_data['close'].iloc[-1])
+            prev_high = float(prev_day_data['high'].max())
+            prev_low = float(prev_day_data['low'].min())
+            briefing["dia_anterior"] = {
+                "fechamento": round(prev_close, 2),
+                "high": round(prev_high, 2),
+                "low": round(prev_low, 2),
+                "amplitude": round(prev_high - prev_low, 0),
+                "nota": f"S/R importantes do dia anterior: Suporte {round(prev_low,0)} / Resistência {round(prev_high,0)}"
+            }
+
+        # ================================================================
+        # NOTÍCIAS DE IMPACTO
+        # ================================================================
         try:
             noticias_dia = obter_noticias_do_dia()
-            logger.info(f"Noticias carregadas: {len(noticias_dia)} eventos")
+            briefing["noticias_count"] = len(noticias_dia)
+            # Identificar horários perigosos por notícias
+            horarios_noticias = []
+            for n in noticias_dia:
+                if n.get("impact", "").lower() in ["high", "alto"]:
+                    horarios_noticias.append(f"{n.get('time', '?')} - {n.get('title', n.get('evento', '?'))}")
+            briefing["noticias_alto_impacto"] = horarios_noticias[:5]
         except Exception as _ne:
             logger.warning(f"Falha ao buscar noticias: {_ne}")
             noticias_dia = []
-
+            briefing["noticias_count"] = 0
         
-        # ---- ANALYZE EVERY CANDLE ----
+        # ================================================================
+        # ANÁLISE VELA A VELA - OPERADOR AUTÔNOMO
+        # ================================================================
         velas_analisadas = []
         operacoes_recomendadas = []
         posicao_aberta = None
+        decisoes_operador = []  # Log de decisões do operador
         
         for pos_idx in day_indices:
             w = dados.iloc[max(0, pos_idx - 100):pos_idx + 1]
@@ -2450,7 +2623,7 @@ async def simulador_real(ativo: str = Query("WIN")):
             l = float(vela['low']); c = float(vela['close'])
             vol = int(vela.get('volume', 0))
             
-            # Calculate indicators
+            # ---- INDICADORES ----
             rsi_v = 50; macd_h = 0; ema9 = 0; ema21 = 0; ema50 = 0; atr_v = 150
             tend = "LATERAL"
             
@@ -2486,31 +2659,36 @@ async def simulador_real(ativo: str = Query("WIN")):
             score = setup["total_confluencia"]
             confianca = setup["confianca"]
             conf_label = setup["qualidade"]
-            motivos_operar = setup["motivos_operar"]
-            motivos_nao_operar = setup["motivos_nao_operar"]
+            motivos_operar = list(setup["motivos_operar"])
+            motivos_nao_operar = list(setup["motivos_nao_operar"])
             suporte = setup["suporte"]
             resistencia = setup["resistencia"]
             vwap = setup["vwap"]
             fib_level = setup["fib_level"]
             price_action = setup["price_action"]
             
-            # Horário check (informativo)
-            bom_horario = hora_int in [9, 10, 14, 15, 16]
-            horario_ruim = hora_int in [12, 13, 17]
-            if hora_int == 9 and minuto < 15:
-                horario_ruim = True
-                if "Primeiros 15min" not in str(motivos_nao_operar):
-                    motivos_nao_operar.append("Primeiros 15min - volatilidade caótica")
+            # ================================================================
+            # OPERADOR SENIOR - DECISÃO DE JANELA DE TEMPO
+            # ================================================================
+            janela_nome, janela_qual, janela_pode = classificar_janela(hora_int, minuto)
             
-            # Penalizar horário ruim (não bloqueia)
-            if horario_ruim and operar:
-                # Só bloqueia se for C+ (fraco)
+            if not janela_pode and operar:
+                operar = False
+                motivos_nao_operar.append(f"OPERADOR: Janela {janela_nome} ({janela_qual}) - não opero neste horário")
+            elif janela_qual == "RUIM" and operar and conf_label in ("C+", "B+"):
+                # Em horário ruim, só entra A+ 
                 if conf_label == "C+":
                     operar = False
-                    motivos_nao_operar.append(f"Horário fraco ({hora}) + setup C+ = não vale o risco")
+                    motivos_nao_operar.append(f"OPERADOR: Horário {janela_nome} exige setup A+ (atual: {conf_label})")
+                elif conf_label == "B+":
+                    # B+ em horário ruim: só se tiver 5+ confluências
+                    if score < 5:
+                        operar = False
+                        motivos_nao_operar.append(f"OPERADOR: B+ em horário ruim precisa 5+ confluências (atual: {score})")
             
-
-            # ---- IMPACTO DE NOTICIAS NA ENTRADA ----
+            # ================================================================
+            # IMPACTO DE NOTÍCIAS
+            # ================================================================
             news_impact = avaliar_impacto_noticias(hora, ativo, tipo_sinal, noticias_dia)
             if news_impact["bloquear"] and operar:
                 operar = False
@@ -2519,37 +2697,37 @@ async def simulador_real(ativo: str = Query("WIN")):
                 score = max(0, min(7, score + news_impact["modificador_score"]))
                 if news_impact["modificador_score"] < 0:
                     motivos_nao_operar.append(f"Notícia: {news_impact['alerta']}")
-                    # Se score caiu abaixo do mínimo, não operar
                     if score < 4 and operar:
                         operar = False
                         motivos_nao_operar.append(f"Score caiu para {score}/7 por notícia")
                 elif news_impact["modificador_score"] > 0:
                     motivos_operar.append(f"Notícia favorável: {news_impact['alerta']}")
-            # Viés de notícias (informativo)
-            vies_noticias = news_impact.get("vies_noticias")
             
-            decisao = "OPERAR" if operar else "NAO OPERAR"
+            # ================================================================
+            # IDENTIFICAR SETUP DO PLAYBOOK
+            # ================================================================
+            setup_playbook_nome, setup_playbook_desc, bonus = identificar_setup_playbook(
+                setup, rsi_v, macd_h, ema9, ema21, c, vwap, atr_v, tend_macro["tendencia"]
+            )
+            if bonus > 0 and setup_playbook_nome:
+                score = min(7, score + bonus)
+                motivos_operar.append(f"PlayBook: {setup_playbook_nome}")
             
-            # SMC analysis (complementar)
+            # SMC complementar
             smc_data = {}
             try:
-                _smc_score, _smc_motivos, smc_data = aplicar_smc_scoring(
-                    dados, pos_idx, tipo_sinal, tend
-                )
+                _smc_score, _smc_motivos, smc_data = aplicar_smc_scoring(dados, pos_idx, tipo_sinal, tend)
                 if _smc_motivos:
                     motivos_operar.extend(_smc_motivos)
-                # SMC pode promover C+ para B+ se tiver Order Block + FVG
                 if _smc_score >= 2 and conf_label == "C+" and not setup["contra_tendencia"]:
-                    # SMC forte pode salvar um C+
                     conf_label = "B+ (SMC)"
                     confianca = 4
                     if not operar and not setup["entrada_repetida"]:
                         operar = True
-                        decisao = "OPERAR"
-                        motivos_operar.append("SMC forte (Order Block/FVG) promoveu C+ para B+")
+                        motivos_operar.append("SMC forte promoveu C+ para B+")
             except: pass
             
-            # Books scoring (complementar)
+            # Books scoring complementar
             try:
                 vela_info_temp = {
                     "open": o, "high": h, "low": l, "close": c,
@@ -2564,6 +2742,8 @@ async def simulador_real(ativo: str = Query("WIN")):
                 if _extra_motivos:
                     motivos_operar.extend(_extra_motivos)
             except: pass
+            
+            decisao = "OPERAR" if operar else "NAO OPERAR"
             
             vela_info = {
                 "idx": len(velas_analisadas),
@@ -2586,16 +2766,21 @@ async def simulador_real(ativo: str = Query("WIN")):
                 "price_action": price_action,
                 "confluencia": setup["confluencia"],
                 "qualidade_setup": conf_label,
+                "janela": janela_nome,
+                "janela_qualidade": janela_qual,
+                "setup_playbook": setup_playbook_nome,
             }
             velas_analisadas.append(vela_info)
             
-            # Check if position closed (cooldown)
+            # Cooldown check
             if posicao_aberta:
                 current_day_idx = day_indices.index(pos_idx) if pos_idx in day_indices else 0
                 if current_day_idx >= posicao_aberta.get("close_idx", 0):
                     posicao_aberta = None
             
-            # ===== EXECUTAR OPERAÇÃO =====
+            # ================================================================
+            # OPERADOR SENIOR - DECISÃO DE ENTRADA
+            # ================================================================
             pode_operar = (
                 operar and tipo_sinal
                 and posicao_aberta is None
@@ -2606,243 +2791,303 @@ async def simulador_real(ativo: str = Query("WIN")):
                 and not dia_bloqueado
             )
             
+            # ===== RACIOCÍNIO DO OPERADOR =====
+            raciocinio_operador = ""
             if pode_operar:
-                # ===== STOP E ALVO PRO =====
-                stop_pts = round(atr_v * 1.5, 4) if ativo != 'WIN' else round(atr_v * 1.5)
-                if ativo == "WIN":
-                    stop_pts = max(round(stop_pts / 5) * 5, 80)
-                    stop_pts = min(stop_pts, 350)
-                else:
-                    # WDO: stop mínimo 0.015 (equivale a ~5 candles de margem)
-                    stop_pts = max(round(stop_pts * 200) / 200, 0.015)
-                    stop_pts = min(stop_pts, 0.08)
+                raciocinio_operador = (
+                    f"[{hora}] DECISÃO: ENTRAR {tipo_sinal}\n"
+                    f"Janela: {janela_nome} ({janela_qual})\n"
+                    f"Setup: {setup_playbook_nome or 'Confluência'} | {conf_label} ({score}/7)\n"
+                    f"Tendência macro: {tend_macro['tendencia']} (força {tend_macro['forca']})\n"
+                    f"Indicadores: RSI={rsi_v} MACD={macd_h} EMA9={'>' if ema9>ema21 else '<'}EMA21\n"
+                    f"Operação #{len(operacoes_recomendadas)+1} de {MAX_OPS_DIA} permitidas\n"
+                    f"Losses consecutivos: {losses_consecutivos}/{MAX_LOSSES_CONSECUTIVOS}\n"
+                    f"P&L dia: {round(total_pts_dia,1)}pts"
+                )
+            elif operar and tipo_sinal:
+                # Queria operar mas não pode
+                bloqueios = []
+                if posicao_aberta: bloqueios.append("posição aberta/cooldown")
+                if len(operacoes_recomendadas) >= MAX_OPS_DIA: bloqueios.append(f"limite {MAX_OPS_DIA} ops atingido")
+                if losses_consecutivos >= MAX_LOSSES_CONSECUTIVOS: bloqueios.append(f"{MAX_LOSSES_CONSECUTIVOS} losses consecutivos")
+                if dia_bloqueado: bloqueios.append("dia bloqueado por perda")
+                if hora_int >= 17: bloqueios.append("horário de fechamento")
+                raciocinio_operador = f"[{hora}] BLOQUEADO: Setup {conf_label} presente mas {', '.join(bloqueios)}"
+            
+            if raciocinio_operador:
+                decisoes_operador.append(raciocinio_operador)
+            
+            if not pode_operar:
+                continue
+            
+            # ================================================================
+            # STOP E ALVO PRO (Elder + Murphy)
+            # ================================================================
+            stop_pts = round(atr_v * 1.5, 4) if ativo != 'WIN' else round(atr_v * 1.5)
+            if ativo == "WIN":
+                stop_pts = max(round(stop_pts / 5) * 5, 80)
+                stop_pts = min(stop_pts, 350)
+            else:
+                stop_pts = max(round(stop_pts * 200) / 200, 0.015)
+                stop_pts = min(stop_pts, 0.08)
+            
+            # R:R baseado na qualidade do setup (Bellafiore: A+ merece mais)
+            if conf_label in ("A+", "A"):
+                rr_ratio = 2.5  # Setup premium = alvo mais ambicioso
+            elif conf_label == "B+":
+                rr_ratio = 2.0
+            else:
+                rr_ratio = 1.8  # C+ = conservador
+            
+            alvo_pts = round(stop_pts * rr_ratio, 4)
+            is_compra = tipo_sinal == "COMPRA"
+            
+            # Stop estrutural (Murphy: abaixo suporte / acima resistência)
+            if is_compra and suporte and abs(c - suporte) < stop_pts:
+                _structural_stop = round(c - suporte + atr_v * 0.3)
+                if _structural_stop > stop_pts * 0.5 and _structural_stop < stop_pts * 2:
+                    if ativo == "WIN":
+                        stop_pts = max(round(_structural_stop / 5) * 5, 80)
+                    else:
+                        stop_pts = max(_structural_stop, 0.015)
+                    alvo_pts = round(stop_pts * rr_ratio, 4)
+            elif not is_compra and resistencia and abs(resistencia - c) < stop_pts:
+                _structural_stop = round(resistencia - c + atr_v * 0.3)
+                if _structural_stop > stop_pts * 0.5 and _structural_stop < stop_pts * 2:
+                    if ativo == "WIN":
+                        stop_pts = max(round(_structural_stop / 5) * 5, 80)
+                    else:
+                        stop_pts = max(_structural_stop, 0.015)
+                    alvo_pts = round(stop_pts * rr_ratio, 4)
+            
+            # ================================================================
+            # ENTRADA REALISTA (próxima vela + slippage)
+            # ================================================================
+            _signal_idx = day_indices.index(pos_idx)
+            _next_idx = _signal_idx + 1
+            if _next_idx >= len(day_indices):
+                posicao_aberta = {"close_idx": _signal_idx + 3}
+                continue
+            
+            _next_vela = dados.iloc[day_indices[_next_idx]]
+            _entry_open = float(_next_vela['open'])
+            _hora_entrada_real = dados.index[day_indices[_next_idx]].strftime("%H:%M")
+            
+            import random as _rnd
+            if ativo == "WIN":
+                _slippage = _rnd.randint(5, 15)
+            else:
+                _slippage = round(_rnd.uniform(0.0005, 0.0015), 4)
+            
+            if is_compra:
+                preco_entrada_real = round(_entry_open + _slippage, 2)
+            else:
+                preco_entrada_real = round(_entry_open - _slippage, 2)
+            
+            _custo_pts = 5 if ativo == "WIN" else 1
+            _preco_sinal = c
+            preco_op = preco_entrada_real
+            hora_op = _hora_entrada_real
+            
+            stop_price = round(preco_op - stop_pts, 2) if is_compra else round(preco_op + stop_pts, 2)
+            alvo_price = round(preco_op + alvo_pts, 2) if is_compra else round(preco_op - alvo_pts, 2)
+            
+            # ================================================================
+            # WALK FORWARD COM TRAILING STOP
+            # ================================================================
+            resultado = None
+            preco_saida = 0
+            hora_saida = ""
+            velas_na_op = 0
+            max_velas_op = 24  # 2h máximo
+            _best_price = preco_op
+            _trailing_active = False
+            
+            future_start = _next_idx + 1
+            for fi in range(future_start, len(day_indices)):
+                fv = dados.iloc[day_indices[fi]]
+                fh = float(fv['high']); fl = float(fv['low'])
+                fc = float(fv['close'])
+                f_hora = dados.index[day_indices[fi]].strftime("%H:%M")
+                velas_na_op += 1
                 
-                alvo_pts = round(stop_pts * 2.0, 4)
-                is_compra = tipo_sinal == "COMPRA"
-                
-                # Stop estrutural (Murphy: stop abaixo do suporte/acima da resistência)
-                if is_compra and suporte and abs(c - suporte) < stop_pts:
-                    _structural_stop = round(c - suporte + atr_v * 0.3)
-                    if _structural_stop > stop_pts * 0.5 and _structural_stop < stop_pts * 2:
-                        if ativo == "WIN":
-                            stop_pts = max(round(_structural_stop / 5) * 5, 80)
-                        else:
-                            stop_pts = max(_structural_stop, 0.015)
-                        alvo_pts = round(stop_pts * 2.0, 4)
-                elif not is_compra and resistencia and abs(resistencia - c) < stop_pts:
-                    _structural_stop = round(resistencia - c + atr_v * 0.3)
-                    if _structural_stop > stop_pts * 0.5 and _structural_stop < stop_pts * 2:
-                        if ativo == "WIN":
-                            stop_pts = max(round(_structural_stop / 5) * 5, 80)
-                        else:
-                            stop_pts = max(_structural_stop, 0.015)
-                        alvo_pts = round(stop_pts * 2.0, 4)
-                
-                # ===== ENTRADA REALISTA: próxima vela open + slippage =====
-                _signal_idx = day_indices.index(pos_idx)
-                _next_idx = _signal_idx + 1
-                if _next_idx >= len(day_indices):
-                    posicao_aberta = {"close_idx": _signal_idx + 3}
-                    continue
-                
-                _next_vela = dados.iloc[day_indices[_next_idx]]
-                _entry_open = float(_next_vela['open'])
-                _hora_entrada_real = dados.index[day_indices[_next_idx]].strftime("%H:%M")
-                
-                import random as _rnd
-                if ativo == "WIN":
-                    _slippage = _rnd.randint(5, 15)  # 5-15pts WIN (realista)
-                else:
-                    _slippage = round(_rnd.uniform(0.0005, 0.0015), 4)
+                if velas_na_op >= max_velas_op:
+                    preco_saida = fc; hora_saida = f_hora
+                    pts_t = (preco_saida - preco_op) if is_compra else (preco_op - preco_saida)
+                    resultado = "WIN" if pts_t > 0 else "LOSS"
+                    break
                 
                 if is_compra:
-                    preco_entrada_real = round(_entry_open + _slippage, 2)
+                    if fh > _best_price: _best_price = fh
+                    _lucro = _best_price - preco_op
+                    if _lucro >= stop_pts and not _trailing_active:
+                        _trailing_active = True
+                        _novo_stop = preco_op + _lucro * 0.2
+                        if _novo_stop > stop_price: stop_price = round(_novo_stop, 2)
+                    elif _trailing_active and _lucro >= stop_pts * 1.5:
+                        _novo_stop = preco_op + _lucro * 0.5
+                        if _novo_stop > stop_price: stop_price = round(_novo_stop, 2)
+                    if fh >= alvo_price:
+                        resultado = "WIN"; preco_saida = alvo_price; hora_saida = f_hora; break
+                    if fl <= stop_price:
+                        preco_saida = stop_price; hora_saida = f_hora
+                        pts_t = preco_saida - preco_op
+                        resultado = "WIN" if pts_t > 0 else "LOSS"; break
                 else:
-                    preco_entrada_real = round(_entry_open - _slippage, 2)
-                
-                if ativo == "WIN":
-                    _custo_pts = 5
-                else:
-                    _custo_pts = 1
-                
-                _preco_sinal = c
-                preco_op = preco_entrada_real
-                hora_op = _hora_entrada_real
-                
-                stop_price = round(preco_op - stop_pts, 2) if is_compra else round(preco_op + stop_pts, 2)
-                alvo_price = round(preco_op + alvo_pts, 2) if is_compra else round(preco_op - alvo_pts, 2)
-                
-                # ===== WALK FORWARD COM TRAILING STOP =====
-                resultado = None
-                preco_saida = 0
-                hora_saida = ""
-                velas_na_op = 0
-                max_velas_op = 24
-                _best_price = preco_op
-                _trailing_active = False
-                
-                future_start = _next_idx + 1
-                for fi in range(future_start, len(day_indices)):
-                    fv = dados.iloc[day_indices[fi]]
-                    fh = float(fv['high']); fl = float(fv['low'])
-                    fc = float(fv['close'])
-                    f_hora = dados.index[day_indices[fi]].strftime("%H:%M")
-                    velas_na_op += 1
-                    
-                    if velas_na_op >= max_velas_op:
-                        preco_saida = fc; hora_saida = f_hora
-                        pts_t = (preco_saida - preco_op) if is_compra else (preco_op - preco_saida)
-                        resultado = "WIN" if pts_t > 0 else "LOSS"
-                        break
-                    
-                    if is_compra:
-                        if fh > _best_price: _best_price = fh
-                        _lucro = _best_price - preco_op
-                        if _lucro >= stop_pts and not _trailing_active:
-                            _trailing_active = True
-                            _novo_stop = preco_op + _lucro * 0.2
-                            if _novo_stop > stop_price: stop_price = round(_novo_stop, 2)
-                        elif _trailing_active and _lucro >= stop_pts * 1.5:
-                            _novo_stop = preco_op + _lucro * 0.5
-                            if _novo_stop > stop_price: stop_price = round(_novo_stop, 2)
-                        if fh >= alvo_price:
-                            resultado = "WIN"; preco_saida = alvo_price; hora_saida = f_hora; break
-                        if fl <= stop_price:
-                            preco_saida = stop_price; hora_saida = f_hora
-                            pts_t = preco_saida - preco_op
-                            resultado = "WIN" if pts_t > 0 else "LOSS"; break
-                    else:
-                        if fl < _best_price: _best_price = fl
-                        _lucro = preco_op - _best_price
-                        if _lucro >= stop_pts and not _trailing_active:
-                            _trailing_active = True
-                            _novo_stop = preco_op - _lucro * 0.2
-                            if _novo_stop < stop_price: stop_price = round(_novo_stop, 2)
-                        elif _trailing_active and _lucro >= stop_pts * 1.5:
-                            _novo_stop = preco_op - _lucro * 0.5
-                            if _novo_stop < stop_price: stop_price = round(_novo_stop, 2)
-                        if fl <= alvo_price:
-                            resultado = "WIN"; preco_saida = alvo_price; hora_saida = f_hora; break
-                        if fh >= stop_price:
-                            preco_saida = stop_price; hora_saida = f_hora
-                            pts_t = preco_op - preco_saida
-                            resultado = "WIN" if pts_t > 0 else "LOSS"; break
-                
-                if resultado is None:
-                    last_v = dados.iloc[day_indices[-1]]
-                    preco_saida = float(last_v['close'])
-                    hora_saida = dados.index[day_indices[-1]].strftime("%H:%M")
-                    pts_f = (preco_saida - preco_op) if is_compra else (preco_op - preco_saida)
-                    resultado = "WIN" if pts_f > 0 else "LOSS"
-                
-                _raw_diff = (preco_saida - preco_op) if is_compra else (preco_op - preco_saida)
-                if ativo == "WDO":
-                    pts_bruto = round(_raw_diff * 1000, 1)
-                else:
-                    pts_bruto = round(_raw_diff, 1)
-                pts = round(pts_bruto - _custo_pts, 4)
-                rs = round(pts * valor_ponto, 2)
-                
-                # ---- ANÁLISE DETALHADA DO RESULTADO ----
-                analise_completa = gerar_analise_completa(setup, vela_info, ativo)
-                analise_completa += f"\nRESULTADO: {resultado} | {round(abs(pts),1)}pts | R${round(abs(rs),2)}\n"
-                analise_completa += f"Entrada: {preco_op} ({hora_op}) | Saída: {round(preco_saida,2)} ({hora_saida})\n"
-                analise_completa += f"Duração: {velas_na_op} velas ({velas_na_op*5}min)\n"
-                
-                detalhes_perda = ""
-                detalhes_vitoria = ""
-                
-                if resultado == "LOSS":
-                    detalhes_perda = f"STOP atingido em {hora_saida} ({velas_na_op} velas). "
-                    detalhes_perda += f"Prejuízo: -{round(abs(pts),1)}pts (-R${round(abs(rs),2)}). "
-                    # Análise do que deu errado
-                    problemas = []
-                    if setup["contra_tendencia"]:
-                        problemas.append("CONTRA TENDÊNCIA - Elder proíbe")
-                    if not setup["confluencia"].get("sr_relevante"):
-                        problemas.append("Preço longe de S/R - sem proteção natural")
-                    if not setup["confluencia"].get("indicadores_confirmam"):
-                        problemas.append("Indicadores não estavam todos alinhados")
-                    if not setup["confluencia"].get("price_action_confirma"):
-                        problemas.append("Sem confirmação de Price Action")
-                    if vwap and ((is_compra and c < vwap) or (not is_compra and c > vwap)):
-                        problemas.append(f"Contra VWAP ({round(vwap, 0)})")
-                    if not problemas:
-                        problemas.append(f"Setup {conf_label} correto - loss faz parte (Douglas: distribuição aleatória)")
-                    detalhes_perda += "ANÁLISE: " + "; ".join(problemas) + ". "
-                    detalhes_perda += f"Confluência era {score}/7 ({conf_label}). "
-                    detalhes_perda += "Lição: " + (
-                        "Aumentar filtro de confluência - só A+ e B+." if score < 4
-                        else "Loss com setup correto é normal. Disciplina > resultado individual."
-                    )
-                    analise_completa += f"\nANÁLISE DO LOSS:\n{detalhes_perda}\n"
-                else:
-                    detalhes_vitoria = f"Alvo atingido em {hora_saida} (+{round(abs(pts),1)}pts = R${round(abs(rs),2)}). "
-                    detalhes_vitoria += f"Confluência {score}/7 ({conf_label}). "
-                    if setup["confluencia"].get("tendencia_tf_maior"):
-                        detalhes_vitoria += "Triple Screen alinhado. "
-                    if setup["confluencia"].get("price_action_confirma"):
-                        detalhes_vitoria += "Price Action confirmou. "
-                    if setup["confluencia"].get("sr_relevante"):
-                        detalhes_vitoria += "S/R deu proteção. "
-                    detalhes_vitoria += f"Duração: {velas_na_op*5}min. "
-                    detalhes_vitoria += "Lição: Setups com alta confluência e a favor da tendência = maior probabilidade."
-                    analise_completa += f"\nANÁLISE DO WIN:\n{detalhes_vitoria}\n"
-                
-                operacoes_recomendadas.append({
-                    "tipo": tipo_sinal,
-                    "hora_entrada": hora_op,
-                    "preco_entrada": round(preco_op, 2),
-                    "preco_sinal": round(_preco_sinal, 2),
-                    "slippage": _slippage,
-                    "custo_pts": _custo_pts,
-                    "stop_loss": stop_price,
-                    "take_profit": alvo_price,
-                    "stop_pts": round(stop_pts * 1000, 1) if ativo == "WDO" else stop_pts,
-                    "alvo_pts": round(alvo_pts * 1000, 1) if ativo == "WDO" else alvo_pts,
-                    "rr": f"1:{round(alvo_pts/stop_pts, 1)}",
-                    "hora_saida": hora_saida,
-                    "preco_saida": round(preco_saida, 2),
-                    "resultado": resultado,
-                    "pts": pts,
-                    "resultado_rs": rs,
-                    "velas_na_op": velas_na_op,
-                    "score": score,
-                    "confianca": confianca,
-                    "conf_label": conf_label,
-                    "motivos": motivos_operar,
-                    "detalhes_perda": detalhes_perda,
-                    "detalhes_vitoria": detalhes_vitoria,
-                    "analise_completa": analise_completa,
-                    "suporte": round(suporte, 0) if suporte else None,
-                    "resistencia": round(resistencia, 0) if resistencia else None,
-                    "vwap": round(vwap, 0) if vwap else None,
-                    "fib_level": fib_level,
-                    "rsi": rsi_v,
-                    "macd_hist": macd_h,
-                    "ema9": ema9,
-                    "ema21": ema21,
-                    "atr": atr_v,
-                    "tendencia": tend,
-                    "confluencia_detalhes": setup["confluencia"],
-                    "qualidade_setup": conf_label,
-                })
-                
-                # PRO TRADER: atualizar controles
-                total_pts_dia += pts
-                if resultado == "LOSS":
-                    losses_consecutivos += 1
-                    cooldown_velas = 4 if losses_consecutivos >= 2 else 3
-                else:
-                    losses_consecutivos = 0
-                    cooldown_velas = 2
-                
-                if total_pts_dia <= LOSS_LIMIT_PTS:
-                    dia_bloqueado = True
-                
-                posicao_aberta = {"close_idx": future_start + velas_na_op + cooldown_velas}
+                    if fl < _best_price: _best_price = fl
+                    _lucro = preco_op - _best_price
+                    if _lucro >= stop_pts and not _trailing_active:
+                        _trailing_active = True
+                        _novo_stop = preco_op - _lucro * 0.2
+                        if _novo_stop < stop_price: stop_price = round(_novo_stop, 2)
+                    elif _trailing_active and _lucro >= stop_pts * 1.5:
+                        _novo_stop = preco_op - _lucro * 0.5
+                        if _novo_stop < stop_price: stop_price = round(_novo_stop, 2)
+                    if fl <= alvo_price:
+                        resultado = "WIN"; preco_saida = alvo_price; hora_saida = f_hora; break
+                    if fh >= stop_price:
+                        preco_saida = stop_price; hora_saida = f_hora
+                        pts_t = preco_op - preco_saida
+                        resultado = "WIN" if pts_t > 0 else "LOSS"; break
+            
+            if resultado is None:
+                last_v = dados.iloc[day_indices[-1]]
+                preco_saida = float(last_v['close'])
+                hora_saida = dados.index[day_indices[-1]].strftime("%H:%M")
+                pts_f = (preco_saida - preco_op) if is_compra else (preco_op - preco_saida)
+                resultado = "WIN" if pts_f > 0 else "LOSS"
+            
+            _raw_diff = (preco_saida - preco_op) if is_compra else (preco_op - preco_saida)
+            if ativo == "WDO":
+                pts_bruto = round(_raw_diff * 1000, 1)
+            else:
+                pts_bruto = round(_raw_diff, 1)
+            pts = round(pts_bruto - _custo_pts, 4)
+            rs = round(pts * valor_ponto, 2)
+            
+            # ---- ANÁLISE COMPLETA ----
+            analise_completa = gerar_analise_completa(setup, vela_info, ativo)
+            analise_completa += f"\nESTRATÉGIA: {setup_playbook_nome or 'Confluência Técnica'}\n"
+            analise_completa += f"JANELA: {janela_nome} ({janela_qual})\n"
+            analise_completa += f"RESULTADO: {resultado} | {round(abs(pts),1)}pts | R${round(abs(rs),2)}\n"
+            analise_completa += f"Entrada: {preco_op} ({hora_op}) | Saída: {round(preco_saida,2)} ({hora_saida})\n"
+            analise_completa += f"Duração: {velas_na_op} velas ({velas_na_op*5}min)\n"
+            
+            detalhes_perda = ""
+            detalhes_vitoria = ""
+            
+            if resultado == "LOSS":
+                detalhes_perda = f"STOP atingido em {hora_saida} ({velas_na_op} velas). "
+                detalhes_perda += f"Prejuízo: -{round(abs(pts),1)}pts (-R${round(abs(rs),2)}). "
+                problemas = []
+                if setup["contra_tendencia"]:
+                    problemas.append("CONTRA TENDÊNCIA - Elder proíbe")
+                if not setup["confluencia"].get("sr_relevante"):
+                    problemas.append("Preço longe de S/R - sem proteção natural")
+                if not setup["confluencia"].get("indicadores_confirmam"):
+                    problemas.append("Indicadores não estavam todos alinhados")
+                if not setup["confluencia"].get("price_action_confirma"):
+                    problemas.append("Sem confirmação de Price Action")
+                if vwap and ((is_compra and c < vwap) or (not is_compra and c > vwap)):
+                    problemas.append(f"Contra VWAP ({round(vwap, 0)})")
+                if not problemas:
+                    problemas.append(f"Setup {conf_label} correto - loss faz parte (Douglas: distribuição aleatória)")
+                detalhes_perda += "ANÁLISE: " + "; ".join(problemas) + ". "
+                detalhes_perda += f"Confluência era {score}/7 ({conf_label}). "
+                detalhes_perda += "Lição: " + (
+                    "Aumentar filtro de confluência - só A+ e B+." if score < 4
+                    else "Loss com setup correto é normal. Disciplina > resultado individual."
+                )
+                analise_completa += f"\nANÁLISE DO LOSS:\n{detalhes_perda}\n"
+            else:
+                detalhes_vitoria = f"Alvo atingido em {hora_saida} (+{round(abs(pts),1)}pts = R${round(abs(rs),2)}). "
+                detalhes_vitoria += f"Confluência {score}/7 ({conf_label}). "
+                if setup["confluencia"].get("tendencia_tf_maior"):
+                    detalhes_vitoria += "Triple Screen alinhado. "
+                if setup["confluencia"].get("price_action_confirma"):
+                    detalhes_vitoria += "Price Action confirmou. "
+                if setup["confluencia"].get("sr_relevante"):
+                    detalhes_vitoria += "S/R deu proteção. "
+                detalhes_vitoria += f"Duração: {velas_na_op*5}min. "
+                detalhes_vitoria += "Lição: Setups com alta confluência e a favor da tendência = maior probabilidade."
+                analise_completa += f"\nANÁLISE DO WIN:\n{detalhes_vitoria}\n"
+            
+            operacoes_recomendadas.append({
+                "tipo": tipo_sinal,
+                "hora_entrada": hora_op,
+                "preco_entrada": round(preco_op, 2),
+                "preco_sinal": round(_preco_sinal, 2),
+                "slippage": _slippage,
+                "custo_pts": _custo_pts,
+                "stop_loss": stop_price,
+                "take_profit": alvo_price,
+                "stop_pts": round(stop_pts * 1000, 1) if ativo == "WDO" else stop_pts,
+                "alvo_pts": round(alvo_pts * 1000, 1) if ativo == "WDO" else alvo_pts,
+                "rr": f"1:{round(rr_ratio, 1)}",
+                "hora_saida": hora_saida,
+                "preco_saida": round(preco_saida, 2),
+                "resultado": resultado,
+                "pts": pts,
+                "resultado_rs": rs,
+                "velas_na_op": velas_na_op,
+                "score": score,
+                "confianca": confianca,
+                "conf_label": conf_label,
+                "motivos": motivos_operar,
+                "detalhes_perda": detalhes_perda,
+                "detalhes_vitoria": detalhes_vitoria,
+                "analise_completa": analise_completa,
+                "suporte": round(suporte, 0) if suporte else None,
+                "resistencia": round(resistencia, 0) if resistencia else None,
+                "vwap": round(vwap, 0) if vwap else None,
+                "fib_level": fib_level,
+                "rsi": rsi_v,
+                "macd_hist": macd_h,
+                "ema9": ema9,
+                "ema21": ema21,
+                "atr": atr_v,
+                "tendencia": tend,
+                "confluencia_detalhes": setup["confluencia"],
+                "qualidade_setup": conf_label,
+                "estrategia": setup_playbook_nome or "Confluência Técnica",
+                "estrategia_desc": setup_playbook_desc or "",
+                "janela": janela_nome,
+                "janela_qualidade": janela_qual,
+                "raciocinio": raciocinio_operador,
+            })
+            
+            # ===== CONTROLES PÓS-TRADE =====
+            total_pts_dia += pts
+            if resultado == "LOSS":
+                losses_consecutivos += 1
+                cooldown_velas = 4 if losses_consecutivos >= 2 else 3
+                decisoes_operador.append(
+                    f"[{hora_saida}] LOSS #{losses_consecutivos}. "
+                    f"Tendler: {'PAUSA OBRIGATÓRIA - 3 losses' if losses_consecutivos >= MAX_LOSSES_CONSECUTIVOS else 'Cooldown ' + str(cooldown_velas) + ' velas'}. "
+                    f"P&L dia: {round(total_pts_dia,1)}pts"
+                )
+            else:
+                losses_consecutivos = 0
+                cooldown_velas = 2
+                decisoes_operador.append(
+                    f"[{hora_saida}] WIN! P&L dia: {round(total_pts_dia,1)}pts. "
+                    f"Axioma #2: Realizei lucro, não insisto."
+                )
+            
+            if total_pts_dia <= LOSS_LIMIT_PTS:
+                dia_bloqueado = True
+                motivo_parada = f"Limite de perda diária atingido ({round(total_pts_dia,1)}pts). Tendler: elevar o piso, não forçar."
+                decisoes_operador.append(f"[{hora_saida}] DIA BLOQUEADO: {motivo_parada}")
+            
+            if losses_consecutivos >= MAX_LOSSES_CONSECUTIVOS:
+                motivo_parada = f"{MAX_LOSSES_CONSECUTIVOS} losses consecutivos. Tendler: identificar tilt antes de continuar."
+                decisoes_operador.append(f"[{hora_saida}] PARADA: {motivo_parada}")
+            
+            posicao_aberta = {"close_idx": future_start + velas_na_op + cooldown_velas}
         
-        # ---- RESUMO DO DIA ----
+        # ================================================================
+        # RESUMO DO DIA
+        # ================================================================
         first_v = velas_analisadas[0] if velas_analisadas else {}
         last_v = velas_analisadas[-1] if velas_analisadas else {}
         abertura = first_v.get("open", 0)
@@ -2864,10 +3109,19 @@ async def simulador_real(ativo: str = Query("WIN")):
         velas_operar = sum(1 for v in velas_analisadas if v["decisao"] == "OPERAR")
         velas_nao = sum(1 for v in velas_analisadas if v["decisao"] == "NAO OPERAR")
         
+        # Factor de lucro
+        ganhos = sum(op["pts"] for op in operacoes_recomendadas if op["resultado"] == "WIN")
+        perdas = abs(sum(op["pts"] for op in operacoes_recomendadas if op["resultado"] == "LOSS"))
+        fator_lucro = round(ganhos / perdas, 2) if perdas > 0 else (999 if ganhos > 0 else 0)
+        
+        # Melhor e pior trade
+        melhor_trade = max(operacoes_recomendadas, key=lambda x: x["pts"]) if operacoes_recomendadas else None
+        pior_trade = min(operacoes_recomendadas, key=lambda x: x["pts"]) if operacoes_recomendadas else None
+        
         # Learning
         if operacoes_recomendadas:
             try:
-                learning_data = registrar_sessao(
+                registrar_sessao(
                     ativo, dia_analise.strftime("%d/%m/%Y"),
                     operacoes_recomendadas,
                     {"win_rate": win_rate, "total_pts": total_pts}
@@ -2891,6 +3145,9 @@ async def simulador_real(ativo: str = Query("WIN")):
             "modo": _modo,
             "mercado_aberto": _mercado_aberto,
             "aprendizado": aprendizado,
+            "max_entradas_config": max_entradas,
+            "briefing_operador": briefing,
+            "decisoes_operador": decisoes_operador,
             "tend_macro": {
                 "tendencia": tend_macro["tendencia"],
                 "forca": tend_macro["forca"],
@@ -2916,10 +3173,13 @@ async def simulador_real(ativo: str = Query("WIN")):
                 "win_rate": win_rate,
                 "total_pts": round(total_pts, 1),
                 "total_rs": round(total_rs, 2),
+                "fator_lucro": fator_lucro,
+                "melhor_trade": {"pts": round(melhor_trade["pts"], 1), "hora": melhor_trade["hora_entrada"], "estrategia": melhor_trade.get("estrategia", "")} if melhor_trade else None,
+                "pior_trade": {"pts": round(pior_trade["pts"], 1), "hora": pior_trade["hora_entrada"], "estrategia": pior_trade.get("estrategia", "")} if pior_trade else None,
                 "max_ops_dia": MAX_OPS_DIA,
                 "losses_limit": MAX_LOSSES_CONSECUTIVOS,
                 "dia_bloqueado": dia_bloqueado,
-                "motivo_parada": "Limite de perda atingido" if dia_bloqueado else ("Parou após " + str(MAX_LOSSES_CONSECUTIVOS) + " losses consecutivos" if losses_consecutivos >= MAX_LOSSES_CONSECUTIVOS else ""),
+                "motivo_parada": motivo_parada,
             },
             "operacoes": operacoes_recomendadas,
             "oportunidades": oportunidades,
@@ -2938,6 +3198,8 @@ async def simulador_real(ativo: str = Query("WIN")):
                 "motivos_operar": v.get("motivos_operar", [])[:3],
                 "price_action": v.get("price_action", {}),
                 "confluencia": v.get("confluencia", {}),
+                "janela": v.get("janela", ""),
+                "setup_playbook": v.get("setup_playbook"),
             } for v in velas_analisadas],
             "timestamp": datetime.now(BRT_tz).strftime("%H:%M:%S"),
         })

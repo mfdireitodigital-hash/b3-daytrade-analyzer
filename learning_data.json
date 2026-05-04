@@ -1,23 +1,111 @@
 {
   "versao": 2,
-  "total_sessoes": 0,
-  "total_operacoes": 0,
+  "total_sessoes": 1,
+  "total_operacoes": 2,
   "total_wins": 0,
-  "total_losses": 0,
-  "win_rate_global": 0,
-  "total_pts": 0,
-  "total_rs": 0,
+  "total_losses": 2,
+  "win_rate_global": 0.0,
+  "total_pts": -435.0,
+  "total_rs": -87.0,
   "pesos": {
-    "horario": 1.0, "rsi": 1.0, "macd": 1.0, "ema": 1.0,
-    "atr": 1.0, "vwap": 1.0, "fibonacci": 1.0, "candlestick": 1.0,
-    "suporte_resistencia": 1.0, "tendencia": 1.0,
-    "price_action": 1.0, "smc": 1.0, "volume": 1.0
+    "horario": 1.0,
+    "rsi": 0.99,
+    "macd": 0.98,
+    "ema": 0.98,
+    "atr": 1.0,
+    "vwap": 1.0,
+    "fibonacci": 0.99,
+    "candlestick": 1.0,
+    "suporte_resistencia": 1.0,
+    "tendencia": 1.0,
+    "price_action": 1.0,
+    "smc": 0.98,
+    "volume": 0.97
   },
-  "sessoes": [],
+  "sessoes": [
+    {
+      "data": "04/05/2026",
+      "ativo": "WIN",
+      "ops": 2,
+      "wins": 0,
+      "losses": 2,
+      "pts": -435.0,
+      "win_rate": 0,
+      "timestamp": "2026-05-04T12:00:42.372539-03:00"
+    }
+  ],
   "livros_aplicados": [],
-  "memoria_erros": [],
+  "memoria_erros": [
+    {
+      "data": "04/05/2026",
+      "ativo": "WIN",
+      "fingerprint": {
+        "tipo": "VENDA",
+        "hora_faixa": "manha",
+        "tendencia": "ALTA",
+        "rsi_zona": "vendedor",
+        "macd_direcao": "negativo",
+        "score": 7,
+        "conf_label": "A+",
+        "motivos": [
+          "Triple Screen T1: VENDA alinhado com tendência BAIXA (Tendência BAIXA: EMA50 caindo + estrutura vendedora)",
+          "S/R Murphy: Preço em RESISTÊNCIA 187386.17 (3 toques)",
+          "Volume: dados indisponíveis (neutro)",
+          "RSI 37.1 - espaço para queda",
+          "MACD histograma -46.7 confirma VENDA"
+        ]
+      },
+      "contexto": "VENDA em 10:05 - ALTA - Score 7 (A+)",
+      "licao": "VENDA contra tendência ALTA - Elder proíbe (Triple Screen)",
+      "pts_perdidos": -155.0,
+      "detalhes": "STOP atingido em 10:10 (1 velas). Prejuízo: -155.0pts (-R$31.0). ANÁLISE: Contra VWAP (186786.0). Confluência era 7/7 (A+). Lição: Loss com setup correto é normal. Disciplina > resultado individual."
+    },
+    {
+      "data": "04/05/2026",
+      "ativo": "WIN",
+      "fingerprint": {
+        "tipo": "VENDA",
+        "hora_faixa": "manha",
+        "tendencia": "BAIXA",
+        "rsi_zona": "sobrevendido",
+        "macd_direcao": "negativo",
+        "score": 4,
+        "conf_label": "B+",
+        "motivos": [
+          "Triple Screen T1: VENDA alinhado com tendência BAIXA (Tendência BAIXA: EMA50 caindo + estrutura vendedora)",
+          "Volume: dados indisponíveis (neutro)",
+          "MACD histograma -107.6 confirma VENDA",
+          "Price Action: LTB ativa (topos descendentes)",
+          "R:R mínimo 1:2 (Van Tharp: expectativa positiva)"
+        ]
+      },
+      "contexto": "VENDA em 10:35 - BAIXA - Score 4 (B+)",
+      "licao": "RSI extremo (19.0) na hora da entrada - mercado esticado",
+      "pts_perdidos": -280.0,
+      "detalhes": "STOP atingido em 10:40 (1 velas). Prejuízo: -280.0pts (-R$56.0). ANÁLISE: Preço longe de S/R - sem proteção natural; Indicadores não estavam todos alinhados; Contra VWAP (186914.0). Confluência era 4/"
+    }
+  ],
   "regras_aprendidas": [],
-  "situacoes_perigosas": {},
+  "situacoes_perigosas": {
+    "VENDA_manha_ALTA_vendedor": {
+      "losses": 1,
+      "total": 1,
+      "taxa_loss": 100.0
+    },
+    "VENDA_manha_BAIXA_sobrevendido": {
+      "losses": 1,
+      "total": 1,
+      "taxa_loss": 100.0
+    }
+  },
   "situacoes_seguras": {},
-  "evolucao": []
+  "evolucao": [
+    {
+      "data": "04/05/2026",
+      "win_rate_sessao": 0,
+      "win_rate_global": 0.0,
+      "total_erros_memoria": 2,
+      "regras_ativas": 0
+    }
+  ]
 }

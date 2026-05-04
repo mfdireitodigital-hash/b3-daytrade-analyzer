@@ -946,6 +946,36 @@
             </div>
         </div>
 
+        <!-- CONFIGURAÇÃO DO OPERADOR -->
+        <div id="simRealConfig" style="background:linear-gradient(135deg, rgba(59,130,246,0.08), rgba(139,92,246,0.08));border:1px solid var(--accent-blue);border-radius:10px;padding:14px;margin:8px 0;">
+            <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
+                <div style="display:flex;align-items:center;gap:8px;">
+                    <span style="font-size:20px;">🎯</span>
+                    <div>
+                        <div style="font-size:12px;font-weight:800;color:var(--accent-blue);">OPERADOR SENIOR AUTÔNOMO</div>
+                        <div style="font-size:10px;color:var(--text-muted);">Triple Screen + PlayBook + Gestão de Risco</div>
+                    </div>
+                </div>
+                <div style="display:flex;align-items:center;gap:12px;">
+                    <label style="font-size:11px;font-weight:700;color:var(--text-secondary);">MAX ENTRADAS/DIA:</label>
+                    <input type="range" id="simRealMaxEntradas" min="1" max="15" value="5" oninput="document.getElementById('simRealMaxEntradasVal').textContent=this.value" style="width:100px;accent-color:var(--accent-blue);">
+                    <span id="simRealMaxEntradasVal" style="font-size:16px;font-weight:900;color:var(--accent-blue);min-width:20px;text-align:center;">5</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- BRIEFING DO OPERADOR -->
+        <div id="simRealBriefing" style="display:none;background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:14px;margin:8px 0;">
+            <div style="font-size:11px;font-weight:700;color:var(--accent-purple);text-transform:uppercase;margin-bottom:8px;">📋 Briefing Pré-Mercado do Operador</div>
+            <div id="simRealBriefingContent" style="font-size:11px;color:var(--text-secondary);line-height:1.6;"></div>
+        </div>
+
+        <!-- LOG DE DECISÕES DO OPERADOR -->
+        <div id="simRealDecisoes" style="display:none;background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:14px;margin:8px 0;">
+            <div style="font-size:11px;font-weight:700;color:var(--accent-green);text-transform:uppercase;margin-bottom:8px;">🧠 Raciocínio do Operador</div>
+            <div id="simRealDecisoesContent" style="font-size:10px;color:var(--text-muted);line-height:1.8;max-height:200px;overflow-y:auto;font-family:monospace;"></div>
+        </div>
+
         <!-- VEREDICTO PRINCIPAL -->
         <div id="simRealVeredicto" style="background:var(--bg-card);border:2px solid var(--border);border-radius:10px;padding:16px;margin:8px 0;text-align:center;">
             <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;margin-bottom:4px;">Veredicto do Simulador</div>
@@ -3918,7 +3948,7 @@ async function simRealAnalisar() {
         const controller = new AbortController();
         const _timeout = setTimeout(() => controller.abort(), 60000); // 60s timeout
         const [simRes, notRes] = await Promise.all([
-            fetch('/api/simulador-real?ativo=' + _ativo, {signal: controller.signal}).then(r => r.json()),
+            fetch('/api/simulador-real?ativo=' + _ativo + '&max_entradas=' + (document.getElementById('simRealMaxEntradas')?.value || 5), {signal: controller.signal}).then(r => r.json()),
             fetch('/api/noticias-impacto', {signal: controller.signal}).then(r => r.json()).catch(e => null),
         ]);
         clearTimeout(_timeout);
@@ -3930,6 +3960,40 @@ async function simRealAnalisar() {
         
         // Mostrar MODO (REPLAY ou REAL)
         const _modo = simRes.modo || 'REPLAY';
+        
+        // ===== BRIEFING DO OPERADOR =====
+        const _briefingDiv = document.getElementById('simRealBriefing');
+        const _briefingContent = document.getElementById('simRealBriefingContent');
+        if (_briefingDiv && simRes.briefing_operador) {
+            _briefingDiv.style.display = 'block';
+            const br = simRes.briefing_operador;
+            let bhtml = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">';
+            bhtml += '<div><strong style="color:var(--accent-blue);">Tendência Macro:</strong> ' + (br.tendencia_macro||'?') + ' (força ' + (br.forca_macro||0) + ')</div>';
+            bhtml += '<div><strong style="color:var(--accent-blue);">Regra Elder:</strong> ' + (br.regra_elder||'') + '</div>';
+            bhtml += '<div><strong style="color:var(--accent-blue);">Max Entradas:</strong> ' + (br.max_entradas_config||5) + '</div>';
+            bhtml += '<div><strong style="color:var(--accent-blue);">R:R Mínimo:</strong> ' + (br.rr_minimo||'1:2') + '</div>';
+            bhtml += '</div>';
+            if (br.noticias_alto_impacto && br.noticias_alto_impacto.length > 0) {
+                bhtml += '<div style="margin-top:8px;padding:6px 10px;background:rgba(239,68,68,0.1);border-radius:6px;border:1px solid rgba(239,68,68,0.2);"><strong style="color:#ef4444;">⚠ Notícias Alto Impacto:</strong> ' + br.noticias_alto_impacto.join(' | ') + '</div>';
+            }
+            bhtml += '<div style="margin-top:8px;padding:8px;background:rgba(59,130,246,0.06);border-radius:6px;font-style:italic;">' + (br.plano||'') + '</div>';
+            _briefingContent.innerHTML = bhtml;
+        }
+        
+        // ===== LOG DE DECISÕES DO OPERADOR =====
+        const _decisoesDiv = document.getElementById('simRealDecisoes');
+        const _decisoesContent = document.getElementById('simRealDecisoesContent');
+        if (_decisoesDiv && simRes.decisoes_operador && simRes.decisoes_operador.length > 0) {
+            _decisoesDiv.style.display = 'block';
+            _decisoesContent.innerHTML = simRes.decisoes_operador.map(d => {
+                let cor = 'var(--text-muted)';
+                if (d.includes('ENTRAR')) cor = '#22c55e';
+                else if (d.includes('LOSS')) cor = '#ef4444';
+                else if (d.includes('WIN!')) cor = '#22c55e';
+                else if (d.includes('BLOQUEADO') || d.includes('PARADA')) cor = '#f59e0b';
+                return '<div style="color:' + cor + ';padding:2px 0;border-bottom:1px solid rgba(255,255,255,0.03);">' + d.replace(/\n/g, '<br>') + '</div>';
+            }).join('');
+        }
         const _modoLabel = document.getElementById('simRealModoLabel');
         const _modoDot = document.getElementById('simRealDot');
         if (_modo === 'REAL') {
@@ -4095,6 +4159,7 @@ async function simRealAnalisar() {
                 oH += '<div style="display:flex;align-items:center;gap:6px;">';
                 oH += '<span style="font-size:11px;font-weight:800;color:' + cOp + ';background:' + cOp + '15;padding:2px 8px;border-radius:4px;">' + op.tipo + '</span>';
                 oH += '<span style="font-weight:700;font-size:13px;font-family:monospace;">' + op.hora_entrada + ' → ' + op.hora_saida + '</span>';
+                if (op.estrategia) { oH += '<span style="font-size:10px;font-weight:800;color:#a78bfa;background:rgba(167,139,250,0.12);padding:2px 8px;border-radius:4px;">📖 ' + op.estrategia + '</span>'; }
                 oH += '<span style="font-size:11px;color:var(--text-muted);">@ ' + op.preco_entrada.toLocaleString('pt-BR') + ' → ' + op.preco_saida.toLocaleString('pt-BR') + '</span>';
                 oH += '</div>';
                 oH += '<div style="display:flex;align-items:center;gap:6px;">';
@@ -4107,6 +4172,7 @@ async function simRealAnalisar() {
                 oH += '<span style="background:rgba(255,255,255,0.05);padding:2px 6px;border-radius:3px;">Alvo: ' + op.alvo_pts + 'pts</span>';
                 oH += '<span style="background:rgba(255,255,255,0.05);padding:2px 6px;border-radius:3px;">R:R ' + op.rr + '</span>';
                 oH += '<span style="background:rgba(255,255,255,0.05);padding:2px 6px;border-radius:3px;">Confianca: ' + op.conf_label + ' (' + op.score + '/7)' + '</span>';
+                if (op.janela) { oH += '<span style="background:rgba(59,130,246,0.1);color:#93c5fd;padding:2px 6px;border-radius:3px;">🕐 ' + op.janela + '</span>'; }
                 oH += '<span style="background:rgba(255,255,255,0.05);padding:2px 6px;border-radius:3px;">' + op.velas_na_op + ' velas</span>';
                 if (op.slippage) { oH += '<span style="background:rgba(239,68,68,0.1);color:#fca5a5;padding:2px 6px;border-radius:3px;">Slippage: ' + op.slippage + 'pts</span>'; }
                 if (op.custo_pts) { oH += '<span style="background:rgba(239,68,68,0.1);color:#fca5a5;padding:2px 6px;border-radius:3px;">Custo: ' + op.custo_pts + 'pts</span>'; }
@@ -4138,7 +4204,14 @@ async function simRealAnalisar() {
             oH += '<div><div style="font-size:10px;color:var(--text-muted);">Win Rate</div><div style="font-size:22px;font-weight:800;color:' + (perf.win_rate>=60?'#22c55e':'#ca8a04') + ';">' + perf.win_rate + '%</div></div>';
             oH += '<div><div style="font-size:10px;color:var(--text-muted);">Pontos</div><div style="font-size:22px;font-weight:800;color:' + (perf.total_pts>=0?'#22c55e':'#ef4444') + ';">' + (perf.total_pts>=0?'+':'') + perf.total_pts + '</div></div>';
             oH += '<div><div style="font-size:10px;color:var(--text-muted);">P&L</div><div style="font-size:22px;font-weight:800;color:' + (perf.total_rs>=0?'#22c55e':'#ef4444') + ';">' + (perf.total_rs>=0?'+':'') + 'R$ ' + perf.total_rs.toFixed(2) + '</div></div>';
+            if (perf.fator_lucro !== undefined) { oH += '<div><div style="font-size:10px;color:var(--text-muted);">Fator Lucro</div><div style="font-size:22px;font-weight:800;color:' + (perf.fator_lucro>=1.5?'#22c55e':perf.fator_lucro>=1?'#ca8a04':'#ef4444') + ';">' + perf.fator_lucro + '</div></div>'; }
             oH += '</div>';
+            if (perf.melhor_trade || perf.pior_trade) {
+                oH += '<div style="display:flex;gap:8px;margin:6px 0;flex-wrap:wrap;">';
+                if (perf.melhor_trade) { oH += '<div style="flex:1;min-width:200px;background:rgba(34,197,94,0.06);border:1px solid rgba(34,197,94,0.2);border-radius:6px;padding:8px;font-size:10px;"><span style="font-weight:800;color:#22c55e;">MELHOR:</span> +' + perf.melhor_trade.pts + 'pts às ' + perf.melhor_trade.hora + (perf.melhor_trade.estrategia?' (' + perf.melhor_trade.estrategia + ')':'') + '</div>'; }
+                if (perf.pior_trade) { oH += '<div style="flex:1;min-width:200px;background:rgba(239,68,68,0.06);border:1px solid rgba(239,68,68,0.2);border-radius:6px;padding:8px;font-size:10px;"><span style="font-weight:800;color:#ef4444;">PIOR:</span> ' + perf.pior_trade.pts + 'pts às ' + perf.pior_trade.hora + (perf.pior_trade.estrategia?' (' + perf.pior_trade.estrategia + ')':'') + '</div>'; }
+                oH += '</div>';
+            }
         }
         
         // ---- APRENDIZADO DA AI ----
