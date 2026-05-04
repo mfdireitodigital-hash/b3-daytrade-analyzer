@@ -312,114 +312,393 @@
         .pt-empty { text-align: center; padding: 40px 20px; color: var(--text-muted); font-size: 13px; }
         .pt-empty-icon { font-size: 40px; margin-bottom: 10px; opacity: 0.3; }
 
+        /* ==========================================
+           MOBILE RESPONSIVO COMPLETO v3.7
+           ========================================== */
+        
         @media (max-width: 768px) {
-            .pt-trading-panel { grid-template-columns: 1fr; }
-            .pt-container { margin: 10px; }
-            .pt-balance-bar { flex-direction: column; }
-        }
-        @media (max-width: 768px) {
-            .main-grid { grid-template-columns: 1fr; }
-            .sidebar { max-height: none; }
-            .header { padding: 8px 12px; }
-            .logo { font-size: 14px; }
-            .chart-container { height: 280px; }
-            .contrato-selector { flex-wrap: wrap; }
-        }
-        /* ===== MOBILE RESPONSIVO COMPLETO ===== */
-        @media (max-width: 768px) {
-            /* Simulador Real grid: 1 coluna no mobile */
-            #simRealGrid { grid-template-columns: 1fr !important; }
-            
-            /* Container mais estreito */
-            .pt-container { margin: 5px !important; padding: 0 !important; max-width: 100% !important; }
-            .pt-overlay .pt-container { max-width: 100% !important; }
-            
-            /* Header do simulador */
-            #simRealOverlay .pt-container > div:first-child { 
-                flex-wrap: wrap !important; 
+            /* === HEADER === */
+            .header { 
+                padding: 6px 8px !important; 
+                flex-direction: column !important;
+                gap: 4px !important;
+            }
+            .header-left { 
+                width: 100% !important;
+                justify-content: space-between !important;
                 gap: 6px !important;
+            }
+            .logo { font-size: 12px !important; }
+            .countdown { font-size: 9px !important; }
+            #fonteLabel { display: none !important; }
+            
+            .header-controls { 
+                width: 100% !important;
+                justify-content: center !important;
+                gap: 4px !important;
+                flex-wrap: wrap !important;
+            }
+            .header-controls .btn,
+            .header-controls .btn-primary,
+            .header-controls .btn-demo,
+            .header-controls button { 
+                font-size: 9px !important; 
+                padding: 4px 6px !important;
+                white-space: nowrap !important;
+            }
+            .contrato-selector { 
+                display: flex !important;
+                gap: 4px !important;
+                font-size: 9px !important;
+            }
+            .contrato-selector label { font-size: 9px !important; }
+            .contrato-selector input { 
+                width: 35px !important; 
+                font-size: 10px !important;
+                padding: 2px 4px !important;
+            }
+            .contrato-valor { font-size: 8px !important; }
+            .user-badge { 
+                padding: 3px 6px !important; 
+                font-size: 10px !important;
+            }
+            .btn-logout { 
+                padding: 3px 8px !important; 
+                font-size: 9px !important; 
+            }
+            
+            /* === TABS ATIVO === */
+            .ativo-tabs { 
+                padding: 0 8px !important;
+                gap: 0 !important;
+            }
+            .ativo-tab { 
+                font-size: 11px !important; 
+                padding: 8px 12px !important;
+            }
+            
+            /* === TIMEFRAME BUTTONS === */
+            .tf-buttons { 
+                flex-wrap: wrap !important;
+                gap: 4px !important;
+                padding: 6px 8px !important;
+            }
+            .tf-buttons .btn { 
+                font-size: 10px !important;
+                padding: 4px 8px !important;
+            }
+            
+            /* === MAIN GRID === */
+            .main-grid { 
+                grid-template-columns: 1fr !important; 
+                min-height: auto !important;
+            }
+            .sidebar { 
+                max-height: none !important;
+                order: 2 !important;
+            }
+            .content-area { order: 1 !important; }
+            
+            /* === CHART === */
+            .chart-container { height: 250px !important; }
+            
+            /* === PRECO GRANDE === */
+            .price-display { font-size: 28px !important; }
+            
+            /* === SIDEBAR SECTIONS === */
+            .sidebar-section { padding: 8px 10px !important; }
+            .sidebar-section h3 { font-size: 11px !important; }
+            
+            /* === OVERLAYS (CT, Simulador, Noticias) === */
+            .pt-overlay { 
+                background: rgba(0,0,0,0.98) !important;
+                -webkit-overflow-scrolling: touch !important;
+                padding: 0 !important;
+            }
+            .pt-container { 
+                margin: 0 !important; 
+                padding: 0 !important; 
+                max-width: 100% !important;
+                border-radius: 0 !important;
+                border: none !important;
+                min-height: 100vh !important;
+            }
+            
+            /* === CT HEADER === */
+            .pt-header,
+            .pt-container > div:first-child {
+                position: sticky !important;
+                top: 0 !important;
+                z-index: 200 !important;
+                background: var(--bg-secondary) !important;
+                flex-wrap: wrap !important;
+                gap: 4px !important;
+                padding: 8px !important;
+            }
+            .pt-header h2,
+            .pt-container > div:first-child > div:first-child { 
+                font-size: 14px !important;
+            }
+            
+            /* === CT TABS === */
+            .pt-tabs,
+            div[style*="OPERAR"][style*="HISTORICO"] { 
+                flex-wrap: nowrap !important;
+                overflow-x: auto !important;
+                -webkit-overflow-scrolling: touch !important;
+                gap: 0 !important;
+            }
+            .pt-tabs > *,
+            .pt-tab {
+                font-size: 10px !important;
+                padding: 8px 10px !important;
+                white-space: nowrap !important;
+                flex-shrink: 0 !important;
+            }
+            
+            /* === CT BALANCE BAR === */
+            .pt-balance-bar { 
+                flex-direction: column !important;
+                gap: 4px !important;
+                padding: 8px !important;
+            }
+            .pt-balance-bar > div { 
+                font-size: 11px !important;
+            }
+            .pt-balance-bar span[style*="font-size:20px"],
+            .pt-balance-bar span[style*="font-size:18px"] {
+                font-size: 14px !important;
+            }
+            
+            /* === CT OPERAR BOTOES === */
+            .pt-trading-panel { 
+                grid-template-columns: 1fr !important;
                 padding: 8px !important;
             }
             
-            /* Botões WIN/WDO menores */
+            /* === CT REPLAY TABLE === */
+            #simTabela,
+            .sim-tabela,
+            table {
+                display: block !important;
+                overflow-x: auto !important;
+                -webkit-overflow-scrolling: touch !important;
+                width: 100% !important;
+            }
+            #simTabela table,
+            .sim-tabela table {
+                min-width: 700px !important;
+            }
+            #simTabela th,
+            #simTabela td,
+            .sim-tabela th,
+            .sim-tabela td {
+                font-size: 10px !important;
+                padding: 4px 6px !important;
+                white-space: nowrap !important;
+            }
+            
+            /* === CT RESULTADO (simGo result) === */
+            #simUltimoResult {
+                padding: 8px !important;
+                margin: 4px 8px !important;
+            }
+            #simUltimoResult div[style*="font-size:22px"] {
+                font-size: 16px !important;
+            }
+            #simUltimoResult div[style*="font-size:16px"] {
+                font-size: 13px !important;
+            }
+            
+            /* === CT INPUTS (stop, alvo, ctrs) === */
+            #simStopInput, #simAlvoInput, #simCtrsInput,
+            input[type="number"] {
+                width: 50px !important;
+                font-size: 12px !important;
+            }
+            
+            /* === SIMULADOR REAL === */
+            #simRealGrid { grid-template-columns: 1fr !important; }
+            #simRealVeredictoText { font-size: 18px !important; }
             #simBtnWIN, #simBtnWDO { font-size: 10px !important; padding: 4px 8px !important; }
+            #simRealOps { font-size: 10px !important; }
+            #simRealStatus { flex-direction: column !important; gap: 4px !important; padding: 8px !important; }
             
-            /* Veredicto menor */
-            #simRealVeredictoText { font-size: 20px !important; }
-            
-            /* Chart: full width, scroll horizontal se preciso */
-            #simChartCanvas { 
-                height: 250px !important; 
-                min-width: 600px !important;
-            }
-            #simRsiCanvas { 
-                height: 60px !important;
-                min-width: 600px !important;
-            }
-            
-            /* Chart container com scroll horizontal */
+            /* === CHART SCROLL === */
             .chart-scroll-wrapper {
                 overflow-x: auto !important;
                 -webkit-overflow-scrolling: touch !important;
             }
-            
-            /* Toggle buttons do gráfico: wrap */
-            #simChartCanvas + div { flex-wrap: wrap !important; }
-            
-            /* Operações: texto menor */
-            #simRealOps { font-size: 10px !important; }
-            #simRealOps .btn { font-size: 10px !important; padding: 4px 10px !important; }
-            
-            /* Grid de operação: stack vertical */
-            #simRealOps > div > div[style*="grid-template-columns"] {
-                grid-template-columns: 1fr !important;
+            #simChartCanvas { 
+                height: 220px !important; 
+                min-width: 600px !important;
+            }
+            #simRsiCanvas { 
+                height: 50px !important;
+                min-width: 600px !important;
             }
             
-            /* Status bar: wrap */
-            #simRealStatus { flex-direction: column !important; gap: 4px !important; padding: 8px !important; }
-            
-            /* Performance summary: 2 colunas */
-            #simRealOps > div[style*="justify-content:space-around"] {
-                flex-wrap: wrap !important;
-                gap: 8px !important;
+            /* === NOTICIAS === */
+            .pt-container[style*="max-width:900px"],
+            .pt-container[style*="max-width:950px"] { 
+                max-width: 100% !important; 
+                margin: 0 !important; 
             }
             
-            /* Vela-by-vela table: scroll horizontal */
-            #simRealOps details > div { overflow-x: auto !important; }
-            
-            /* Escala labels menores */
-            #simRealEscala + div { font-size: 7px !important; }
-            
-            /* Treinamento grid */
+            /* === GRIDS DIVERSOS === */
             .multi-tf-grid { grid-template-columns: repeat(3, 1fr) !important; }
             .sinal-detail { grid-template-columns: 1fr !important; }
             .pt-report-grid { grid-template-columns: 1fr 1fr !important; }
-            
-            /* Demo summary */
             .demo-summary { grid-template-columns: 1fr 1fr !important; }
             
-            /* Overlays: full-screen no mobile */
-            .pt-overlay { background: rgba(0,0,0,0.95) !important; -webkit-overflow-scrolling: touch !important; }
-            #simRealOverlay .pt-header { position: sticky !important; top: 0 !important; z-index: 100 !important; }
-            #noticiasOverlay .pt-header { position: sticky !important; top: 0 !important; z-index: 100 !important; }
-            #ptOverlay .pt-header { position: sticky !important; top: 0 !important; z-index: 100 !important; }
-
-            /* Noticias panel */
-            .pt-container[style*="max-width:900px"] { max-width: 100% !important; margin: 5px !important; }
+            /* === EDUCATIVA CARDS === */
+            div[style*="border-left:4px solid"] {
+                margin: 4px 8px !important;
+                padding: 8px !important;
+            }
+            
+            /* === COMPRA/VENDA BIG BUTTONS === */
+            button[onclick*="ptComprar"],
+            button[onclick*="ptVender"],
+            button[style*="COMPRAR"],
+            button[style*="VENDER"] {
+                font-size: 14px !important;
+                padding: 10px !important;
+            }
+            
+            /* === PRATICAR NO REPLAY BUTTON === */
+            button[onclick*="ptTreinarEntrada"] {
+                font-size: 10px !important;
+                padding: 4px 10px !important;
+            }
+            
+            /* === ESCALA SLIDER === */
+            #simRealEscala { width: 100% !important; }
+            
+            /* === REPLAY TABLE BOX === */
+            #simTabelaBox {
+                max-height: 350px !important;
+                overflow-x: auto !important;
+                overflow-y: auto !important;
+                -webkit-overflow-scrolling: touch !important;
+                margin: 0 4px !important;
+            }
+            #simTabelaBox table {
+                min-width: 650px !important;
+            }
+            
+            /* === CT HEADER INLINE STYLES OVERRIDE === */
+            #ptOverlay > .pt-container > div[style*="display:flex"][style*="padding"] {
+                flex-wrap: wrap !important;
+                gap: 4px !important;
+                padding: 8px !important;
+            }
+            #ptOverlay > .pt-container > div[style*="display:flex"][style*="padding"] > div:first-child {
+                font-size: 14px !important;
+            }
+            
+            /* === CT TAB BAR (inline style generated) === */
+            #ptOverlay div[style*="border-bottom"][style*="display:flex"] {
+                overflow-x: auto !important;
+                -webkit-overflow-scrolling: touch !important;
+                gap: 0 !important;
+            }
+            #ptOverlay div[style*="border-bottom"][style*="display:flex"] > div {
+                font-size: 10px !important;
+                padding: 8px 10px !important;
+                white-space: nowrap !important;
+                flex-shrink: 0 !important;
+            }
+            
+            /* === BALANCE BAR (inline flex) === */
+            #ptOverlay div[style*="display:flex"][style*="justify-content:space-around"] {
+                flex-wrap: wrap !important;
+                gap: 8px !important;
+                padding: 8px !important;
+            }
+            #ptOverlay div[style*="display:flex"][style*="justify-content:space-around"] > div {
+                min-width: 70px !important;
+            }
+            
+            /* === STOP/ALVO/CTRS ROW === */
+            #ptOverlay div[style*="Stop"][style*="Alvo"] {
+                flex-wrap: wrap !important;
+                gap: 6px !important;
+                justify-content: center !important;
+            }
+            
+            /* === OPERACOES EDUCATIVAS CARDS === */
+            #ptOverlay div[style*="border-left:4px"] {
+                padding: 6px 8px !important;
+                margin: 4px !important;
+                font-size: 10px !important;
+            }
+            
+            /* === SIMULADOR REAL OVERLAY === */
+            #simRealOverlay > .pt-container > div:first-child {
+                flex-wrap: wrap !important;
+                gap: 4px !important;
+                padding: 6px 8px !important;
+            }
+            
+            /* === FECHAR BUTTON === */
+            button[style*="FECHAR"],
+            button[onclick*="fecharP"],
+            button[onclick*="fecharSim"] {
+                font-size: 10px !important;
+                padding: 4px 10px !important;
+            }
+            
+            /* === REPLAY PREGAO DIA LABEL === */
+            #simDiaLabel {
+                font-size: 10px !important;
+                padding: 6px 8px !important;
+                flex-wrap: wrap !important;
+            }
+            
+            /* === PLACAR BAR === */
+            #simPlacarBar {
+                font-size: 11px !important;
+            }
         }
         
-        @media (max-width: 480px) {
-            /* Extra small screens */
-            #simRealVeredictoText { font-size: 16px !important; }
-            #simRealGrid { gap: 4px !important; }
+        @media (max-width: 420px) {
+            /* Extra small screens (iPhone SE, etc.) */
+            .header-controls {
+                justify-content: space-between !important;
+            }
+            .header-controls .btn,
+            .header-controls button {
+                font-size: 8px !important;
+                padding: 3px 5px !important;
+            }
+            .contrato-selector { 
+                order: 10 !important;
+                width: 100% !important;
+                justify-content: center !important;
+            }
+            .logo { font-size: 11px !important; }
+            .price-display { font-size: 24px !important; }
+            #simRealVeredictoText { font-size: 14px !important; }
             .pt-report-grid { grid-template-columns: 1fr !important; }
             .multi-tf-grid { grid-template-columns: 1fr 1fr !important; }
             
-            /* Chart buttons even smaller */
+            /* Chart buttons smaller */
             #simChartBtnEma, #simChartBtnVwap, #simChartBtnSr, #simChartBtnFib,
             #simChartBtnVol, #simChartBtnPa, #simChartBtnOps {
                 font-size: 8px !important;
                 padding: 2px 4px !important;
+            }
+            
+            /* Replay table even more compact */
+            #simTabela th, #simTabela td {
+                font-size: 9px !important;
+                padding: 3px 4px !important;
+            }
+            
+            /* Balance bar numbers smaller */
+            .pt-balance-bar span[style*="font-size"] {
+                font-size: 12px !important;
             }
         }
 
