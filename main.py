@@ -2868,7 +2868,7 @@ async def simulador_real(ativo: str = Query("WIN")):
         if operacoes_recomendadas:
             try:
                 learning_data = registrar_sessao(
-                    ativo, dia_anterior.strftime("%d/%m/%Y"),
+                    ativo, dia_analise.strftime("%d/%m/%Y"),
                     operacoes_recomendadas,
                     {"win_rate": win_rate, "total_pts": total_pts}
                 )
@@ -2884,7 +2884,7 @@ async def simulador_real(ativo: str = Query("WIN")):
         _modo = "REAL" if modo_live else "REPLAY"
         
         return JSONResponse({
-            "dia": dia_anterior.strftime("%d/%m/%Y"),
+            "dia": dia_analise.strftime("%d/%m/%Y"),
             "ativo": ativo,
             "contrato": contrato_nome,
             "valor_ponto": valor_ponto,
