@@ -329,7 +329,7 @@ templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
 
 @app.get("/api/version")
 async def api_version():
-    return {"version": "3.3.0", "build": "20260504k", "changes": "velas_treinamento,historico_ia,comprar_saldo_check,operador_undefined"}
+    return {"version": "3.3.0", "build": "20260504m", "changes": "dia_anterior_skip_weekends_all_endpoints,velas_treinamento,historico_ia"}
 
 @app.get("/", response_class=HTMLResponse)
 async def dashboard(request: Request):
@@ -1466,10 +1466,13 @@ async def replay_velas(ativo: str = "WIN"):
         dia_anterior = None
         for d in reversed(dates):
             if d < hoje:
-                dia_anterior = d
-                break
+                # Verify this day actually has market-hours data
+                test_mask = (dados.index.date == d) & (dados.index.hour >= 9) & (dados.index.hour < 18)
+                if dados[test_mask].shape[0] >= 5:  # At least 5 candles in market hours
+                    dia_anterior = d
+                    break
         if not dia_anterior:
-            return JSONResponse({"erro": "Dia anterior nao encontrado"})
+            return JSONResponse({"erro": "Nenhum dia util com dados encontrado nos ultimos 5 dias"})
         
         # Get day data
         day_mask = (dados.index.date == dia_anterior) & (dados.index.hour >= 9) & (dados.index.hour < 18)
@@ -1595,8 +1598,12 @@ async def simular_entrada(request: Request):
         dia_anterior = None
         for d in reversed(dates):
             if d < hoje:
-                dia_anterior = d
-                break
+                test_mask = (dados.index.date == d) & (dados.index.hour >= 9) & (dados.index.hour < 18)
+                if dados[test_mask].shape[0] >= 5:
+                    dia_anterior = d
+                    break
+        if not dia_anterior:
+            return JSONResponse({"erro": "Nenhum dia util com dados encontrado"})
         
         day_indices = [i for i, d in enumerate(dados.index.date) if d == dia_anterior and 9 <= dados.index[i].hour < 18]
         
@@ -3276,10 +3283,12 @@ async def simulador_real(ativo: str = Query("WIN"), max_entradas: int = Query(5)
             dia_anterior = None
             for d in reversed(dates):
                 if d < hoje:
-                    dia_anterior = d
-                    break
+                    test_mask = (dados.index.date == d) & (dados.index.hour >= 9) & (dados.index.hour < 18)
+                    if dados[test_mask].shape[0] >= 5:
+                        dia_anterior = d
+                        break
             if not dia_anterior:
-                return JSONResponse({"erro": "Dia anterior nao encontrado"})
+                return JSONResponse({"erro": "Nenhum dia util com dados encontrado nos ultimos dias"})
             dia_analise = dia_anterior
             day_indices = [i for i, d in enumerate(dados.index.date) if d == dia_analise and 9 <= dados.index[i].hour < 18]
             if not day_indices:
@@ -4123,14 +4132,16 @@ async def treinamento_ia(ativo: str = Query("WIN")):
                 logger.info(f"SimReal LIVE: {len(day_indices)} candles de hoje {hoje}")
         
         if not modo_live:
-            # Fallback: dia anterior (replay)
+            # Fallback: dia anterior (replay) - skip weekends/holidays with no market data
             dia_anterior = None
             for d in reversed(dates):
                 if d < hoje:
-                    dia_anterior = d
-                    break
+                    test_mask = (dados.index.date == d) & (dados.index.hour >= 9) & (dados.index.hour < 18)
+                    if dados[test_mask].shape[0] >= 5:
+                        dia_anterior = d
+                        break
             if not dia_anterior:
-                return JSONResponse({"erro": "Dia anterior nao encontrado"})
+                return JSONResponse({"erro": "Nenhum dia util com dados encontrado nos ultimos dias"})
             dia_analise = dia_anterior
             day_indices = [i for i, d in enumerate(dados.index.date) if d == dia_analise and 9 <= dados.index[i].hour < 18]
             if not day_indices:
