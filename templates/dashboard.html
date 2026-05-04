@@ -952,7 +952,8 @@
                         <span id="opLiveMaxVal" style="font-size:14px;font-weight:900;color:#a78bfa;min-width:18px;">5</span>
                     </div>
                     <button onclick="operadorLiveCheck()" style="padding:6px 14px;background:#22c55e;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:11px;font-weight:800;">ANALISAR AGORA</button>
-                    <button onclick="operadorLiveCheck(true)" style="padding:6px 14px;background:#f59e0b;color:#000;border:none;border-radius:6px;cursor:pointer;font-size:11px;font-weight:800;">PRÓXIMA ENTRADA</button>
+                    <button onclick="operadorEntrar()" id="opBtnEntrar" style="padding:6px 14px;background:#6366f1;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:11px;font-weight:800;">ENTRAR NA PRÓXIMA</button>
+                    <button onclick="operadorLiveCheck(true)" style="padding:6px 14px;background:#f59e0b;color:#000;border:none;border-radius:6px;cursor:pointer;font-size:11px;font-weight:800;">FORÇAR ENTRADA</button>
                 </div>
             </div>
             <!-- Decisão principal -->
@@ -4392,11 +4393,94 @@ function operadorLiveInit() {
     }, 120000); // 2 min
 }
 
+async function operadorEntrar() {
+    // Botão "ENTRAR NA PRÓXIMA" - marca o operador para entrar no próximo setup
+    try {
+        const btn = document.getElementById('opBtnEntrar');
+        if (btn) { btn.textContent = 'AGUARDANDO...'; btn.style.background = '#f59e0b'; btn.disabled = true; }
+        await fetch('/api/operador-live/entrar', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ativo: _opLiveAtivo})});
+        // Force immediate check
+        operadorLiveCheck();
+    } catch(e) { console.error(e); }
+}
+
+async function operadorMonitorTrade() {
+    // Monitora trade ativo
+    try {
+        const res = await fetch('/api/operador-live/monitor?ativo=' + _opLiveAtivo, {signal: AbortSignal.timeout(15000)});
+        const d = await res.json();
+        const panel = document.getElementById('opLiveTradeAtivo');
+        if (!panel) return d;
+        
+        if (d.status === 'SEM_TRADE') {
+            panel.style.display = 'none';
+            return d;
+        }
+        
+        panel.style.display = 'block';
+        const t = d.trade || {};
+        const cDir = t.tipo === 'COMPRA' ? '#22c55e' : '#ef4444';
+        const cPnl = (d.pnl_pts||0) >= 0 ? '#22c55e' : '#ef4444';
+        
+        if (d.status === 'FECHADO') {
+            panel.style.borderColor = d.resultado === 'WIN' ? '#22c55e' : '#ef4444';
+            const rLabel = d.resultado === 'WIN' ? 'TRADE FECHADO - WIN!' : 'TRADE FECHADO - LOSS';
+            panel.querySelector('div').innerHTML = '<span style="font-size:14px;font-weight:900;color:' + (d.resultado==='WIN'?'#22c55e':'#ef4444') + ';">' + rLabel + '</span>';
+            if (d.aprendizado) {
+                var erroDiv = document.getElementById('opLiveErros');
+                var erroCont = document.getElementById('opLiveErrosContent');
+                if (erroDiv && erroCont) {
+                    erroDiv.style.display = 'block';
+                    erroCont.textContent = d.aprendizado;
+                    erroDiv.style.background = d.resultado==='WIN' ? 'rgba(34,197,94,0.05)' : 'rgba(239,68,68,0.05)';
+                    erroDiv.style.borderColor = d.resultado==='WIN' ? 'rgba(34,197,94,0.2)' : 'rgba(239,68,68,0.2)';
+                    erroCont.style.color = d.resultado==='WIN' ? '#22c55e' : '#ef4444';
+                }
+            }
+            // Reset button
+            var btn = document.getElementById('opBtnEntrar');
+            if (btn) { btn.textContent = 'ENTRAR NA PRÓXIMA'; btn.style.background = '#6366f1'; btn.disabled = false; }
+            // Auto-hide after 30s
+            setTimeout(() => { panel.style.display = 'none'; operadorLiveCheck(); }, 10000);
+            return d;
+        }
+        
+        // Monitorando
+        var contentEl = document.getElementById('opTradeAtivoContent');
+        if (contentEl) {
+            contentEl.innerHTML = '<div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;">' +
+                '<span style="font-size:14px;font-weight:900;color:' + cDir + ';">' + t.tipo + '</span>' +
+                '<span style="font-size:12px;font-weight:700;">@ ' + (t.preco_entrada||0).toLocaleString('pt-BR') + '</span>' +
+                (t.estrategia ? '<span style="font-size:10px;color:#a78bfa;background:rgba(167,139,250,0.1);padding:2px 6px;border-radius:3px;">' + t.estrategia + '</span>' : '') +
+                '<span style="font-size:10px;color:var(--text-muted);">Stop: ' + (t.stop_loss||0).toLocaleString('pt-BR') + ' | Alvo: ' + (t.take_profit||0).toLocaleString('pt-BR') + '</span>' +
+                '</div>';
+        }
+        var durEl = document.getElementById('opTradeAtivoDuracao');
+        if (durEl) durEl.textContent = (d.duracao_min||0) + 'min';
+        var pnlEl = document.getElementById('opTradeAtivoPnL');
+        if (pnlEl) {
+            pnlEl.innerHTML = '<div><div style="font-size:9px;color:var(--text-muted);">Preço Atual</div><div style="font-size:16px;font-weight:800;">' + (d.preco_atual||0).toLocaleString('pt-BR') + '</div></div>' +
+                '<div><div style="font-size:9px;color:var(--text-muted);">P&L Pts</div><div style="font-size:16px;font-weight:800;color:' + cPnl + ';">' + ((d.pnl_pts||0)>=0?'+':'') + (d.pnl_pts||0) + '</div></div>' +
+                '<div><div style="font-size:9px;color:var(--text-muted);">P&L R$</div><div style="font-size:16px;font-weight:800;color:' + cPnl + ';">' + ((d.pnl_rs||0)>=0?'+':'') + 'R$ ' + (d.pnl_rs||0).toFixed(2) + '</div></div>';
+        }
+        return d;
+    } catch(e) { console.error('monitor error:', e); return null; }
+}
+
 async function operadorLiveCheck(forcar) {
     const maxEnt = document.getElementById('opLiveMaxEntradas')?.value || 5;
     const statusEl = document.getElementById('opLiveStatus');
     const decEl = document.getElementById('opLiveDecisaoText');
     const decSub = document.getElementById('opLiveDecisaoSub');
+    
+    // First check if there's an active trade to monitor
+    const monResult = await operadorMonitorTrade();
+    if (monResult && monResult.status === 'MONITORANDO') {
+        if (statusEl) statusEl.textContent = 'Trade ativo - monitorando...';
+        if (decEl) { decEl.textContent = 'MONITORANDO TRADE'; decEl.style.color = '#6366f1'; }
+        if (decSub) decSub.textContent = 'Stop/alvo sendo verificados a cada atualização';
+        return; // Don't analyze while trade is open
+    }
     
     if (statusEl) statusEl.textContent = 'Analisando mercado...';
     if (decEl) { decEl.textContent = 'ANALISANDO...'; decEl.style.color = '#6366f1'; }
@@ -4424,6 +4508,15 @@ async function operadorLiveCheck(forcar) {
             // Highlight decisão
             var decDiv = document.getElementById('opLiveDecisao');
             if (decDiv) { decDiv.style.borderColor = '#22c55e'; decDiv.style.background = 'rgba(34,197,94,0.06)'; }
+        } else if (data.status === 'TRADE_ABERTO') {
+            if (dot) dot.style.background = '#6366f1';
+            if (decEl) { decEl.textContent = 'TRADE ABERTO!'; decEl.style.color = '#22c55e'; }
+            if (decSub) decSub.innerHTML = '<strong style="color:#22c55e;">Monitorando trade ativo...</strong>';
+            var decDiv4 = document.getElementById('opLiveDecisao');
+            if (decDiv4) { decDiv4.style.borderColor = '#22c55e'; decDiv4.style.background = 'rgba(34,197,94,0.06)'; }
+            // Update enter button
+            var btn2 = document.getElementById('opBtnEntrar');
+            if (btn2) { btn2.textContent = 'EM TRADE...'; btn2.style.background = '#22c55e'; btn2.disabled = true; }
         } else if (data.status === 'AGUARDANDO') {
             if (dot) dot.style.background = '#f59e0b';
             if (decEl) { decEl.textContent = 'AGUARDANDO'; decEl.style.color = '#f59e0b'; }
@@ -4518,6 +4611,41 @@ async function operadorLiveCheck(forcar) {
             ph += '<div><div style="font-size:9px;color:var(--text-muted);">P&L R$</div><div style="font-size:18px;font-weight:800;color:' + ((data.total_rs_dia||0)>=0?'#22c55e':'#ef4444') + ';">' + ((data.total_rs_dia||0)>=0?'+':'') + 'R$ ' + (data.total_rs_dia||0).toFixed(2) + '</div></div>';
             ph += '<div><div style="font-size:9px;color:var(--text-muted);">Losses Seq</div><div style="font-size:18px;font-weight:800;color:' + ((data.losses_consecutivos||0)>=2?'#ef4444':'var(--text-primary)') + ';">' + (data.losses_consecutivos||0) + '/3</div></div>';
             pnlEl.innerHTML = ph;
+        }
+        
+        // Aguardando entrada indicator
+        if (data.aguardando_entrada) {
+            var btn3 = document.getElementById('opBtnEntrar');
+            if (btn3) { btn3.textContent = 'AGUARDANDO SETUP...'; btn3.style.background = '#f59e0b'; btn3.disabled = true; }
+        } else if (!data.trade_ativo) {
+            var btn4 = document.getElementById('opBtnEntrar');
+            if (btn4) { btn4.textContent = 'ENTRAR NA PRÓXIMA'; btn4.style.background = '#6366f1'; btn4.disabled = false; }
+        }
+        
+        // Error memory alert
+        if (data.alerta_erro) {
+            var erroDiv2 = document.getElementById('opLiveErros');
+            var erroCont2 = document.getElementById('opLiveErrosContent');
+            if (erroDiv2 && erroCont2) {
+                erroDiv2.style.display = 'block';
+                erroCont2.textContent = data.alerta_erro;
+            }
+        } else {
+            var erroDiv3 = document.getElementById('opLiveErros');
+            if (erroDiv3 && !(data.erros_memoria > 0)) erroDiv3.style.display = 'none';
+        }
+        
+        // Show error count
+        if (data.erros_memoria > 0) {
+            var erroDiv4 = document.getElementById('opLiveErros');
+            var erroCont4 = document.getElementById('opLiveErrosContent');
+            if (erroDiv4 && !data.alerta_erro) {
+                erroDiv4.style.display = 'block';
+                erroCont4.innerHTML = 'Memória: ' + data.erros_memoria + ' erros registrados. O operador evita repetir técnicas que falharam nas mesmas condições.';
+                erroDiv4.style.background = 'rgba(99,102,241,0.05)';
+                erroDiv4.style.borderColor = 'rgba(99,102,241,0.2)';
+                erroCont4.style.color = '#818cf8';
+            }
         }
         
     } catch(e) {

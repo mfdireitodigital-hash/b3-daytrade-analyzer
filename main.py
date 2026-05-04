@@ -59,9 +59,11 @@ app_state = {
     "preco_realtime": {},
     # Operador Senior LIVE state
     "operador_live": {
-        "WIN": {"operacoes": [], "total_pts": 0, "losses_consecutivos": 0, "dia_bloqueado": False, "ultimo_trade_hora": None, "cooldown_ate": None, "dia": None},
-        "WDO": {"operacoes": [], "total_pts": 0, "losses_consecutivos": 0, "dia_bloqueado": False, "ultimo_trade_hora": None, "cooldown_ate": None, "dia": None},
+        "WIN": {"operacoes": [], "total_pts": 0, "losses_consecutivos": 0, "dia_bloqueado": False, "ultimo_trade_hora": None, "cooldown_ate": None, "dia": None, "trade_ativo": None, "aguardando_entrada": False},
+        "WDO": {"operacoes": [], "total_pts": 0, "losses_consecutivos": 0, "dia_bloqueado": False, "ultimo_trade_hora": None, "cooldown_ate": None, "dia": None, "trade_ativo": None, "aguardando_entrada": False},
     },
+    # Memória de erros do operador (persiste entre dias)
+    "operador_erros": [],  # [{tecnica, condicoes, motivo_erro, data, ativo}]
 }
 
 TIMEFRAMES = ["5m", "15m", "1h", "4h", "1d"]
@@ -2356,6 +2358,233 @@ async def get_noticias_impacto():
 
 
 
+# ===== OPERADOR SENIOR - MEMÓRIA DE ERROS =====
+ERROS_FILE = APP_DIR / "operador_erros.json"
+
+def _carregar_erros_operador():
+    """Carrega memória de erros do operador"""
+    try:
+        if ERROS_FILE.exists():
+            with open(ERROS_FILE, "r") as f:
+                erros = json.load(f)
+                app_state["operador_erros"] = erros
+                return erros
+    except:
+        pass
+    return app_state.get("operador_erros", [])
+
+def _salvar_erros_operador():
+    """Persiste memória de erros"""
+    try:
+        with open(ERROS_FILE, "w") as f:
+            json.dump(app_state.get("operador_erros", []), f, indent=2, default=str)
+    except Exception as e:
+        logger.error(f"Erro salvando memória: {e}")
+
+def _registrar_erro_operador(ativo, tecnica, condicoes, motivo_erro):
+    """Registra um erro para não repeti-lo"""
+    erro = {
+        "ativo": ativo,
+        "tecnica": tecnica,
+        "condicoes": condicoes,  # {tendencia, rsi_faixa, janela, score}
+        "motivo_erro": motivo_erro,
+        "data": datetime.now().strftime("%Y-%m-%d %H:%M"),
+        "count": 1,
+    }
+    erros = app_state.get("operador_erros", [])
+    # Verificar se erro similar já existe
+    for e in erros:
+        if (e["tecnica"] == tecnica and e["ativo"] == ativo 
+            and e["condicoes"].get("tendencia") == condicoes.get("tendencia")
+            and e["condicoes"].get("janela") == condicoes.get("janela")):
+            e["count"] += 1
+            e["data"] = erro["data"]
+            _salvar_erros_operador()
+            return
+    erros.append(erro)
+    # Manter últimos 50 erros
+    if len(erros) > 50:
+        erros = erros[-50:]
+    app_state["operador_erros"] = erros
+    _salvar_erros_operador()
+
+def _verificar_erro_similar(ativo, tecnica, condicoes):
+    """Verifica se há erro similar na memória. Retorna (bloquear, motivo)"""
+    erros = app_state.get("operador_erros", [])
+    for e in erros:
+        if e["ativo"] == ativo and e["tecnica"] == tecnica:
+            # Mesma técnica + mesma tendência + mesmo tipo de janela = erro similar
+            if (e["condicoes"].get("tendencia") == condicoes.get("tendencia")
+                and e["condicoes"].get("janela_tipo") == condicoes.get("janela_tipo")):
+                if e["count"] >= 2:
+                    return True, f"MEMÓRIA: {tecnica} já falhou {e['count']}x em {e['condicoes'].get('tendencia')} / {e['condicoes'].get('janela_tipo')}. Evitando repetição."
+                elif e["count"] >= 1:
+                    return False, f"ALERTA: {tecnica} falhou 1x em condições similares. Cautela extra."
+    return False, None
+
+
+@app.post("/api/operador-live/entrar")
+async def operador_entrar(request: Request):
+    """
+    Usuário clicou ENTRADA AGORA - operador entra no próximo setup válido.
+    Registra o trade como ativo e começa a monitorar.
+    """
+    try:
+        data = await request.json()
+        ativo = data.get("ativo", "WIN").upper()
+        op_state = app_state["operador_live"][ativo]
+        
+        # Marcar como aguardando entrada
+        op_state["aguardando_entrada"] = True
+        
+        return JSONResponse({"ok": True, "msg": f"Operador aguardando próximo setup para {ativo}..."})
+    except Exception as e:
+        return JSONResponse({"ok": False, "erro": str(e)})
+
+
+@app.get("/api/operador-live/monitor")
+async def operador_monitor(ativo: str = Query("WIN")):
+    """
+    Monitora trade ativo - verifica se stop ou alvo foram atingidos.
+    Chamado pelo frontend a cada refresh.
+    """
+    try:
+        from datetime import timezone, timedelta
+        BRT_tz = timezone(timedelta(hours=-3))
+        ativo = ativo.upper()
+        ticker = "^BVSP" if ativo == "WIN" else "USDBRL=X"
+        valor_ponto = 0.20 if ativo == "WIN" else 10.00
+        
+        op_state = app_state["operador_live"][ativo]
+        trade = op_state.get("trade_ativo")
+        
+        if not trade:
+            return JSONResponse({"status": "SEM_TRADE", "msg": "Nenhum trade ativo"})
+        
+        # Buscar preço atual
+        preco_atual = None
+        try:
+            from data_provider import DataProvider
+            dp = DataProvider()
+            rt = dp.obter_preco_realtime(ativo)
+            if rt and rt.get("preco"):
+                preco_atual = rt["preco"]
+        except:
+            pass
+        
+        if not preco_atual:
+            # Fallback: yfinance last close
+            try:
+                dados = yf.download(ticker, period="1d", interval="5m", progress=False)
+                if not dados.empty:
+                    if isinstance(dados.columns, pd.MultiIndex):
+                        dados.columns = dados.columns.get_level_values(0)
+                    dados.columns = [c.lower() for c in dados.columns]
+                    preco_atual = float(dados['close'].iloc[-1])
+            except:
+                return JSONResponse({"status": "ERRO", "msg": "Sem preço disponível"})
+        
+        is_compra = trade["tipo"] == "COMPRA"
+        stop = trade["stop_loss"]
+        alvo = trade["take_profit"]
+        entrada = trade["preco_entrada"]
+        
+        # Verificar resultado
+        resultado = None
+        if is_compra:
+            if preco_atual >= alvo:
+                resultado = "WIN"
+            elif preco_atual <= stop:
+                resultado = "LOSS"
+        else:
+            if preco_atual <= alvo:
+                resultado = "WIN"
+            elif preco_atual >= stop:
+                resultado = "LOSS"
+        
+        # P&L parcial
+        if is_compra:
+            pnl_pts = round(preco_atual - entrada, 1)
+        else:
+            pnl_pts = round(entrada - preco_atual, 1)
+        
+        if ativo == "WDO":
+            pnl_pts = round(pnl_pts * 1000, 1)
+        
+        pnl_rs = round(pnl_pts * valor_ponto, 2)
+        
+        agora = datetime.now(BRT_tz)
+        duracao_min = 0
+        try:
+            h_ent, m_ent = trade["hora_entrada"].split(":")
+            entrada_time = agora.replace(hour=int(h_ent), minute=int(m_ent), second=0)
+            duracao_min = int((agora - entrada_time).total_seconds() / 60)
+        except:
+            pass
+        
+        response = {
+            "status": "MONITORANDO" if not resultado else "FECHADO",
+            "trade": trade,
+            "preco_atual": preco_atual,
+            "pnl_pts": pnl_pts,
+            "pnl_rs": pnl_rs,
+            "duracao_min": duracao_min,
+            "resultado": resultado,
+        }
+        
+        # Se trade fechou, registrar resultado
+        if resultado:
+            hora_saida = agora.strftime("%H:%M")
+            trade["resultado"] = resultado
+            trade["pts"] = pnl_pts - (5 if ativo == "WIN" else 1)  # custos
+            trade["hora_saida"] = hora_saida
+            trade["preco_saida"] = preco_atual
+            trade["resultado_rs"] = round(trade["pts"] * valor_ponto, 2)
+            trade["duracao_min"] = duracao_min
+            
+            # Registrar na lista de operações
+            op_state["operacoes"].append(dict(trade))
+            op_state["total_pts"] += trade["pts"]
+            op_state["trade_ativo"] = None
+            
+            if resultado == "LOSS":
+                op_state["losses_consecutivos"] += 1
+                cooldown_min = 15 if op_state["losses_consecutivos"] >= 2 else 10
+                op_state["cooldown_ate"] = (agora + timedelta(minutes=cooldown_min)).isoformat()
+                
+                # ===== APRENDER COM O ERRO =====
+                _registrar_erro_operador(
+                    ativo=ativo,
+                    tecnica=trade.get("estrategia", "Desconhecida"),
+                    condicoes={
+                        "tendencia": trade.get("tend_macro", "?"),
+                        "janela_tipo": trade.get("janela_qualidade", "?"),
+                        "janela": trade.get("janela", "?"),
+                        "score": trade.get("score", 0),
+                        "rsi_faixa": "sobrevendido" if trade.get("rsi", 50) < 30 else "sobrecomprado" if trade.get("rsi", 50) > 70 else "normal",
+                    },
+                    motivo_erro=f"LOSS de {abs(trade['pts'])}pts. Stop atingido em {duracao_min}min."
+                )
+                response["aprendizado"] = f"ERRO REGISTRADO: {trade.get('estrategia')} falhou em {trade.get('janela')}. Operador não repetirá esta técnica nas mesmas condições."
+            else:
+                op_state["losses_consecutivos"] = 0
+                op_state["cooldown_ate"] = None
+                response["aprendizado"] = f"WIN registrado! {trade.get('estrategia')} funcionou em {trade.get('janela')}."
+            
+            LOSS_LIMIT = -400 if ativo == "WIN" else -40
+            if op_state["total_pts"] <= LOSS_LIMIT:
+                op_state["dia_bloqueado"] = True
+            
+            response["resultado"] = resultado
+            response["pts_final"] = trade["pts"]
+            response["rs_final"] = trade["resultado_rs"]
+        
+        return JSONResponse(response)
+    except Exception as e:
+        logger.error(f"Erro monitor: {e}")
+        return JSONResponse({"status": "ERRO", "msg": str(e)})
+
+
 @app.get("/api/operador-live")
 async def operador_live(ativo: str = Query("WIN"), max_entradas: int = Query(5), forcar_entrada: bool = Query(False)):
     """
@@ -2397,6 +2626,15 @@ async def operador_live(ativo: str = Query("WIN"), max_entradas: int = Query(5),
                 "dia_bloqueado": False, "ultimo_trade_hora": None,
                 "cooldown_ate": None, "dia": str(hoje)
             })
+        
+        # ===== TRADE ATIVO? MONITORAR =====
+        if op_state.get("trade_ativo"):
+            # Tem trade ativo - informar frontend para monitorar
+            pass  # Monitor endpoint handles this, but flag it in response
+        
+        # ===== CARREGAR MEMÓRIA DE ERROS =====
+        if not app_state.get("operador_erros"):
+            _carregar_erros_operador()
         
         # ===== VERIFICAR MERCADO =====
         _mercado_aberto = mercado_aberto()
@@ -2596,6 +2834,22 @@ async def operador_live(ativo: str = Query("WIN"), max_entradas: int = Query(5),
                 motivos_operar.extend(_smc_motivos)
         except: pass
         
+        # ===== VERIFICAR MEMÓRIA DE ERROS =====
+        erro_similar = False
+        alerta_erro = None
+        if operar and tipo_sinal and setup_playbook["nome"]:
+            janela_tipo = "PRIME" if janela_qual == "PRIME" else "BOA" if janela_qual == "BOA" else "RUIM"
+            condicoes_check = {
+                "tendencia": tend_macro["tendencia"],
+                "janela_tipo": janela_tipo,
+            }
+            erro_similar, alerta_erro = _verificar_erro_similar(ativo, setup_playbook["nome"], condicoes_check)
+            if erro_similar:
+                operar = False
+                motivos_nao_operar.append(alerta_erro)
+            elif alerta_erro:
+                motivos_nao_operar.append(alerta_erro)
+        
         # ===== DECISÃO DO OPERADOR =====
         preco_atual = c
         
@@ -2730,7 +2984,45 @@ async def operador_live(ativo: str = Query("WIN"), max_entradas: int = Query(5),
             "ultimas_velas": ultimas_velas,
             "proxima_janela": _proxima_janela_boa(t_min),
             "timestamp": agora.strftime("%H:%M:%S"),
+            "trade_ativo": op_state.get("trade_ativo"),
+            "aguardando_entrada": op_state.get("aguardando_entrada", False),
+            "erros_memoria": len(app_state.get("operador_erros", [])),
+            "alerta_erro": alerta_erro,
         }
+        
+        # ===== AUTO-ENTRAR se aguardando_entrada e setup encontrado =====
+        if op_state.get("aguardando_entrada") and operar and tipo_sinal and not op_state.get("trade_ativo"):
+            # Entrar automaticamente!
+            trade_novo = {
+                "tipo": tipo_sinal,
+                "hora_entrada": hora_atual,
+                "preco_entrada": round(preco_atual, 2),
+                "stop_loss": stop_price,
+                "take_profit": alvo_price,
+                "stop_pts": round(stop_pts * 1000, 1) if ativo == "WDO" else stop_pts,
+                "alvo_pts": round(alvo_pts * 1000, 1) if ativo == "WDO" else alvo_pts,
+                "rr": f"1:{round(rr_ratio, 1)}",
+                "estrategia": setup_playbook["nome"] or "Confluência",
+                "janela": janela_nome,
+                "janela_qualidade": janela_qual,
+                "conf_label": conf_label,
+                "score": score,
+                "rsi": rsi_v,
+                "tend_macro": tend_macro["tendencia"],
+                "motivos": motivos_operar[:5],
+            }
+            op_state["trade_ativo"] = trade_novo
+            op_state["aguardando_entrada"] = False
+            response["status"] = "TRADE_ABERTO"
+            response["trade_ativo"] = trade_novo
+            response["raciocinio"] = (
+                f"TRADE ABERTO: {tipo_sinal} às {hora_atual}\n"
+                f"Estratégia: {trade_novo['estrategia']} | {conf_label} ({score}/7)\n"
+                f"Entrada: {round(preco_atual,2)} | Stop: {stop_price} | Alvo: {alvo_price}\n"
+                f"Janela: {janela_nome} ({janela_qual})\n"
+                f"Monitorando... alvo em {alvo_pts}pts, stop em {stop_pts}pts"
+            )
+            logger.info(f"OPERADOR: Trade aberto {tipo_sinal} {ativo} @ {preco_atual}")
         
         return JSONResponse(response)
         
