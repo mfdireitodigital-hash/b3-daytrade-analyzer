@@ -384,16 +384,16 @@ def detectar_setup_profissional(
         confianca = max(1, total_confluencia)
     
     # ===== FILTRO CONTRA-TENDÊNCIA =====
-    # Elder: cuidado contra Tela 1, mas permitir se confluência >= 5
+    # Elder: cuidado contra Tela 1, mas NÃO bloquear totalmente
     contra_tendencia = False
     if direcao and confluencia.get("tendencia_tf_maior") is False:
         if tend_macro["tendencia"] != "LATERAL":
+            contra_tendencia = True
             if total_confluencia < 5:
-                contra_tendencia = True
-                qualidade = "SKIP"
-                confianca = min(confianca, 2)
-                motivos_nao_operar.append("Elder: contra Tela 1 sem confluência suficiente (precisa 5+)")
+                # Mantém qualidade real mas sinaliza risco
+                motivos_nao_operar.append(f"Contra tendência macro ({tend_macro['tendencia']}) - cuidado extra")
             else:
+                contra_tendencia = False  # 5+ confluências = ok mesmo contra
                 motivos_operar.append("Contra tendência macro mas confluência forte (5+) = permitido")
     
     # ===== FILTRO REPETIÇÃO DE ENTRADA =====
