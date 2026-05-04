@@ -3018,6 +3018,7 @@ async function simInit() {
 // =====================================================
 async function carregarSinaisIA() {
     const container = document.getElementById('sinaisIAContent');
+    if (!container) return;
     container.innerHTML = '<div style="text-align:center;padding:12px;color:var(--text-muted);font-size:12px;">Analisando com Triple Screen + Confluencia 7 fatores...</div>';
     try {
         const res = await fetch('/api/sinais-ia?ativo=' + ptState.ativo);
@@ -3151,6 +3152,7 @@ function usarSinalIA(sinal) {
 // =====================================================
 async function carregarHeatmap() {
     const container = document.getElementById('heatmapContent');
+    if (!container) return;
     container.innerHTML = '<div style="text-align:center;padding:12px;color:var(--text-muted);font-size:12px;">Calculando volatilidade historica...</div>';
     try {
         const res = await fetch('/api/heatmap?ativo=' + ptState.ativo);
