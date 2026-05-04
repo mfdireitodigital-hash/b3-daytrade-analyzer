@@ -4545,16 +4545,29 @@ async function operadorLiveCheck(forcar) {
             var btn2 = document.getElementById('opBtnEntrar');
             if (btn2) { btn2.textContent = 'EM TRADE...'; btn2.style.background = '#22c55e'; btn2.disabled = true; }
         } else if (data.status === 'PARECER') {
-            // Tem opinião mas não entra - mostra o parecer
-            if (dot) dot.style.background = '#a78bfa';
-            if (decEl) { decEl.textContent = 'PARECER: ' + (data.analise_atual?.direcao || 'NEUTRO'); decEl.style.color = '#a78bfa'; }
-            if (decSub) decSub.innerHTML = (data.analise_atual?.score || 0) + '/7 | ' + (data.analise_atual?.qualidade || '') + ' | ' + (data.motivo || 'Sem confluência suficiente') + (data.proxima_janela ? '<br><span style="color:#6366f1;font-size:10px;">' + data.proxima_janela + '</span>' : '');
+            // PARECER - sempre mostra opinião clara
+            var dir = data.analise_atual?.direcao;
+            var sc = data.analise_atual?.score || 0;
+            var qual = data.analise_atual?.qualidade || '';
+            var motivo = data.motivo || '';
+            var corParecer = sc >= 5 ? '#22c55e' : sc >= 3 ? '#f59e0b' : '#a78bfa';
+            if (dot) dot.style.background = corParecer;
+            if (dir) {
+                if (decEl) { decEl.textContent = dir + ' ' + sc + '/7 (' + qual + ')'; decEl.style.color = dir === 'COMPRA' ? '#22c55e' : '#ef4444'; }
+            } else {
+                if (decEl) { decEl.textContent = 'SEM DIREÇÃO ' + sc + '/7'; decEl.style.color = '#f59e0b'; }
+            }
+            if (decSub) {
+                var subText = motivo;
+                if (data.proxima_janela) subText += '<br><span style="color:#6366f1;font-size:10px;">' + data.proxima_janela + '</span>';
+                decSub.innerHTML = subText;
+            }
             var decDiv5 = document.getElementById('opLiveDecisao');
-            if (decDiv5) { decDiv5.style.borderColor = '#a78bfa30'; decDiv5.style.background = 'rgba(167,139,250,0.04)'; }
+            if (decDiv5) { decDiv5.style.borderColor = corParecer + '40'; decDiv5.style.background = 'rgba(167,139,250,0.04)'; }
         } else if (data.status === 'AGUARDANDO') {
             if (dot) dot.style.background = '#f59e0b';
-            if (decEl) { decEl.textContent = 'ANALISANDO...'; decEl.style.color = '#f59e0b'; }
-            if (decSub) decSub.innerHTML = (data.motivo || 'Sem direção clara') + (data.proxima_janela ? '<br><span style="color:#6366f1;font-size:10px;">' + data.proxima_janela + '</span>' : '');
+            if (decEl) { decEl.textContent = 'SEM SINAL'; decEl.style.color = '#f59e0b'; }
+            if (decSub) decSub.innerHTML = (data.motivo || 'Mercado sem direção clara') + (data.proxima_janela ? '<br><span style="color:#6366f1;font-size:10px;">' + data.proxima_janela + '</span>' : '');
             var decDiv2 = document.getElementById('opLiveDecisao');
             if (decDiv2) { decDiv2.style.borderColor = '#f59e0b30'; decDiv2.style.background = 'var(--bg-card)'; }
         } else if (data.status === 'MERCADO_FECHADO') {

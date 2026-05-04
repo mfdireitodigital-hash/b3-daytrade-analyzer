@@ -329,7 +329,7 @@ templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
 
 @app.get("/api/version")
 async def api_version():
-    return {"version": "3.0.1", "build": "20260504f", "changes": "analise_sempre_visivel_forcar_trade_detalhes"}
+    return {"version": "3.1.0", "build": "20260504g", "changes": "analise_sempre_visivel_forcar_trade_detalhes"}
 
 @app.get("/", response_class=HTMLResponse)
 async def dashboard(request: Request):
@@ -1945,8 +1945,9 @@ async def get_sinais_ia(ativo: str = Query("WIN")):
         elif cs >= 5: escala = {"nota": 4, "label": "SETUP BOM", "acao": "Tamanho normal - boa confluência", "cor": "#16a34a"}
         elif cs == 4: escala = {"nota": 3, "label": "SETUP OK", "acao": "Pode operar - sizing reduzido", "cor": "#ca8a04"}
         elif cs == 3: escala = {"nota": 2, "label": "VIÁVEL", "acao": "Entrada cautelosa - 3 fatores", "cor": "#f59e0b"}
-        elif cs == 2: escala = {"nota": 1, "label": "FRACO", "acao": "Risco alto - só se forçar", "cor": "#ea580c"}
-        else: escala = {"nota": 1, "label": "SEM BASE", "acao": "Sem fatores suficientes", "cor": "#ef4444"}
+        elif cs == 2: escala = {"nota": 2, "label": "POSSÍVEL", "acao": "Entrada possível - sizing mínimo", "cor": "#ea580c"}
+        elif cs == 1: escala = {"nota": 1, "label": "ARRISCADO", "acao": "Alto risco - 1 fator apenas", "cor": "#ef4444"}
+        else: escala = {"nota": 0, "label": "SEM BASE", "acao": "Nenhum fator confirmando", "cor": "#ef4444"}
         
         # === GERAR SINAIS ===
         sinais_gerados = []
@@ -2937,13 +2938,19 @@ async def operador_live(ativo: str = Query("WIN"), max_entradas: int = Query(5),
             motivo_espera = motivos_nao_operar[0] if motivos_nao_operar else "Aguardando melhores condições"
             prox_janela = _proxima_janela_boa(t_min)
             
-            # Parecer inteligente baseado no que tem
-            if score >= 2 and tipo_sinal:
-                parecer = f"TENDÊNCIA {tipo_sinal} detectada ({score}/7) mas {motivo_espera}"
-            elif score >= 1:
-                parecer = f"Sinais fracos ({score}/7) - mercado indeciso"
+            # Analista sênior - SEMPRE dá opinião clara e direta
+            if score >= 5 and tipo_sinal:
+                parecer = f"FORTE sinal de {tipo_sinal} ({score}/7 {conf_label}) - Bloqueio: {motivo_espera}"
+            elif score >= 3 and tipo_sinal:
+                parecer = f"Sinal de {tipo_sinal} ({score}/7 {conf_label}) - Bloqueio: {motivo_espera}"
+            elif score >= 2 and tipo_sinal:
+                parecer = f"Possível {tipo_sinal} ({score}/7) - Cautela: {motivo_espera}"
+            elif score >= 1 and tipo_sinal:
+                parecer = f"Indício de {tipo_sinal} ({score}/7) - {motivo_espera}"
+            elif tipo_sinal:
+                parecer = f"Tendência de {tipo_sinal} fraca - {motivo_espera}"
             else:
-                parecer = f"Sem direção clara - indicadores divergentes"
+                parecer = f"Sem direção - indicadores divergentes"
             
             raciocinio = (
                 f"PARECER: {parecer}\n"
@@ -3046,6 +3053,7 @@ async def operador_live(ativo: str = Query("WIN"), max_entradas: int = Query(5),
             "aguardando_entrada": op_state.get("aguardando_entrada", False),
             "erros_memoria": len(app_state.get("operador_erros", [])),
             "alerta_erro": alerta_erro,
+            "motivo": motivos_nao_operar[0] if motivos_nao_operar else ("Entrada recomendada" if operar else "Sem sinal"),
         }
         
         # Se trade ativo, enriquecer raciocínio com detalhes do trade
@@ -3195,7 +3203,7 @@ def _identificar_playbook_live(setup_data, rsi_v, macd_h, ema9, ema21, c, vwap, 
     if pa.get("pullback") and confl.get("tendencia_tf_maior"):
         return {"nome": "EMA 21 + Tendência", "desc": f"Pullback na EMA21 a favor de {tend_macro_dir}."}
     
-    if setup_data.get("total_confluencia", 0) >= 3:
+    if setup_data.get("total_confluencia", 0) >= 2:
         return {"nome": "Confluência Técnica", "desc": f"{setup_data['total_confluencia']}/7 fatores alinhados."}
     
     return {"nome": None, "desc": None}
@@ -3385,7 +3393,7 @@ async def simulador_real(ativo: str = Query("WIN"), max_entradas: int = Query(5)
                         1)
             
             # Setup genérico de confluência
-            if setup_data.get("total_confluencia", 0) >= 3:
+            if setup_data.get("total_confluencia", 0) >= 2:
                 return ("Confluência Técnica",
                         f"Múltiplos fatores alinhados ({setup_data['total_confluencia']}/7). Entrada por confluência.",
                         0)

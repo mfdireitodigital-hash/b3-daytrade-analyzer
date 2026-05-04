@@ -380,7 +380,7 @@ def detectar_setup_profissional(
     # ===== CLASSIFICAÇÃO DO SETUP (Bellafiore PlayBook) =====
     total_confluencia = sum(1 for v in confluencia.values() if v)
     
-    # Qualidade (Bellafiore: A+, B+, C+)
+    # Qualidade (Bellafiore adaptado: analista sênior decide com qualquer nível)
     if total_confluencia >= 6:
         qualidade = "A+"
         confianca = 5
@@ -393,9 +393,12 @@ def detectar_setup_profissional(
     elif total_confluencia >= 3:
         qualidade = "C+"
         confianca = 3
+    elif total_confluencia >= 2:
+        qualidade = "C"
+        confianca = 2
     else:
-        qualidade = "SKIP"
-        confianca = max(1, total_confluencia)
+        qualidade = "D"
+        confianca = 1
     
     # ===== FILTRO CONTRA-TENDÊNCIA =====
     # Elder: cuidado contra Tela 1, mas NÃO bloquear totalmente
@@ -422,20 +425,20 @@ def detectar_setup_profissional(
                 break
     
     # ===== DECISÃO FINAL =====
-    # Operador menos conservador: 3/7 confluências já é aceitável (C+)
-    # Nem todos os fatores vão bater ao mesmo tempo - isso é normal
+    # Analista sênior: opera com 2+ confluências se tiver direção
+    # Não precisa 7/7 - nenhum trade real tem tudo alinhado
     operar = (
         direcao is not None
-        and qualidade in ("A+", "A", "B+", "C+")
+        and qualidade in ("A+", "A", "B+", "C+", "C")
         and not contra_tendencia
         and not entrada_repetida
-        and total_confluencia >= 3
+        and total_confluencia >= 2
     )
     
     # Ajuste de sizing por qualidade (Bellafiore)
     # A+/A = tamanho cheio, B+ = normal, C+ = reduzido mas OPERA
-    if qualidade == "C+" and operar:
-        motivos_operar.append("C+ (3/7) = entrada válida com sizing reduzido")
+    if qualidade in ("C+", "C") and operar:
+        motivos_operar.append(f"{qualidade} ({total_confluencia}/7) = entrada válida com sizing reduzido")
     
     return {
         "direcao": direcao,
