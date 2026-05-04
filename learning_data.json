@@ -1,12 +1,12 @@
 {
   "versao": 2,
   "total_sessoes": 1,
-  "total_operacoes": 2,
-  "total_wins": 0,
-  "total_losses": 2,
-  "win_rate_global": 0.0,
-  "total_pts": -435.0,
-  "total_rs": -87.0,
+  "total_operacoes": 4,
+  "total_wins": 1,
+  "total_losses": 3,
+  "win_rate_global": 25.0,
+  "total_pts": -335.0,
+  "total_rs": -67.0,
   "pesos": {
     "horario": 1.0,
     "rsi": 0.99,
@@ -83,6 +83,29 @@
       "licao": "RSI extremo (19.0) na hora da entrada - mercado esticado",
       "pts_perdidos": -280.0,
       "detalhes": "STOP atingido em 10:40 (1 velas). Prejuízo: -280.0pts (-R$56.0). ANÁLISE: Preço longe de S/R - sem proteção natural; Indicadores não estavam todos alinhados; Contra VWAP (186914.0). Confluência era 4/"
+    },
+    {
+      "data": "04/05/2026 20:36",
+      "ativo": "WIN",
+      "fingerprint": {
+        "tipo": "VENDA",
+        "hora_faixa": "manha",
+        "tendencia": "ALTA",
+        "rsi_zona": "sobrecomprado",
+        "macd_direcao": "zero",
+        "score": 1.5,
+        "conf_label": "R:R 1.5:1",
+        "motivos": [
+          "Operacao a CONTRA da tendencia (ALTA)",
+          "LICAO: Entrou CONTRA a tendencia - principal causa de loss (Elder: so opere na direcao da Tela 1)",
+          "RSI na entrada: 70.9"
+        ]
+      },
+      "contexto": "VENDA em 10:10 - ALTA - Score 1.5 (R:R 1.5:1)",
+      "licao": "VENDA contra tendência ALTA - Elder proíbe (Triple Screen); Confluência baixa (1.5/7 = R:R 1.5:1) - Bellafiore: só A+/B+",
+      "pts_perdidos": -200.0,
+      "detalhes": "Operacao a CONTRA da tendencia (ALTA); LICAO: Entrou CONTRA a tendencia - principal causa de loss (Elder: so opere na direcao da Tela 1); RSI na entrada: 70.9; Stop de 200pts foi adequado; Axioma de Z",
+      "origem": "replay_ct"
     }
   ],
   "regras_aprendidas": [],
@@ -96,9 +119,20 @@
       "losses": 1,
       "total": 1,
       "taxa_loss": 100.0
+    },
+    "VENDA_manha_ALTA_sobrecomprado": {
+      "losses": 1,
+      "total": 1,
+      "taxa_loss": 100.0
     }
   },
-  "situacoes_seguras": {},
+  "situacoes_seguras": {
+    "COMPRA_manha_LATERAL_neutro": {
+      "wins": 1,
+      "total": 1,
+      "taxa_win": 100.0
+    }
+  },
   "evolucao": [
     {
       "data": "04/05/2026",

@@ -329,7 +329,7 @@ templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
 
 @app.get("/api/version")
 async def api_version():
-    return {"version": "3.6.1", "build": "20260504u", "changes": "memoria_persistente_replay,alerta_erros_similares,gravar_todo_trade_ct"}
+    return {"version": "3.6.2", "build": "20260504v", "changes": "memoria_persistente_replay,alerta_erros_similares,gravar_todo_trade_ct"}
 
 @app.get("/", response_class=HTMLResponse)
 async def dashboard(request: Request):
@@ -1700,7 +1700,7 @@ async def simular_entrada(request: Request):
         try:
             # Contexto da vela de entrada
             entry_rsi = None
-            rsi_series = calcular_rsi(dados['close'], 14)
+            rsi_series = calcular_rsi(dados, 14)
             if entry_global_idx < len(rsi_series):
                 entry_rsi = round(float(rsi_series.iloc[entry_global_idx]), 1)
             
