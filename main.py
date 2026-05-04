@@ -329,7 +329,7 @@ templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
 
 @app.get("/api/version")
 async def api_version():
-    return {"version": "3.4.1", "build": "20260504r", "changes": "ct_redesign_educativo,fix_simInit_ativo,fix_replay_dia_fechado,fix_treinar_btn,fix_sim_hardcoded_WIN"}
+    return {"version": "3.5.0", "build": "20260504s", "changes": "ct_redesign_educativo,fix_simInit_ativo,fix_replay_dia_fechado,fix_treinar_btn,fix_sim_hardcoded_WIN"}
 
 @app.get("/", response_class=HTMLResponse)
 async def dashboard(request: Request):
@@ -1694,6 +1694,61 @@ async def simular_entrada(request: Request):
         resultado_rs = round(pts * valor_ponto * contratos, 2)
         rr = round(alvo_pts / stop_pts, 1) if stop_pts > 0 else 0
         
+        # ===== ANALISE EDUCATIVA =====
+        from analysis_engine import calcular_rsi
+        educativa = []
+        try:
+            # Contexto da vela de entrada
+            entry_rsi = None
+            rsi_series = calcular_rsi(dados['close'], 14)
+            if entry_global_idx < len(rsi_series):
+                entry_rsi = round(float(rsi_series.iloc[entry_global_idx]), 1)
+            
+            # Tendencia na entrada
+            ema9 = dados['close'].ewm(span=9).mean()
+            ema21 = dados['close'].ewm(span=21).mean()
+            e9 = float(ema9.iloc[entry_global_idx])
+            e21 = float(ema21.iloc[entry_global_idx])
+            tend = "ALTA" if e9 > e21 else "BAIXA" if e9 < e21 else "LATERAL"
+            
+            # A favor ou contra tendencia?
+            a_favor = (tipo == "COMPRA" and tend == "ALTA") or (tipo == "VENDA" and tend == "BAIXA")
+            
+            if resultado == "WIN":
+                educativa.append(f"Operacao a {'FAVOR' if a_favor else 'CONTRA'} da tendencia ({tend})")
+                if a_favor:
+                    educativa.append("Regra aplicada: Operar a favor da tendencia macro (Elder - Triple Screen)")
+                else:
+                    educativa.append("Atencao: Ganhou contra a tendencia - isso e mais arriscado e menos consistente")
+                if entry_rsi:
+                    if tipo == "COMPRA" and entry_rsi < 40:
+                        educativa.append(f"RSI estava em {entry_rsi} (sobrevendido) - bom ponto de compra")
+                    elif tipo == "VENDA" and entry_rsi > 60:
+                        educativa.append(f"RSI estava em {entry_rsi} (sobrecomprado) - bom ponto de venda")
+                    else:
+                        educativa.append(f"RSI na entrada: {entry_rsi}")
+                educativa.append(f"EMA9 {'acima' if e9>e21 else 'abaixo'} da EMA21 - confirmacao de tendencia")
+                educativa.append(f"R:R configurado {rr}:1 - {'excelente' if rr >= 2 else 'aceitavel' if rr >= 1.5 else 'baixo, busque minimo 1:2'}")
+                if max_adverso > 0:
+                    educativa.append(f"Maximo adverso: {round(max_adverso,0)}pts - {'operacao tranquila' if max_adverso < stop_pts*0.5 else 'chegou perto do stop' if max_adverso > stop_pts*0.7 else 'oscilou mas segurou'}")
+            else:
+                educativa.append(f"Operacao a {'FAVOR' if a_favor else 'CONTRA'} da tendencia ({tend})")
+                if not a_favor:
+                    educativa.append("LICAO: Entrou CONTRA a tendencia - principal causa de loss (Elder: so opere na direcao da Tela 1)")
+                if entry_rsi:
+                    if tipo == "COMPRA" and entry_rsi > 70:
+                        educativa.append(f"RSI estava em {entry_rsi} - SOBRECOMPRADO! Nao compre com RSI alto (divergencia)")
+                    elif tipo == "VENDA" and entry_rsi < 30:
+                        educativa.append(f"RSI estava em {entry_rsi} - SOBREVENDIDO! Nao venda com RSI baixo")
+                    else:
+                        educativa.append(f"RSI na entrada: {entry_rsi}")
+                educativa.append(f"Stop de {stop_pts}pts foi {'adequado' if stop_pts >= round(max_adverso,0) else 'curto demais - considere stop maior baseado no ATR'}")
+                if max_favoravel > 0:
+                    educativa.append(f"Chegou a ter {round(max_favoravel,0)}pts a favor antes de stopar - {'considere parcial ou trailing stop' if max_favoravel > alvo_pts*0.5 else 'nao teve forca na direcao'}")
+                educativa.append(f"Axioma de Zurique #3: Corte perdas rapido. Stop bem posicionado protege o capital.")
+        except Exception as ex:
+            educativa.append(f"Analise educativa indisponivel")
+        
         return JSONResponse({
             "entrada": {
                 "tipo": tipo,
@@ -1719,6 +1774,7 @@ async def simular_entrada(request: Request):
                 "max_adverso_pts": round(max_adverso, 1),
                 "caminho": caminho[-10:] if len(caminho) > 10 else caminho,
             },
+            "educativa": educativa,
             "contratos": contratos,
             "valor_ponto": valor_ponto,
         })

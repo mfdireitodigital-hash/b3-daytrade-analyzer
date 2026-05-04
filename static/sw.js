@@ -1,5 +1,5 @@
 // B3 Day Trade Analyzer - Service Worker v1.0
-const CACHE_NAME = 'b3-trade-v1';
+const CACHE_NAME = 'b3-trade-v5';
 const STATIC_ASSETS = [
   '/',
   '/static/manifest.json',

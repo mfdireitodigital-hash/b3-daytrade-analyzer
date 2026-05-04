@@ -2858,7 +2858,9 @@ async function simInit() {
             document.getElementById('simUltimoResult').style.display = 'none';
             document.getElementById('simHistBox').style.display = 'none';
             
-            fetch('/api/replay-velas?ativo=' + (window.ptState ? ptState.ativo : 'WIN')).then(r=>r.json()).then(data=>{
+            try {
+                const response = await fetch('/api/replay-velas?ativo=' + (window.ptState ? ptState.ativo : 'WIN'));
+                const data = await response.json();
                 if(data.erro){document.getElementById('simDiaLabel').textContent='Erro: '+data.erro;return;}
                 if(!window.simScore) window.simScore = {wins:0,losses:0,pts:0,rs:0,ops:[]};
                 window.simVelas = data;
@@ -2874,7 +2876,10 @@ async function simInit() {
                     ' | Amp: '+m.amplitude_pts.toLocaleString('pt-BR')+'pts';
                 simRenderTabela(data.velas);
                 simUpdatePlacar();
-            }).catch(e=>{document.getElementById('simDiaLabel').textContent='Erro: '+e.message;});
+            } catch(e) {
+                console.error('simInit error:', e);
+                document.getElementById('simDiaLabel').textContent='Erro: '+e.message;
+            }
         }
         
         function simRenderTabela(velas) {
@@ -3008,6 +3013,21 @@ async function simInit() {
                     data.detalhes.caminho.forEach(c => {
                         const cc = c.close > e.preco ? '#22c55e' : '#ef4444';
                         rhtml += '<span style="color:'+cc+';">'+c.hora+'('+c.close.toLocaleString('pt-BR')+') </span>';
+                    });
+                    rhtml += '</div>';
+                }
+                // === EXPLICACAO EDUCATIVA ===
+                if (data.educativa && data.educativa.length > 0) {
+                    const eduCor = w ? '#22c55e' : '#ef4444';
+                    const eduBg = w ? 'rgba(34,197,94,0.08)' : 'rgba(239,68,68,0.08)';
+                    const eduBorder = w ? 'rgba(34,197,94,0.3)' : 'rgba(239,68,68,0.3)';
+                    rhtml += '<div style="margin-top:8px;padding:10px 12px;background:'+eduBg+';border:1px solid '+eduBorder+';border-radius:8px;border-left:4px solid '+eduCor+';">';
+                    rhtml += '<div style="font-size:11px;font-weight:800;color:'+eduCor+';margin-bottom:6px;">'+(w?'POR QUE DEU WIN':'POR QUE DEU LOSS - LICAO')+'</div>';
+                    data.educativa.forEach(function(txt) {
+                        const isLicao = txt.includes('LICAO') || txt.includes('Atencao') || txt.includes('Nao ');
+                        const isBom = txt.includes('bom ponto') || txt.includes('excelente') || txt.includes('Regra aplicada');
+                        const txtCor = isLicao ? '#fbbf24' : isBom ? '#22c55e' : 'var(--text-muted)';
+                        rhtml += '<div style="font-size:10px;color:'+txtCor+';padding:2px 0;">'+(isLicao?'⚠ ':isBom?'✓ ':'• ')+txt+'</div>';
                     });
                     rhtml += '</div>';
                 }
