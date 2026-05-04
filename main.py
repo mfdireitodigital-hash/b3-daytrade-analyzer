@@ -1901,17 +1901,19 @@ async def get_sinais_ia(ativo: str = Query("WIN")):
         
         # === ESCALA DE CONFIANCA (Bellafiore) ===
         cs = confluencia["score"]
-        if cs >= 6: escala = {"nota": 5, "label": "A+ SETUP", "acao": "Tamanho cheio", "cor": "#22c55e"}
-        elif cs >= 5: escala = {"nota": 4, "label": "SETUP BOM", "acao": "Tamanho normal", "cor": "#16a34a"}
-        elif cs == 4: escala = {"nota": 3, "label": "SETUP OK", "acao": "Tamanho reduzido (-50%)", "cor": "#ca8a04"}
-        elif cs == 3: escala = {"nota": 2, "label": "DUVIDOSO", "acao": "Minimo ou nao opere", "cor": "#ea580c"}
-        else: escala = {"nota": 1, "label": "SEM SETUP", "acao": "NAO OPERE", "cor": "#ef4444"}
+        if cs >= 6: escala = {"nota": 5, "label": "A+ SETUP", "acao": "Tamanho cheio - confluência máxima", "cor": "#22c55e"}
+        elif cs >= 5: escala = {"nota": 4, "label": "SETUP BOM", "acao": "Tamanho normal - boa confluência", "cor": "#16a34a"}
+        elif cs == 4: escala = {"nota": 3, "label": "SETUP OK", "acao": "Pode operar - sizing reduzido", "cor": "#ca8a04"}
+        elif cs == 3: escala = {"nota": 2, "label": "VIÁVEL", "acao": "Entrada cautelosa - 3 fatores", "cor": "#f59e0b"}
+        elif cs == 2: escala = {"nota": 1, "label": "FRACO", "acao": "Risco alto - só se forçar", "cor": "#ea580c"}
+        else: escala = {"nota": 1, "label": "SEM BASE", "acao": "Sem fatores suficientes", "cor": "#ef4444"}
         
         # === GERAR SINAIS ===
         sinais_gerados = []
         direcao_final = tela3_entrada if tela3_entrada != "NEUTRO" else tela2_sinal
         
-        if direcao_final in ("COMPRA", "VENDA") and cs >= 3:
+        # Sempre dar parecer se tiver direção, mesmo com poucos fatores
+        if direcao_final in ("COMPRA", "VENDA") and cs >= 1:
             is_compra = direcao_final == "COMPRA"
             motivos = tela1_detail + tela2_detail + tela3_detail
             
@@ -1946,7 +1948,7 @@ async def get_sinais_ia(ativo: str = Query("WIN")):
                 "setup": "Aguardando",
                 "confianca": 0,
                 "escala": escala,
-                "motivos": ["Sem confluencia suficiente - aguardar setup com 4+ pontos"],
+                "motivos": ["Sem direção clara - indicadores divergentes"],
                 "timestamp": datetime.now(BRT).strftime("%H:%M:%S"),
             })
         
@@ -2818,13 +2820,26 @@ async def operador_live(ativo: str = Query("WIN"), max_entradas: int = Query(5),
                 operar = False
                 motivos_nao_operar.append(f"B+ em horário ruim precisa 5+ confluências")
         
-        # ===== FORÇAR ENTRADA (botão Próxima Entrada) =====
-        # Quando forcar=True, aceita C+ também se tiver PA+S/R
-        if forcar_entrada and not operar and tipo_sinal:
-            if score >= 3 and not setup["contra_tendencia"]:
+        # ===== FORÇAR ENTRADA (botão FORÇAR ENTRADA) =====
+        # Quando forcar=True, entra AGORA se tiver qualquer direção detectada
+        # O usuário decidiu forçar - relaxar TODOS os filtros exceto horário proibido
+        if forcar_entrada and not operar:
+            if tipo_sinal and score >= 1 and janela_qual != "PROIBIDO":
                 operar = True
-                conf_label = conf_label + " (forçado)"
-                motivos_operar.append("FORÇADO pelo operador - filtros relaxados")
+                conf_label = f"{conf_label} (FORÇADO)"
+                motivos_nao_operar.clear()  # Limpar bloqueios
+                motivos_operar.append(f"ENTRADA FORÇADA - {score}/7 confluências - risco assumido pelo operador")
+                if setup.get("contra_tendencia"):
+                    motivos_operar.append("⚠️ Contra tendência macro - sizing mínimo recomendado")
+            elif not tipo_sinal:
+                # Sem direção nenhuma - usar tendência macro como fallback
+                if tend_macro["tendencia"] in ("ALTA", "BAIXA"):
+                    tipo_sinal = "COMPRA" if tend_macro["tendencia"] == "ALTA" else "VENDA"
+                    operar = True
+                    conf_label = f"MACRO (FORÇADO)"
+                    motivos_nao_operar.clear()
+                    motivos_operar.append(f"ENTRADA FORÇADA pela tendência macro ({tend_macro['tendencia']})")
+                    motivos_operar.append("⚠️ Poucos fatores - use stop curto e sizing mínimo")
         
         # ===== SMC complementar =====
         smc_data = {}
@@ -2885,18 +2900,28 @@ async def operador_live(ativo: str = Query("WIN"), max_entradas: int = Query(5),
             )
             status = "ENTRADA"
         else:
-            # Esperar
-            motivo_espera = motivos_nao_operar[0] if motivos_nao_operar else "Sem setup válido no momento"
+            # Dar parecer mesmo sem operar - NUNCA ficar mudo
+            motivo_espera = motivos_nao_operar[0] if motivos_nao_operar else "Aguardando melhores condições"
             prox_janela = _proxima_janela_boa(t_min)
+            
+            # Parecer inteligente baseado no que tem
+            if score >= 2 and tipo_sinal:
+                parecer = f"TENDÊNCIA {tipo_sinal} detectada ({score}/7) mas {motivo_espera}"
+            elif score >= 1:
+                parecer = f"Sinais fracos ({score}/7) - mercado indeciso"
+            else:
+                parecer = f"Sem direção clara - indicadores divergentes"
+            
             raciocinio = (
-                f"AGUARDANDO melhor momento...\n"
-                f"Preço: {round(preco_atual,2)} | Tendência: {tend_macro['tendencia']}\n"
-                f"Score atual: {score}/7 ({conf_label}) - {'insuficiente' if score < 4 else 'ok mas ' + motivo_espera}\n"
-                f"Motivo: {motivo_espera}\n"
+                f"PARECER: {parecer}\n"
+                f"Preço: {round(preco_atual,2)} | Tendência macro: {tend_macro['tendencia']}\n"
+                f"Score: {score}/7 ({conf_label})\n"
+                f"RSI={rsi_v} | MACD={macd_h} | EMA9{'>' if ema9>ema21 else '<'}EMA21\n"
+                f"{'Bloqueio: ' + motivo_espera if motivos_nao_operar else 'Sem bloqueio - faltam confluências'}\n"
                 f"Janela: {janela_nome} ({janela_qual})\n"
                 f"{prox_janela}"
             )
-            status = "AGUARDANDO"
+            status = "PARECER" if score >= 1 else "AGUARDANDO"
         
         # ===== PRÓXIMAS OPORTUNIDADES (olhar 3 velas anteriores para contexto) =====
         ultimas_velas = []

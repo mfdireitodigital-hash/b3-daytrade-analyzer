@@ -719,7 +719,7 @@
     <!-- Signal Banner -->
     <div class="sinal-banner neutro" id="sinalBanner">
         <span class="sinal-badge neutro" id="sinalBadge">AGUARDANDO</span>
-        <span id="sinalTexto" style="flex:1">Aguardando cruzamento de indicadores...</span>
+        <span id="sinalTexto" style="flex:1">Analisando mercado...</span>
         <div>
             <div class="confianca-bar"><div class="confianca-fill" id="confiancaFill" style="width:0"></div></div>
             <span style="font-size:10px;color:var(--text-muted)" id="confiancaTexto">Confianca: 0%</span>
@@ -959,7 +959,7 @@
             <!-- Decisão principal -->
             <div id="opLiveDecisao" style="background:var(--bg-card);border:2px solid var(--border);border-radius:10px;padding:16px;margin-bottom:8px;text-align:center;">
                 <div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;">Decisão do Operador</div>
-                <div id="opLiveDecisaoText" style="font-size:26px;font-weight:900;color:var(--text-muted);margin:4px 0;">Clique ANALISAR AGORA</div>
+                <div id="opLiveDecisaoText" style="font-size:26px;font-weight:900;color:var(--text-muted);margin:4px 0;">Operador iniciando...</div>
                 <div id="opLiveDecisaoSub" style="font-size:11px;color:var(--text-muted);"></div>
             </div>
             <!-- Grid: análise + trade proposto -->
@@ -1041,7 +1041,7 @@
         <!-- VEREDICTO PRINCIPAL -->
         <div id="simRealVeredicto" style="background:var(--bg-card);border:2px solid var(--border);border-radius:10px;padding:16px;margin:8px 0;text-align:center;">
             <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;margin-bottom:4px;">Veredicto do Simulador</div>
-            <div id="simRealVeredictoText" style="font-size:28px;font-weight:900;color:var(--text-muted);">Clique ANALISAR AGORA</div>
+            <div id="simRealVeredictoText" style="font-size:28px;font-weight:900;color:var(--text-muted);">Operador iniciando...</div>
             <div id="simRealVeredictoSub" style="font-size:12px;color:var(--text-muted);margin-top:4px;"></div>
         </div>
 
@@ -1125,7 +1125,7 @@
                 Operacoes Recomendadas
             </div>
             <div id="simRealOps">
-                <div style="text-align:center;padding:24px;color:var(--text-muted);">Clique ANALISAR AGORA para gerar operacoes com base em todos os indicadores.</div>
+                <div style="text-align:center;padding:24px;color:var(--text-muted);">Operador iniciando análise em tempo real...</div>
             </div>
         </div>
     </div>
@@ -2287,7 +2287,7 @@ function atualizarUI() {
 function atualizarBanner(a) {
     const banner = document.getElementById('sinalBanner'), badge = document.getElementById('sinalBadge'), texto = document.getElementById('sinalTexto'), fill = document.getElementById('confiancaFill');
     const sinais = a.sinais || [];
-    let sinal = 'NEUTRO', confianca = 0, motivo = 'Aguardando cruzamento de TODOS indicadores...';
+    let sinal = 'NEUTRO', confianca = 0, motivo = 'Analisando mercado...';
     if (sinais.length > 0) {
         const s = sinais[0];
         sinal = s.tipo || 'NEUTRO';
@@ -2464,7 +2464,7 @@ function atualizarViolinada(a) {
 
 function atualizarSinais(a) {
     const el = document.getElementById('sinaisSection'), sinais = a.sinais || [];
-    if (sinais.length === 0) { el.innerHTML = '<div style="font-size:12px;color:var(--text-muted);text-align:center;padding:10px;">Aguardando cruzamento de todos indicadores</div>'; return; }
+    if (sinais.length === 0) { el.innerHTML = '<div style="font-size:12px;color:var(--text-muted);text-align:center;padding:10px;">Analisando... aguarde atualização</div>'; return; }
     let h = '';
     sinais.forEach(s => {
         const t = s.tipo || 'NEUTRO';
@@ -4391,6 +4391,14 @@ function operadorLiveInit() {
     _opLiveInterval = setInterval(() => {
         operadorLiveCheck();
     }, 120000); // 2 min
+    
+    // Keep operator alive when returning to tab
+    document.addEventListener('visibilitychange', function() {
+        if (!document.hidden) {
+            console.log('Tab visible - refreshing operator');
+            operadorLiveCheck();
+        }
+    });
 }
 
 async function operadorEntrar() {
@@ -4526,10 +4534,17 @@ async function operadorLiveCheck(forcar) {
             // Update enter button
             var btn2 = document.getElementById('opBtnEntrar');
             if (btn2) { btn2.textContent = 'EM TRADE...'; btn2.style.background = '#22c55e'; btn2.disabled = true; }
+        } else if (data.status === 'PARECER') {
+            // Tem opinião mas não entra - mostra o parecer
+            if (dot) dot.style.background = '#a78bfa';
+            if (decEl) { decEl.textContent = 'PARECER: ' + (data.analise_atual?.direcao || 'NEUTRO'); decEl.style.color = '#a78bfa'; }
+            if (decSub) decSub.innerHTML = (data.analise_atual?.score || 0) + '/7 | ' + (data.analise_atual?.qualidade || '') + ' | ' + (data.motivo || 'Sem confluência suficiente') + (data.proxima_janela ? '<br><span style="color:#6366f1;font-size:10px;">' + data.proxima_janela + '</span>' : '');
+            var decDiv5 = document.getElementById('opLiveDecisao');
+            if (decDiv5) { decDiv5.style.borderColor = '#a78bfa30'; decDiv5.style.background = 'rgba(167,139,250,0.04)'; }
         } else if (data.status === 'AGUARDANDO') {
             if (dot) dot.style.background = '#f59e0b';
-            if (decEl) { decEl.textContent = 'AGUARDANDO'; decEl.style.color = '#f59e0b'; }
-            if (decSub) decSub.innerHTML = (data.motivo || 'Sem setup') + (data.proxima_janela ? '<br><span style="color:#6366f1;font-size:10px;">' + data.proxima_janela + '</span>' : '');
+            if (decEl) { decEl.textContent = 'ANALISANDO...'; decEl.style.color = '#f59e0b'; }
+            if (decSub) decSub.innerHTML = (data.motivo || 'Sem direção clara') + (data.proxima_janela ? '<br><span style="color:#6366f1;font-size:10px;">' + data.proxima_janela + '</span>' : '');
             var decDiv2 = document.getElementById('opLiveDecisao');
             if (decDiv2) { decDiv2.style.borderColor = '#f59e0b30'; decDiv2.style.background = 'var(--bg-card)'; }
         } else if (data.status === 'MERCADO_FECHADO') {
