@@ -329,7 +329,7 @@ templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
 
 @app.get("/api/version")
 async def api_version():
-    return {"version": "3.0.0", "build": "20260504e", "changes": "analise_sempre_visivel_forcar_trade_detalhes"}
+    return {"version": "3.0.1", "build": "20260504f", "changes": "analise_sempre_visivel_forcar_trade_detalhes"}
 
 @app.get("/", response_class=HTMLResponse)
 async def dashboard(request: Request):
@@ -3052,15 +3052,11 @@ async def operador_live(ativo: str = Query("WIN"), max_entradas: int = Query(5),
         if trade_ativo_info:
             ta = trade_ativo_info
             response["raciocinio"] = (
-                f"TRADE ABERTO: {ta.get('tipo','')} às {ta.get('hora_entrada','')}
-"
-                f"Estratégia: {ta.get('estrategia','')} | {ta.get('conf_label','')} ({ta.get('score',0)}/7)
-"
-                f"Entrada: {ta.get('preco_entrada',0)} | Stop: {ta.get('stop_loss',0)} | Alvo: {ta.get('take_profit',0)}
-"
-                f"Janela: {ta.get('janela','')} ({ta.get('janela_qualidade','')})
-"
-                f"Monitorando... alvo em {ta.get('alvo_pts',0)}pts, stop em {ta.get('stop_pts',0)}pts"
+                f"TRADE ABERTO: {ta.get('tipo','')} as {ta.get('hora_entrada','')}" + "\n"
+                + f"Estrategia: {ta.get('estrategia','')} | {ta.get('conf_label','')} ({ta.get('score',0)}/7)" + "\n"
+                + f"Entrada: {ta.get('preco_entrada',0)} | Stop: {ta.get('stop_loss',0)} | Alvo: {ta.get('take_profit',0)}" + "\n"
+                + f"Janela: {ta.get('janela','')} ({ta.get('janela_qualidade','')})" + "\n"
+                + f"Monitorando... alvo em {ta.get('alvo_pts',0)}pts, stop em {ta.get('stop_pts',0)}pts"
             )
         
         # ===== AUTO-ENTRAR se aguardando_entrada OU forçar_entrada =====
