@@ -2860,6 +2860,7 @@ async function simInit() {
             
             fetch('/api/replay-velas?ativo=' + (window.ptState ? ptState.ativo : 'WIN')).then(r=>r.json()).then(data=>{
                 if(data.erro){document.getElementById('simDiaLabel').textContent='Erro: '+data.erro;return;}
+                if(!window.simScore) window.simScore = {wins:0,losses:0,pts:0,rs:0,ops:[]};
                 window.simVelas = data;
                 const m = data.mercado;
                 const corVar = m.variacao_pct >= 0 ? '#22c55e' : '#ef4444';
@@ -3016,6 +3017,7 @@ async function simInit() {
         
         function simUpdatePlacar() {
             const s = window.simScore;
+            if (!s) { window.simScore = {wins:0,losses:0,pts:0,rs:0,ops:[]}; return simUpdatePlacar(); }
             const total = s.wins+s.losses;
             const taxa = total>0?Math.round(s.wins/total*100):0;
             const cor = s.rs>=0?'#22c55e':'#ef4444';
@@ -3025,6 +3027,7 @@ async function simInit() {
         }
         
         function simUpdateHist() {
+            if (!window.simScore) return;
             const ops = window.simScore.ops;
             if(!ops.length) return;
             document.getElementById('simHistBox').style.display = 'block';
