@@ -915,24 +915,85 @@
     </div>
 </div>
 
-<!-- SIMULADOR REAL - ANALISE COMPLETA -->
+<!-- SIMULADOR REAL - OPERADOR SENIOR LIVE -->
 <div class="pt-overlay" id="simRealOverlay" style="display:none;">
     <div class="pt-container" style="max-width:950px;">
         <div class="pt-header" style="border-bottom:2px solid var(--accent-blue);">
             <div>
-                <div class="pt-title" style="color:var(--accent-blue);">SIMULADOR REAL</div>
-                <div class="pt-title-sub" id="simRealSubtitle">Analise Completa | Triple Screen + Confluencia + Noticias + Heatmap</div>
+                <div class="pt-title" style="color:var(--accent-blue);">OPERADOR SENIOR</div>
+                <div class="pt-title-sub" id="simRealSubtitle">Tempo Real | Triple Screen + PlayBook + Gestão de Risco</div>
             </div>
-            <div style="display:flex;align-items:center;gap:10px;">
+            <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
                 <div id="simRealMarket" style="display:flex;align-items:center;gap:4px;font-size:11px;"></div>
                 <div style="display:flex;gap:4px;">
                     <button id="simBtnWIN" class="btn btn-primary" onclick="simRealSetAtivo('WIN')" style="font-size:10px;padding:4px 10px;">WIN</button>
                     <button id="simBtnWDO" class="btn" onclick="simRealSetAtivo('WDO')" style="font-size:10px;padding:4px 10px;">WDO</button>
                 </div>
-                <button class="btn btn-primary" onclick="simRealAnalisar()" style="font-size:12px;padding:6px 16px;">ANALISAR AGORA</button>
+                <button class="btn" onclick="simRealAnalisar()" style="font-size:11px;padding:5px 12px;background:#6366f1;color:#fff;">REPLAY DIA</button>
                 <button class="pt-close" onclick="fecharSimuladorReal()">FECHAR</button>
             </div>
         </div>
+
+        <!-- ===== PAINEL LIVE DO OPERADOR ===== -->
+        <div id="operadorLivePanel" style="margin:8px 0;">
+            <!-- Config bar -->
+            <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;background:linear-gradient(135deg,rgba(99,102,241,0.1),rgba(139,92,246,0.08));border:1px solid #6366f1;border-radius:10px;padding:12px;margin-bottom:8px;">
+                <div style="display:flex;align-items:center;gap:10px;">
+                    <div id="opLiveDot" style="width:12px;height:12px;border-radius:50%;background:#6366f1;animation:pulse 2s infinite;"></div>
+                    <div>
+                        <div style="font-size:13px;font-weight:800;color:#a78bfa;">OPERADOR SENIOR AUTÔNOMO</div>
+                        <div style="font-size:10px;color:var(--text-muted);" id="opLiveStatus">Iniciando...</div>
+                    </div>
+                </div>
+                <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+                    <div style="display:flex;align-items:center;gap:6px;">
+                        <label style="font-size:10px;font-weight:700;color:var(--text-secondary);">ENTRADAS:</label>
+                        <input type="range" id="opLiveMaxEntradas" min="1" max="15" value="5" oninput="document.getElementById('opLiveMaxVal').textContent=this.value" style="width:80px;accent-color:#6366f1;">
+                        <span id="opLiveMaxVal" style="font-size:14px;font-weight:900;color:#a78bfa;min-width:18px;">5</span>
+                    </div>
+                    <button onclick="operadorLiveCheck()" style="padding:6px 14px;background:#22c55e;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:11px;font-weight:800;">ANALISAR AGORA</button>
+                    <button onclick="operadorLiveCheck(true)" style="padding:6px 14px;background:#f59e0b;color:#000;border:none;border-radius:6px;cursor:pointer;font-size:11px;font-weight:800;">PRÓXIMA ENTRADA</button>
+                </div>
+            </div>
+            <!-- Decisão principal -->
+            <div id="opLiveDecisao" style="background:var(--bg-card);border:2px solid var(--border);border-radius:10px;padding:16px;margin-bottom:8px;text-align:center;">
+                <div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;">Decisão do Operador</div>
+                <div id="opLiveDecisaoText" style="font-size:26px;font-weight:900;color:var(--text-muted);margin:4px 0;">Clique ANALISAR AGORA</div>
+                <div id="opLiveDecisaoSub" style="font-size:11px;color:var(--text-muted);"></div>
+            </div>
+            <!-- Grid: análise + trade proposto -->
+            <div id="opLiveGrid" style="display:none;display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;">
+                <!-- Análise técnica -->
+                <div id="opLiveAnalise" style="background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:12px;">
+                    <div style="font-size:11px;font-weight:700;color:var(--accent-blue);margin-bottom:6px;">ANÁLISE TÉCNICA</div>
+                    <div id="opLiveAnaliseContent" style="font-size:11px;color:var(--text-secondary);line-height:1.6;"></div>
+                </div>
+                <!-- Trade proposto / raciocínio -->
+                <div id="opLiveTrade" style="background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:12px;">
+                    <div style="font-size:11px;font-weight:700;color:#a78bfa;margin-bottom:6px;">RACIOCÍNIO DO OPERADOR</div>
+                    <div id="opLiveTradeContent" style="font-size:11px;color:var(--text-secondary);line-height:1.6;white-space:pre-line;"></div>
+                </div>
+            </div>
+            <!-- Operações do dia -->
+            <div id="opLiveOps" style="background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:8px;">
+                <div style="font-size:11px;font-weight:700;color:var(--accent-green);margin-bottom:6px;">OPERAÇÕES DO DIA</div>
+                <div id="opLiveOpsContent" style="font-size:11px;color:var(--text-muted);">Nenhuma operação ainda</div>
+            </div>
+            <!-- P&L resumo -->
+            <div id="opLivePnL" style="display:none;background:var(--bg-card);border:2px solid var(--border);border-radius:8px;padding:10px;display:flex;justify-content:space-around;text-align:center;flex-wrap:wrap;gap:8px;margin-bottom:8px;">
+            </div>
+            <!-- Auto-refresh indicator -->
+            <div style="text-align:center;font-size:9px;color:var(--text-muted);padding:4px;">
+                <span id="opLiveRefreshInfo">Auto-refresh: a cada 2 min com mercado aberto</span> |
+                <span id="opLiveTimestamp"></span>
+            </div>
+        </div>
+
+        <hr style="border:none;border-top:1px solid var(--border);margin:8px 0;">
+        <div style="text-align:center;margin:6px 0;">
+            <button onclick="document.getElementById('simRealReplaySection').style.display=document.getElementById('simRealReplaySection').style.display==='none'?'block':'none'" style="padding:4px 12px;background:rgba(99,102,241,0.1);color:#818cf8;border:1px solid #6366f130;border-radius:6px;cursor:pointer;font-size:10px;font-weight:700;">REPLAY DO DIA (análise completa)</button>
+        </div>
+        <div id="simRealReplaySection" style="display:none;">
 
         <!-- STATUS MERCADO -->
         <div id="simRealStatus" style="background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:12px;margin:10px 0;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
@@ -3361,14 +3422,13 @@ function renderNotEventos(eventos, containerId, isPast) {
 // =====================================================
 function abrirSimuladorReal() {
     var _sro = document.getElementById('simRealOverlay'); if(_sro) _sro.style.display = 'block';
-    const marketOpen = simRealCheckMarket();
-    if (marketOpen) {
-        simRealAnalisar();
-    }
-    // If closed, simRealCheckMarket already shows the message
+    simRealCheckMarket();
+    // Start live operator (always, works both open and closed)
+    operadorLiveInit();
 }
 function fecharSimuladorReal() {
     var _sro2 = document.getElementById('simRealOverlay'); if(_sro2) _sro2.style.display = 'none';
+    if (_opLiveInterval) { clearInterval(_opLiveInterval); _opLiveInterval = null; }
 }
 // fecharPaperTrading defined above (line ~1141)
 
@@ -3414,6 +3474,7 @@ function simRealCheckMarket() {
 }
 
 function simRealSetAtivo(a) {
+    _opLiveAtivo = a;
     state.ativo = a;
     document.getElementById('simBtnWIN').className = a === 'WIN' ? 'btn btn-primary' : 'btn';
     document.getElementById('simBtnWDO').className = a === 'WDO' ? 'btn btn-primary' : 'btn';
@@ -4315,6 +4376,154 @@ async function simRealAnalisar() {
         if (veredSub) { veredSub.textContent = _msg; }
         var _opsErr = document.getElementById('simRealOps'); if(_opsErr) _opsErr.innerHTML = '<div style="text-align:center;padding:20px;"><div style="color:#ef4444;font-weight:700;margin-bottom:8px;">Erro na analise</div><div style="color:var(--text-muted);font-size:11px;">' + _msg + '</div><button class="btn" onclick="simRealAnalisar()" style="margin-top:10px;font-size:11px;padding:6px 16px;">TENTAR NOVAMENTE</button></div>';
         console.error('simRealAnalisar error:', e);
+    }
+}
+
+// ===== OPERADOR SENIOR LIVE =====
+var _opLiveInterval = null;
+var _opLiveAtivo = 'WIN';
+
+function operadorLiveInit() {
+    // Start auto-refresh every 2 minutes
+    operadorLiveCheck();
+    if (_opLiveInterval) clearInterval(_opLiveInterval);
+    _opLiveInterval = setInterval(() => {
+        operadorLiveCheck();
+    }, 120000); // 2 min
+}
+
+async function operadorLiveCheck(forcar) {
+    const maxEnt = document.getElementById('opLiveMaxEntradas')?.value || 5;
+    const statusEl = document.getElementById('opLiveStatus');
+    const decEl = document.getElementById('opLiveDecisaoText');
+    const decSub = document.getElementById('opLiveDecisaoSub');
+    
+    if (statusEl) statusEl.textContent = 'Analisando mercado...';
+    if (decEl) { decEl.textContent = 'ANALISANDO...'; decEl.style.color = '#6366f1'; }
+    
+    try {
+        const url = '/api/operador-live?ativo=' + _opLiveAtivo + '&max_entradas=' + maxEnt + (forcar ? '&forcar_entrada=true' : '');
+        const res = await fetch(url, {signal: AbortSignal.timeout(30000)});
+        const data = await res.json();
+        
+        if (data.status === 'ERRO') {
+            if (decEl) { decEl.textContent = 'ERRO'; decEl.style.color = '#ef4444'; }
+            if (decSub) decSub.textContent = data.mensagem;
+            return;
+        }
+        
+        const tsEl = document.getElementById('opLiveTimestamp');
+        if (tsEl) tsEl.textContent = 'Atualizado: ' + data.timestamp;
+        
+        // Status dot
+        const dot = document.getElementById('opLiveDot');
+        if (data.status === 'ENTRADA') {
+            if (dot) dot.style.background = '#22c55e';
+            if (decEl) { decEl.textContent = 'ENTRADA ' + (data.analise_atual?.direcao || ''); decEl.style.color = '#22c55e'; }
+            if (decSub) decSub.innerHTML = '<strong style="color:#a78bfa;">' + (data.analise_atual?.setup_playbook || 'Confluência') + '</strong> | ' + (data.analise_atual?.qualidade || '') + ' (' + (data.analise_atual?.score || 0) + '/7) | ' + data.janela + ' (' + data.janela_qualidade + ')';
+            // Highlight decisão
+            var decDiv = document.getElementById('opLiveDecisao');
+            if (decDiv) { decDiv.style.borderColor = '#22c55e'; decDiv.style.background = 'rgba(34,197,94,0.06)'; }
+        } else if (data.status === 'AGUARDANDO') {
+            if (dot) dot.style.background = '#f59e0b';
+            if (decEl) { decEl.textContent = 'AGUARDANDO'; decEl.style.color = '#f59e0b'; }
+            if (decSub) decSub.innerHTML = (data.motivo || 'Sem setup') + (data.proxima_janela ? '<br><span style="color:#6366f1;font-size:10px;">' + data.proxima_janela + '</span>' : '');
+            var decDiv2 = document.getElementById('opLiveDecisao');
+            if (decDiv2) { decDiv2.style.borderColor = '#f59e0b30'; decDiv2.style.background = 'var(--bg-card)'; }
+        } else if (data.status === 'MERCADO_FECHADO') {
+            if (dot) dot.style.background = '#ef4444';
+            if (decEl) { decEl.textContent = 'MERCADO FECHADO'; decEl.style.color = '#ef4444'; }
+            if (decSub) decSub.textContent = data.mensagem || 'Aguardando abertura';
+            var decDiv3 = document.getElementById('opLiveDecisao');
+            if (decDiv3) { decDiv3.style.borderColor = 'var(--border)'; decDiv3.style.background = 'var(--bg-card)'; }
+        }
+        
+        if (statusEl) statusEl.textContent = data.janela ? (data.janela + ' (' + data.janela_qualidade + ') | ' + data.hora_atual) : data.hora_atual;
+        
+        // Análise técnica
+        const analiseEl = document.getElementById('opLiveAnaliseContent');
+        const gridEl = document.getElementById('opLiveGrid');
+        if (data.analise_atual && analiseEl) {
+            if (gridEl) gridEl.style.display = 'grid';
+            const a = data.analise_atual;
+            const tm = data.tend_macro || {};
+            let ah = '';
+            ah += '<div style="margin-bottom:6px;"><strong>Tendência Macro:</strong> <span style="color:' + (tm.tendencia==='ALTA'?'#22c55e':tm.tendencia==='BAIXA'?'#ef4444':'#f59e0b') + ';font-weight:800;">' + (tm.tendencia||'?') + '</span> (força ' + (tm.forca||0) + ')</div>';
+            ah += '<div style="margin-bottom:6px;"><strong>Preço:</strong> ' + (data.preco_atual||0).toLocaleString('pt-BR') + ' | <strong>RSI:</strong> ' + a.rsi + ' | <strong>MACD:</strong> ' + a.macd_hist + '</div>';
+            ah += '<div style="margin-bottom:6px;"><strong>EMAs:</strong> 9=' + a.ema9 + ' | 21=' + a.ema21 + ' | ATR=' + a.atr + '</div>';
+            if (a.suporte || a.resistencia) ah += '<div style="margin-bottom:6px;"><strong>S/R:</strong> Sup=' + (a.suporte||'?') + ' | Res=' + (a.resistencia||'?') + (a.vwap ? ' | VWAP=' + a.vwap : '') + '</div>';
+            // Confluence badges
+            if (a.confluencia) {
+                ah += '<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:6px;">';
+                const labels = {tendencia_tf_maior:'Tend TF+', sr_relevante:'S/R', volume_confirma:'Volume', indicadores_confirmam:'Indicadores', price_action_confirma:'Price Action', risco_definido:'R:R', fibonacci_confirma:'Fibonacci'};
+                for (const [k,v] of Object.entries(labels)) {
+                    const ok = a.confluencia[k];
+                    ah += '<span style="font-size:9px;padding:2px 6px;border-radius:3px;background:' + (ok?'rgba(34,197,94,0.15)':'rgba(239,68,68,0.1)') + ';color:' + (ok?'#22c55e':'#ef4444') + ';font-weight:700;">' + (ok?'✓':'✗') + ' ' + v + '</span>';
+                }
+                ah += '</div>';
+            }
+            analiseEl.innerHTML = ah;
+        }
+        
+        // Raciocínio + trade proposto
+        const tradeEl = document.getElementById('opLiveTradeContent');
+        if (tradeEl) {
+            let th = data.raciocinio || 'Analisando...';
+            if (data.trade_proposto && data.status === 'ENTRADA') {
+                const tp = data.trade_proposto;
+                th += '\n\n─── TRADE PROPOSTO ───';
+                th += '\nEntrada: ' + tp.preco_entrada?.toLocaleString('pt-BR');
+                th += '\nStop: ' + tp.stop_loss?.toLocaleString('pt-BR') + ' (' + tp.stop_pts + 'pts)';
+                th += '\nAlvo: ' + tp.take_profit?.toLocaleString('pt-BR') + ' (' + tp.alvo_pts + 'pts)';
+                th += '\nR:R: ' + tp.rr;
+            }
+            tradeEl.textContent = th;
+        }
+        
+        // Operações do dia
+        const opsEl = document.getElementById('opLiveOpsContent');
+        const pnlEl = document.getElementById('opLivePnL');
+        const ops = data.operacoes_dia || [];
+        if (opsEl) {
+            if (ops.length === 0) {
+                opsEl.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:8px;">Nenhuma operação registrada hoje. O operador está aguardando o melhor momento.</div>';
+            } else {
+                let oh = '';
+                ops.forEach((op, i) => {
+                    const isW = op.resultado === 'WIN';
+                    const cOp = op.tipo === 'COMPRA' ? '#22c55e' : '#ef4444';
+                    const cRes = isW ? '#22c55e' : '#ef4444';
+                    oh += '<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 8px;border-left:3px solid ' + cOp + ';background:rgba(255,255,255,0.02);border-radius:4px;margin-bottom:4px;">';
+                    oh += '<div style="display:flex;align-items:center;gap:6px;">';
+                    oh += '<span style="font-weight:800;color:' + cOp + ';font-size:10px;">' + op.tipo + '</span>';
+                    oh += '<span style="font-family:monospace;font-size:11px;">' + (op.hora_entrada||'?') + '</span>';
+                    if (op.estrategia) oh += '<span style="font-size:9px;color:#a78bfa;background:rgba(167,139,250,0.1);padding:1px 5px;border-radius:3px;">' + op.estrategia + '</span>';
+                    oh += '</div>';
+                    oh += '<div style="display:flex;align-items:center;gap:6px;">';
+                    oh += '<span style="font-weight:900;color:' + cRes + ';">' + (op.resultado||'?') + '</span>';
+                    oh += '<span style="font-weight:800;color:' + cRes + ';">' + (op.pts>=0?'+':'') + op.pts + 'pts</span>';
+                    oh += '</div></div>';
+                });
+                opsEl.innerHTML = oh;
+            }
+        }
+        
+        // P&L
+        if (pnlEl && (ops.length > 0 || data.total_ops > 0)) {
+            pnlEl.style.display = 'flex';
+            let ph = '';
+            ph += '<div><div style="font-size:9px;color:var(--text-muted);">Ops</div><div style="font-size:18px;font-weight:800;">' + (data.total_ops||0) + '/' + (data.max_entradas||5) + '</div></div>';
+            ph += '<div><div style="font-size:9px;color:var(--text-muted);">Win Rate</div><div style="font-size:18px;font-weight:800;color:' + ((data.win_rate_dia||0)>=50?'#22c55e':'#ef4444') + ';">' + (data.win_rate_dia||0) + '%</div></div>';
+            ph += '<div><div style="font-size:9px;color:var(--text-muted);">P&L Pts</div><div style="font-size:18px;font-weight:800;color:' + ((data.total_pts_dia||0)>=0?'#22c55e':'#ef4444') + ';">' + ((data.total_pts_dia||0)>=0?'+':'') + (data.total_pts_dia||0) + '</div></div>';
+            ph += '<div><div style="font-size:9px;color:var(--text-muted);">P&L R$</div><div style="font-size:18px;font-weight:800;color:' + ((data.total_rs_dia||0)>=0?'#22c55e':'#ef4444') + ';">' + ((data.total_rs_dia||0)>=0?'+':'') + 'R$ ' + (data.total_rs_dia||0).toFixed(2) + '</div></div>';
+            ph += '<div><div style="font-size:9px;color:var(--text-muted);">Losses Seq</div><div style="font-size:18px;font-weight:800;color:' + ((data.losses_consecutivos||0)>=2?'#ef4444':'var(--text-primary)') + ';">' + (data.losses_consecutivos||0) + '/3</div></div>';
+            pnlEl.innerHTML = ph;
+        }
+        
+    } catch(e) {
+        if (decEl) { decEl.textContent = 'ERRO'; decEl.style.color = '#ef4444'; }
+        if (decSub) decSub.textContent = e.message;
+        console.error('operadorLive error:', e);
     }
 }
 

@@ -57,6 +57,11 @@ app_state = {
     "usando_cache": False,
     "cache_data_pregao": None,
     "preco_realtime": {},
+    # Operador Senior LIVE state
+    "operador_live": {
+        "WIN": {"operacoes": [], "total_pts": 0, "losses_consecutivos": 0, "dia_bloqueado": False, "ultimo_trade_hora": None, "cooldown_ate": None, "dia": None},
+        "WDO": {"operacoes": [], "total_pts": 0, "losses_consecutivos": 0, "dia_bloqueado": False, "ultimo_trade_hora": None, "cooldown_ate": None, "dia": None},
+    },
 }
 
 TIMEFRAMES = ["5m", "15m", "1h", "4h", "1d"]
@@ -2348,6 +2353,490 @@ async def get_noticias_impacto():
         logger.error(f"Erro noticias-impacto: {e}")
         import traceback; traceback.print_exc()
         return JSONResponse({"erro": str(e), "proximos": [], "passados": [], "total": 0, "alertas": 0, "alerta_eventos": [], "timestamp": "", "data": ""}, status_code=500)
+
+
+
+@app.get("/api/operador-live")
+async def operador_live(ativo: str = Query("WIN"), max_entradas: int = Query(5), forcar_entrada: bool = Query(False)):
+    """
+    OPERADOR SENIOR LIVE - Análise em TEMPO REAL
+    
+    Diferente do simulador-real (que analisa o dia inteiro de uma vez),
+    este endpoint analisa o MOMENTO ATUAL e decide:
+    - ENTRAR AGORA (setup encontrado)
+    - ESPERAR (sem setup, aguardando oportunidade)
+    - PARAR (limite atingido ou horário ruim)
+    
+    Mantém estado das operações do dia em app_state.
+    Auto-refresh a cada 2 minutos quando mercado aberto.
+    
+    forcar_entrada=True: "Próxima Entrada" - analisa com filtros mais abertos
+    """
+    try:
+        from datetime import timezone, timedelta
+        BRT_tz = timezone(timedelta(hours=-3))
+        ativo = ativo.upper()
+        ticker = "^BVSP" if ativo == "WIN" else "USDBRL=X"
+        valor_ponto = 0.20 if ativo == "WIN" else 10.00
+        max_entradas = max(1, min(max_entradas, 15))
+        agora = datetime.now(BRT_tz)
+        hoje = agora.date()
+        hora_atual = agora.strftime("%H:%M")
+        hora_int = agora.hour
+        minuto = agora.minute
+        
+        from data_provider import obter_contrato_vigente as _ocv
+        contrato_info = _ocv(ativo)
+        contrato_nome = contrato_info.get('ticker_b3', ativo)
+        
+        # ===== RESETAR ESTADO SE DIA MUDOU =====
+        op_state = app_state["operador_live"][ativo]
+        if op_state["dia"] != str(hoje):
+            op_state.update({
+                "operacoes": [], "total_pts": 0, "losses_consecutivos": 0,
+                "dia_bloqueado": False, "ultimo_trade_hora": None,
+                "cooldown_ate": None, "dia": str(hoje)
+            })
+        
+        # ===== VERIFICAR MERCADO =====
+        _mercado_aberto = mercado_aberto()
+        if not _mercado_aberto:
+            return JSONResponse({
+                "status": "MERCADO_FECHADO",
+                "ativo": ativo,
+                "contrato": contrato_nome,
+                "hora_atual": hora_atual,
+                "mensagem": "Mercado fechado. O operador começa às 9:15.",
+                "operacoes_dia": op_state["operacoes"],
+                "total_pts_dia": op_state["total_pts"],
+                "modo": "OFFLINE",
+            })
+        
+        # ===== JANELAS DE OPERAÇÃO =====
+        t_min = hora_int * 60 + minuto
+        janela_nome = "Normal"
+        janela_qual = "NORMAL"
+        pode_operar_janela = True
+        
+        JANELAS = [
+            (9*60, 9*60+15, "Leilão/Primeiros 15min", "PROIBIDO", False),
+            (9*60+15, 10*60+30, "Abertura Pós-Leilão", "PRIME", True),
+            (10*60+30, 11*60+30, "Manhã Institucional", "BOA", True),
+            (11*60+30, 13*60+30, "Almoço", "RUIM", True),
+            (12*60, 13*60, "Almoço Morto", "PROIBIDO", False),
+            (13*60+30, 14*60, "Pré-NY", "NORMAL", True),
+            (14*60, 15*60, "Retomada NY Open", "PRIME", True),
+            (15*60, 16*60+30, "Tarde Institucional", "BOA", True),
+            (16*60+30, 17*60, "Pré-Fechamento", "RUIM", True),
+            (17*60, 18*60, "Leilão Fechamento", "PROIBIDO", False),
+        ]
+        for t_ini, t_fim, nome, qual, pode in JANELAS:
+            if t_ini <= t_min < t_fim:
+                janela_nome = nome
+                janela_qual = qual
+                pode_operar_janela = pode
+                break
+        
+        # ===== VERIFICAR LIMITES =====
+        MAX_LOSSES_CONSEC = 3
+        LOSS_LIMIT = -400 if ativo == "WIN" else -40
+        
+        motivo_bloqueio = None
+        if op_state["dia_bloqueado"]:
+            motivo_bloqueio = "Limite de perda diária atingido. Tendler: parar, não forçar."
+        elif op_state["losses_consecutivos"] >= MAX_LOSSES_CONSEC:
+            motivo_bloqueio = f"{MAX_LOSSES_CONSEC} losses consecutivos. Tendler: identificar tilt."
+        elif len(op_state["operacoes"]) >= max_entradas:
+            motivo_bloqueio = f"Limite de {max_entradas} entradas atingido."
+        elif not pode_operar_janela:
+            motivo_bloqueio = f"Janela {janela_nome} ({janela_qual}) - operador não opera neste horário."
+        elif hora_int >= 17:
+            motivo_bloqueio = "Após 17h - leilão de fechamento."
+        
+        # Cooldown check
+        em_cooldown = False
+        if op_state["cooldown_ate"]:
+            cooldown_time = datetime.fromisoformat(op_state["cooldown_ate"])
+            if agora < cooldown_time:
+                em_cooldown = True
+                mins_restantes = int((cooldown_time - agora).total_seconds() / 60)
+                motivo_bloqueio = f"Cooldown ativo: aguardar {mins_restantes}min (até {cooldown_time.strftime('%H:%M')})"
+        
+        if motivo_bloqueio and not forcar_entrada:
+            return JSONResponse({
+                "status": "AGUARDANDO",
+                "ativo": ativo,
+                "contrato": contrato_nome,
+                "hora_atual": hora_atual,
+                "janela": janela_nome,
+                "janela_qualidade": janela_qual,
+                "motivo": motivo_bloqueio,
+                "operacoes_dia": op_state["operacoes"],
+                "total_ops": len(op_state["operacoes"]),
+                "total_pts_dia": round(op_state["total_pts"], 1),
+                "total_rs_dia": round(op_state["total_pts"] * valor_ponto, 2),
+                "losses_consecutivos": op_state["losses_consecutivos"],
+                "dia_bloqueado": op_state["dia_bloqueado"],
+                "max_entradas": max_entradas,
+                "mercado_aberto": True,
+                "modo": "LIVE",
+                "proxima_janela": _proxima_janela_boa(t_min),
+            })
+        
+        # ===== BUSCAR DADOS ATUAIS =====
+        from pro_trader_analysis import calcular_tendencia_macro, detectar_setup_profissional
+        from analysis_engine import calcular_rsi, calcular_macd, calcular_atr_series
+        
+        dados = yf.download(ticker, period="5d", interval="5m", progress=False)
+        if dados.empty:
+            return JSONResponse({"status": "ERRO", "mensagem": "Sem dados do yfinance"})
+        
+        if isinstance(dados.columns, pd.MultiIndex):
+            dados.columns = dados.columns.get_level_values(0)
+        dados.columns = [c.lower() for c in dados.columns]
+        dados.index = dados.index.tz_convert(BRT_tz)
+        
+        # Pegar as últimas 100 velas (contexto)
+        if len(dados) < 20:
+            return JSONResponse({"status": "ERRO", "mensagem": "Dados insuficientes"})
+        
+        # ===== TENDÊNCIA MACRO (Elder Tela 1) =====
+        tend_macro = calcular_tendencia_macro(dados, ativo)
+        
+        # ===== ANÁLISE DA VELA ATUAL =====
+        w = dados.iloc[-100:] if len(dados) >= 100 else dados
+        vela = dados.iloc[-1]
+        pos_idx = len(dados) - 1
+        ts = dados.index[-1]
+        
+        o = float(vela['open']); h = float(vela['high'])
+        l = float(vela['low']); c = float(vela['close'])
+        vol = int(vela.get('volume', 0))
+        
+        # Indicadores
+        rsi_v = 50; macd_h = 0; ema9 = 0; ema21 = 0; atr_v = 150
+        tend = "LATERAL"
+        
+        if len(w) >= 20:
+            try:
+                rsi_s = calcular_rsi(w)
+                rsi_v = round(float(rsi_s.iloc[-1]), 1)
+                ml, ms, mh = calcular_macd(w)
+                macd_h = round(float(mh.iloc[-1]), 1)
+                ema9 = round(float(w['close'].ewm(span=9, adjust=False).mean().iloc[-1]), 2)
+                ema21 = round(float(w['close'].ewm(span=21, adjust=False).mean().iloc[-1]), 2)
+                atr_s = calcular_atr_series(w)
+                atr_v = round(float(atr_s.iloc[-1]), 4) if len(atr_s) > 0 else (150 if ativo == 'WIN' else 0.01)
+                if ema9 > ema21 and c > ema9: tend = "ALTA"
+                elif ema9 < ema21 and c < ema9: tend = "BAIXA"
+                elif ema9 > ema21: tend = "ALTA"
+                elif ema9 < ema21: tend = "BAIXA"
+            except: pass
+        
+        # ===== ANÁLISE PRO (Confluence Checklist) =====
+        day_indices = list(range(max(0, len(dados)-100), len(dados)))
+        
+        setup = detectar_setup_profissional(
+            w=w, vela=vela, pos_idx=pos_idx, dados=dados,
+            day_indices=day_indices, ativo=ativo,
+            tend_macro=tend_macro, rsi_v=rsi_v, macd_h=macd_h,
+            ema9=ema9, ema21=ema21, atr_v=atr_v,
+            operacoes_anteriores=op_state["operacoes"],
+        )
+        
+        tipo_sinal = setup["direcao"]
+        operar = setup["operar"]
+        score = setup["total_confluencia"]
+        conf_label = setup["qualidade"]
+        motivos_operar = list(setup["motivos_operar"])
+        motivos_nao_operar = list(setup["motivos_nao_operar"])
+        suporte = setup["suporte"]
+        resistencia = setup["resistencia"]
+        vwap = setup["vwap"]
+        
+        # ===== NOTÍCIAS =====
+        try:
+            noticias_dia = obter_noticias_do_dia()
+            news_impact = avaliar_impacto_noticias(hora_atual, ativo, tipo_sinal, noticias_dia)
+            if news_impact["bloquear"] and operar:
+                operar = False
+                motivos_nao_operar.append(f"NOTÍCIA: {news_impact['motivo']}")
+            elif news_impact["modificador_score"] < 0:
+                score = max(0, score + news_impact["modificador_score"])
+                if score < 4 and operar:
+                    operar = False
+                    motivos_nao_operar.append(f"Score caiu para {score}/7 por notícia")
+        except: pass
+        
+        # ===== IDENTIFICAR SETUP DO PLAYBOOK =====
+        setup_playbook = _identificar_playbook_live(setup, rsi_v, macd_h, ema9, ema21, c, vwap, atr_v, tend_macro["tendencia"])
+        
+        # ===== FILTRO DE JANELA =====
+        if janela_qual == "RUIM" and operar:
+            if conf_label in ("C+", "SKIP"):
+                operar = False
+                motivos_nao_operar.append(f"Horário {janela_nome} exige no mínimo B+")
+            elif conf_label == "B+" and score < 5:
+                operar = False
+                motivos_nao_operar.append(f"B+ em horário ruim precisa 5+ confluências")
+        
+        # ===== FORÇAR ENTRADA (botão Próxima Entrada) =====
+        # Quando forcar=True, aceita C+ também se tiver PA+S/R
+        if forcar_entrada and not operar and tipo_sinal:
+            if score >= 3 and not setup["contra_tendencia"]:
+                operar = True
+                conf_label = conf_label + " (forçado)"
+                motivos_operar.append("FORÇADO pelo operador - filtros relaxados")
+        
+        # ===== SMC complementar =====
+        smc_data = {}
+        try:
+            _smc_score, _smc_motivos, smc_data = aplicar_smc_scoring(dados, pos_idx, tipo_sinal, tend)
+            if _smc_motivos:
+                motivos_operar.extend(_smc_motivos)
+        except: pass
+        
+        # ===== DECISÃO DO OPERADOR =====
+        preco_atual = c
+        
+        # Calcular stop e alvo
+        stop_pts = 0; alvo_pts = 0; stop_price = 0; alvo_price = 0; rr_ratio = 2.0
+        if tipo_sinal:
+            stop_pts = round(atr_v * 1.5, 4) if ativo != 'WIN' else round(atr_v * 1.5)
+            if ativo == "WIN":
+                stop_pts = max(round(stop_pts / 5) * 5, 80)
+                stop_pts = min(stop_pts, 350)
+            else:
+                stop_pts = max(round(stop_pts * 200) / 200, 0.015)
+                stop_pts = min(stop_pts, 0.08)
+            
+            rr_ratio = 2.5 if conf_label.startswith("A") else 2.0 if conf_label.startswith("B") else 1.8
+            alvo_pts = round(stop_pts * rr_ratio, 4)
+            is_compra = tipo_sinal == "COMPRA"
+            stop_price = round(preco_atual - stop_pts, 2) if is_compra else round(preco_atual + stop_pts, 2)
+            alvo_price = round(preco_atual + alvo_pts, 2) if is_compra else round(preco_atual - alvo_pts, 2)
+        
+        # ===== RACIOCÍNIO DO OPERADOR =====
+        raciocinio = ""
+        if operar and tipo_sinal:
+            raciocinio = (
+                f"ENTRADA RECOMENDADA: {tipo_sinal} agora às {hora_atual}\n"
+                f"Setup: {setup_playbook['nome'] or 'Confluência'} | {conf_label} ({score}/7)\n"
+                f"Janela: {janela_nome} ({janela_qual})\n"
+                f"Tendência macro: {tend_macro['tendencia']} (força {tend_macro['forca']})\n"
+                f"RSI={rsi_v} | MACD={macd_h} | EMA9{'>' if ema9>ema21 else '<'}EMA21\n"
+                f"Stop: {stop_pts}pts | Alvo: {alvo_pts}pts | R:R 1:{rr_ratio}\n"
+                f"Preço: {round(preco_atual,2)} | Stop: {stop_price} | Alvo: {alvo_price}\n"
+                f"Operação #{len(op_state['operacoes'])+1} de {max_entradas}"
+            )
+            status = "ENTRADA"
+        else:
+            # Esperar
+            motivo_espera = motivos_nao_operar[0] if motivos_nao_operar else "Sem setup válido no momento"
+            prox_janela = _proxima_janela_boa(t_min)
+            raciocinio = (
+                f"AGUARDANDO melhor momento...\n"
+                f"Preço: {round(preco_atual,2)} | Tendência: {tend_macro['tendencia']}\n"
+                f"Score atual: {score}/7 ({conf_label}) - {'insuficiente' if score < 4 else 'ok mas ' + motivo_espera}\n"
+                f"Motivo: {motivo_espera}\n"
+                f"Janela: {janela_nome} ({janela_qual})\n"
+                f"{prox_janela}"
+            )
+            status = "AGUARDANDO"
+        
+        # ===== PRÓXIMAS OPORTUNIDADES (olhar 3 velas anteriores para contexto) =====
+        ultimas_velas = []
+        for i in range(-min(6, len(dados)), 0):
+            v = dados.iloc[i]
+            v_ts = dados.index[i]
+            ultimas_velas.append({
+                "hora": v_ts.strftime("%H:%M"),
+                "open": round(float(v['open']), 2),
+                "high": round(float(v['high']), 2),
+                "low": round(float(v['low']), 2),
+                "close": round(float(v['close']), 2),
+            })
+        
+        # ===== PREÇO REALTIME =====
+        preco_rt = None
+        try:
+            from data_provider import DataProvider
+            dp = DataProvider()
+            rt = dp.obter_preco_realtime(ativo)
+            if rt and rt.get("preco"):
+                preco_rt = rt
+        except: pass
+        
+        response = {
+            "status": status,
+            "ativo": ativo,
+            "contrato": contrato_nome,
+            "hora_atual": hora_atual,
+            "preco_atual": round(preco_atual, 2),
+            "preco_realtime": preco_rt,
+            "modo": "LIVE",
+            "mercado_aberto": True,
+            "janela": janela_nome,
+            "janela_qualidade": janela_qual,
+            "max_entradas": max_entradas,
+            # Tendência
+            "tend_macro": {
+                "tendencia": tend_macro["tendencia"],
+                "forca": tend_macro["forca"],
+                "descricao": tend_macro["descricao"],
+            },
+            # Análise atual
+            "analise_atual": {
+                "direcao": tipo_sinal,
+                "score": score,
+                "qualidade": conf_label,
+                "operar": operar,
+                "setup_playbook": setup_playbook["nome"],
+                "setup_desc": setup_playbook["desc"],
+                "motivos_operar": motivos_operar[:5],
+                "motivos_nao_operar": motivos_nao_operar[:5],
+                "confluencia": setup["confluencia"],
+                "rsi": rsi_v,
+                "macd_hist": macd_h,
+                "ema9": ema9,
+                "ema21": ema21,
+                "atr": atr_v,
+                "tendencia_curta": tend,
+                "suporte": round(suporte, 0) if suporte else None,
+                "resistencia": round(resistencia, 0) if resistencia else None,
+                "vwap": round(vwap, 0) if vwap else None,
+            },
+            # Trade proposto (se ENTRADA)
+            "trade_proposto": {
+                "tipo": tipo_sinal,
+                "preco_entrada": round(preco_atual, 2),
+                "stop_loss": stop_price,
+                "take_profit": alvo_price,
+                "stop_pts": round(stop_pts * 1000, 1) if ativo == "WDO" else stop_pts,
+                "alvo_pts": round(alvo_pts * 1000, 1) if ativo == "WDO" else alvo_pts,
+                "rr": f"1:{round(rr_ratio, 1)}",
+            } if operar and tipo_sinal else None,
+            # Raciocínio
+            "raciocinio": raciocinio,
+            # Estado do dia
+            "operacoes_dia": op_state["operacoes"],
+            "total_ops": len(op_state["operacoes"]),
+            "total_pts_dia": round(op_state["total_pts"], 1),
+            "total_rs_dia": round(op_state["total_pts"] * valor_ponto, 2),
+            "losses_consecutivos": op_state["losses_consecutivos"],
+            "dia_bloqueado": op_state["dia_bloqueado"],
+            "win_rate_dia": round(sum(1 for op in op_state["operacoes"] if op.get("resultado") == "WIN") / len(op_state["operacoes"]) * 100) if op_state["operacoes"] else 0,
+            # Contexto
+            "ultimas_velas": ultimas_velas,
+            "proxima_janela": _proxima_janela_boa(t_min),
+            "timestamp": agora.strftime("%H:%M:%S"),
+        }
+        
+        return JSONResponse(response)
+        
+    except Exception as e:
+        logger.error(f"Erro operador-live: {e}")
+        import traceback; traceback.print_exc()
+        return JSONResponse({"status": "ERRO", "mensagem": str(e)}, status_code=500)
+
+
+@app.post("/api/operador-live/registrar")
+async def operador_registrar_trade(request: Request):
+    """
+    Registrar resultado de um trade executado pelo operador.
+    O frontend chama isso quando o trade fecha (alvo ou stop).
+    """
+    try:
+        data = await request.json()
+        ativo = data.get("ativo", "WIN").upper()
+        valor_ponto = 0.20 if ativo == "WIN" else 10.00
+        
+        op_state = app_state["operador_live"][ativo]
+        
+        trade = {
+            "tipo": data.get("tipo"),
+            "hora_entrada": data.get("hora_entrada"),
+            "preco_entrada": data.get("preco_entrada"),
+            "stop_loss": data.get("stop_loss"),
+            "take_profit": data.get("take_profit"),
+            "estrategia": data.get("estrategia"),
+            "janela": data.get("janela"),
+            "conf_label": data.get("conf_label"),
+            "score": data.get("score"),
+            "resultado": data.get("resultado"),  # "WIN" ou "LOSS"
+            "pts": data.get("pts", 0),
+            "hora_saida": data.get("hora_saida"),
+            "preco_saida": data.get("preco_saida"),
+            "resultado_rs": round(data.get("pts", 0) * valor_ponto, 2),
+        }
+        
+        op_state["operacoes"].append(trade)
+        op_state["total_pts"] += trade["pts"]
+        op_state["ultimo_trade_hora"] = trade["hora_entrada"]
+        
+        if trade["resultado"] == "LOSS":
+            op_state["losses_consecutivos"] += 1
+            cooldown_min = 15 if op_state["losses_consecutivos"] >= 2 else 10
+            from datetime import timezone, timedelta
+            BRT_tz = timezone(timedelta(hours=-3))
+            op_state["cooldown_ate"] = (datetime.now(BRT_tz) + timedelta(minutes=cooldown_min)).isoformat()
+        else:
+            op_state["losses_consecutivos"] = 0
+            op_state["cooldown_ate"] = None
+        
+        LOSS_LIMIT = -400 if ativo == "WIN" else -40
+        if op_state["total_pts"] <= LOSS_LIMIT:
+            op_state["dia_bloqueado"] = True
+        
+        return JSONResponse({"ok": True, "total_ops": len(op_state["operacoes"]), "total_pts": op_state["total_pts"]})
+    except Exception as e:
+        return JSONResponse({"ok": False, "erro": str(e)}, status_code=500)
+
+
+def _proxima_janela_boa(t_min_atual):
+    """Retorna texto sobre a próxima janela boa de operação"""
+    janelas_boas = [
+        (9*60+15, "Abertura Pós-Leilão (9:15)"),
+        (10*60+30, "Manhã Institucional (10:30)"),
+        (14*60, "Retomada NY Open (14:00)"),
+        (15*60, "Tarde Institucional (15:00)"),
+    ]
+    for t, nome in janelas_boas:
+        if t > t_min_atual:
+            mins = t - t_min_atual
+            return f"Próxima janela boa: {nome} (em {mins}min)"
+    return "Sem mais janelas boas hoje"
+
+
+def _identificar_playbook_live(setup_data, rsi_v, macd_h, ema9, ema21, c, vwap, atr_v, tend_macro_dir):
+    """Identifica setup do PlayBook para o endpoint live"""
+    pa = setup_data.get("price_action", {})
+    patterns = pa.get("patterns", []) if isinstance(pa, dict) else []
+    confl = setup_data.get("confluencia", {})
+    direcao = setup_data.get("direcao")
+    
+    if any("ROMPIMENTO" in str(p) for p in patterns) and confl.get("volume_confirma"):
+        return {"nome": "Rompimento S/R + Volume", "desc": "Nível S/R rompido com volume. Pullback = entrada."}
+    
+    if vwap and direcao and abs(c - vwap) < atr_v * 0.5:
+        if any(p for p in patterns if any(k in str(p) for k in ["Martelo","Engolfo","Pin Bar"])):
+            return {"nome": "VWAP Bounce", "desc": f"Preço retornou à VWAP ({round(vwap,0)}) com reversão."}
+    
+    if (direcao == "COMPRA" and rsi_v < 35) or (direcao == "VENDA" and rsi_v > 65):
+        if confl.get("price_action_confirma"):
+            return {"nome": "Divergência RSI", "desc": f"RSI extremo ({rsi_v}) com confirmação PA."}
+    
+    if pa.get("captura_liquidez") or pa.get("falso_rompimento"):
+        return {"nome": "Absorção / Smart Money", "desc": "Captura de liquidez detectada."}
+    
+    if pa.get("pullback") and confl.get("tendencia_tf_maior"):
+        return {"nome": "EMA 21 + Tendência", "desc": f"Pullback na EMA21 a favor de {tend_macro_dir}."}
+    
+    if setup_data.get("total_confluencia", 0) >= 4:
+        return {"nome": "Confluência Técnica", "desc": f"{setup_data['total_confluencia']}/7 fatores alinhados."}
+    
+    return {"nome": None, "desc": None}
+
 
 
 @app.get("/api/simulador-real")
