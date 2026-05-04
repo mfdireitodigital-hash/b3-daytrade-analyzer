@@ -3031,6 +3031,33 @@ async function simInit() {
                     });
                     rhtml += '</div>';
                 }
+                // === ALERTA DE MEMORIA (erros passados similares) ===
+                if (data.alerta_memoria && data.alerta_memoria.tem_alerta) {
+                    rhtml += '<div style="margin-top:8px;padding:10px 12px;background:rgba(251,191,36,0.1);border:1px solid rgba(251,191,36,0.4);border-radius:8px;border-left:4px solid #f59e0b;">';
+                    rhtml += '<div style="font-size:11px;font-weight:800;color:#f59e0b;margin-bottom:4px;">⚠ ALERTA DA MEMORIA - SITUACAO SIMILAR A ERRO PASSADO</div>';
+                    data.alerta_memoria.alertas.forEach(function(al) {
+                        rhtml += '<div style="font-size:10px;color:#fbbf24;padding:2px 0;">Similaridade: <b>'+al.similaridade+'%</b> com erro de '+al.erro_data+'</div>';
+                        rhtml += '<div style="font-size:10px;color:var(--text-muted);padding:0 0 4px 12px;">Licao: '+al.licao+'</div>';
+                    });
+                    if (data.alerta_memoria.regras_ativas && data.alerta_memoria.regras_ativas.length > 0) {
+                        data.alerta_memoria.regras_ativas.forEach(function(r) {
+                            rhtml += '<div style="font-size:10px;color:#fb923c;padding:2px 0;">Regra: '+r.descricao+' → '+r.recomendacao+'</div>';
+                        });
+                    }
+                    rhtml += '</div>';
+                }
+                
+                // === MEMORIA GRAVADA (confirmacao) ===
+                if (data.memoria && data.memoria.gravado) {
+                    rhtml += '<div style="margin-top:6px;padding:6px 10px;background:rgba(168,85,247,0.08);border:1px solid rgba(168,85,247,0.25);border-radius:6px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">';
+                    rhtml += '<span style="font-size:10px;color:#a855f7;font-weight:700;">GRAVADO NA MEMORIA</span>';
+                    rhtml += '<span style="font-size:9px;color:var(--text-muted);">Ops: '+data.memoria.total_operacoes+' | WR Global: '+data.memoria.win_rate_global+'% | Erros memorizados: '+data.memoria.memoria_erros+' | Regras: '+data.memoria.regras_ativas+'</span>';
+                    if (data.memoria.licao) {
+                        rhtml += '<div style="font-size:9px;color:#fbbf24;width:100%;margin-top:2px;">Licao gravada: '+data.memoria.licao+'</div>';
+                    }
+                    rhtml += '</div>';
+                }
+                
                 rd.innerHTML = rhtml;
             }).catch(err=>{rd.innerHTML='<span style="color:#ef4444;">Erro: '+err.message+'</span>';});
         }

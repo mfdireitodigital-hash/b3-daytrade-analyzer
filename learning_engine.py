@@ -417,3 +417,85 @@ def registrar_livro(nome: str, conceitos: list):
     if nome not in data.get("livros_aplicados", []):
         data.setdefault("livros_aplicados", []).append(nome)
         _salvar(data)
+
+
+def registrar_trade_replay(ativo: str, op: dict) -> dict:
+    """
+    Registra um trade INDIVIDUAL do replay/CT na memória persistente.
+    Diferente de registrar_sessao que recebe lista de ops.
+    
+    op deve ter: tipo, hora_entrada, resultado, pts, resultado_rs, 
+                 tendencia, rsi, score, conf_label, motivos, detalhes_perda
+    """
+    data = carregar_learning()
+    
+    data["total_operacoes"] += 1
+    resultado = op.get("resultado", "LOSS")
+    pts = op.get("pts", 0)
+    rs = op.get("resultado_rs", 0)
+    
+    if resultado == "WIN":
+        data["total_wins"] += 1
+    else:
+        data["total_losses"] += 1
+    
+    data["total_pts"] += pts
+    data["total_rs"] += rs
+    
+    # Fingerprint
+    fp = _extrair_fingerprint(op)
+    padrao_key = _gerar_padrao_key(op)
+    
+    if resultado == "LOSS":
+        erro = {
+            "data": datetime.now(BRT).strftime("%d/%m/%Y %H:%M"),
+            "ativo": ativo,
+            "fingerprint": fp,
+            "contexto": f"{op.get('tipo', '')} em {op.get('hora_entrada', '')} - {op.get('tendencia', '')} - Score {op.get('score', 0)} ({op.get('conf_label', '')})",
+            "licao": _gerar_licao(op),
+            "pts_perdidos": pts,
+            "detalhes": op.get("detalhes_perda", "")[:200],
+            "origem": "replay_ct",
+        }
+        data["memoria_erros"].append(erro)
+        
+        if padrao_key not in data["situacoes_perigosas"]:
+            data["situacoes_perigosas"][padrao_key] = {"losses": 0, "total": 0, "taxa_loss": 0}
+        data["situacoes_perigosas"][padrao_key]["losses"] += 1
+        data["situacoes_perigosas"][padrao_key]["total"] += 1
+    else:
+        if padrao_key not in data["situacoes_seguras"]:
+            data["situacoes_seguras"][padrao_key] = {"wins": 0, "total": 0, "taxa_win": 0}
+        data["situacoes_seguras"][padrao_key]["wins"] += 1
+        data["situacoes_seguras"][padrao_key]["total"] += 1
+    
+    # Atualizar taxas
+    for d in [data["situacoes_perigosas"], data["situacoes_seguras"]]:
+        if padrao_key in d:
+            total = d[padrao_key]["total"]
+            if "losses" in d[padrao_key]:
+                d[padrao_key]["taxa_loss"] = round(d[padrao_key]["losses"] / total * 100, 1) if total > 0 else 0
+            if "wins" in d[padrao_key]:
+                d[padrao_key]["taxa_win"] = round(d[padrao_key]["wins"] / total * 100, 1) if total > 0 else 0
+    
+    # Regras
+    data["regras_aprendidas"] = _gerar_regras(data)
+    
+    # Win rate global
+    total = data["total_wins"] + data["total_losses"]
+    data["win_rate_global"] = round(data["total_wins"] / total * 100, 1) if total > 0 else 0
+    
+    # Limitar memória
+    if len(data["memoria_erros"]) > 200:
+        data["memoria_erros"] = data["memoria_erros"][-200:]
+    
+    _salvar(data)
+    
+    return {
+        "gravado": True,
+        "total_operacoes": data["total_operacoes"],
+        "win_rate_global": data["win_rate_global"],
+        "memoria_erros": len(data["memoria_erros"]),
+        "regras_ativas": len(data["regras_aprendidas"]),
+        "licao": erro["licao"] if resultado == "LOSS" else None,
+    }

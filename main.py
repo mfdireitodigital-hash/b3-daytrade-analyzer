@@ -30,8 +30,8 @@ import traceback
 from analysis_engine import analisar_completo
 from data_provider import DataProvider, obter_contrato_vigente
 from learning_engine import (
-    carregar_learning, registrar_sessao, obter_pesos_atuais,
-    obter_score_minimo, obter_resumo_aprendizado, registrar_livro
+    carregar_learning, registrar_sessao, registrar_trade_replay, obter_pesos_atuais,
+    obter_score_minimo, obter_resumo_aprendizado, registrar_livro, consultar_memoria
 )
 from trading_books_knowledge import (
     aplicar_scoring_avancado, obter_livros_lista, obter_todos_conceitos
@@ -329,7 +329,7 @@ templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
 
 @app.get("/api/version")
 async def api_version():
-    return {"version": "3.5.0", "build": "20260504s", "changes": "ct_redesign_educativo,fix_simInit_ativo,fix_replay_dia_fechado,fix_treinar_btn,fix_sim_hardcoded_WIN"}
+    return {"version": "3.6.0", "build": "20260504t", "changes": "memoria_persistente_replay,alerta_erros_similares,gravar_todo_trade_ct"}
 
 @app.get("/", response_class=HTMLResponse)
 async def dashboard(request: Request):
@@ -1749,6 +1749,40 @@ async def simular_entrada(request: Request):
         except Exception as ex:
             educativa.append(f"Analise educativa indisponivel")
         
+        # ===== GRAVAR NA MEMORIA PERSISTENTE =====
+        memoria_resultado = None
+        alerta_memoria = None
+        try:
+            # Montar objeto de operação para learning_engine
+            op_learning = {
+                "tipo": tipo,
+                "hora_entrada": hora_entrada,
+                "resultado": resultado,
+                "pts": pts,
+                "resultado_rs": resultado_rs,
+                "tendencia": tend if 'tend' in dir() else "LATERAL",
+                "rsi": entry_rsi if 'entry_rsi' in dir() and entry_rsi else 50,
+                "macd_hist": 0,
+                "score": rr,  # usar R:R como proxy de qualidade
+                "conf_label": f"R:R {rr}:1",
+                "motivos": educativa[:3] if educativa else [],
+                "detalhes_perda": "; ".join(educativa) if resultado == "LOSS" else "",
+            }
+            
+            # Consultar memória ANTES (alertas de erros passados similares)
+            try:
+                alerta_check = consultar_memoria(op_learning)
+                if alerta_check and alerta_check.get("tem_alerta"):
+                    alerta_memoria = alerta_check
+            except Exception as mem_err:
+                logger.error(f"Erro consultando memoria: {mem_err}")
+            
+            # Gravar trade na memória
+            memoria_resultado = registrar_trade_replay(ativo, op_learning)
+            logger.info(f"Trade replay gravado na memoria: {resultado} {pts}pts - total ops: {memoria_resultado.get('total_operacoes')}")
+        except Exception as learn_err:
+            logger.error(f"Erro gravando na memoria: {learn_err}")
+        
         return JSONResponse({
             "entrada": {
                 "tipo": tipo,
@@ -1777,6 +1811,8 @@ async def simular_entrada(request: Request):
             "educativa": educativa,
             "contratos": contratos,
             "valor_ponto": valor_ponto,
+            "memoria": memoria_resultado,
+            "alerta_memoria": alerta_memoria,
         })
     except Exception as e:
         logger.error(f"Erro simular-entrada: {e}")
