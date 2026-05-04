@@ -67,6 +67,38 @@ app_state = {
     "operador_erros": [],  # [{tecnica, condicoes, motivo_erro, data, ativo}]
 }
 
+
+# ===== PERSISTÊNCIA DO ESTADO DO OPERADOR =====
+STATE_FILE = Path("/tmp/operador_state.json")
+
+def salvar_estado_operador():
+    """Salva estado do operador em arquivo para sobreviver restarts"""
+    try:
+        state_to_save = {
+            "WIN": dict(app_state["operador_live"]["WIN"]),
+            "WDO": dict(app_state["operador_live"]["WDO"]),
+            "timestamp": datetime.now(TZ_BR).isoformat(),
+        }
+        STATE_FILE.write_text(json.dumps(state_to_save, default=str, ensure_ascii=False))
+    except Exception as e:
+        logger.error(f"Erro ao salvar estado: {e}")
+
+def carregar_estado_operador():
+    """Carrega estado do operador de arquivo"""
+    try:
+        if STATE_FILE.exists():
+            data = json.loads(STATE_FILE.read_text())
+            hoje = str(datetime.now(TZ_BR).date())
+            for ativo in ["WIN", "WDO"]:
+                if ativo in data and data[ativo].get("dia") == hoje:
+                    # Mesmo dia - restaurar estado completo
+                    app_state["operador_live"][ativo].update(data[ativo])
+                    logger.info(f"Estado restaurado para {ativo}: {len(data[ativo].get('operacoes',[]))} ops, trade_ativo={bool(data[ativo].get('trade_ativo'))}")
+                else:
+                    logger.info(f"Estado de {ativo} é de outro dia, ignorando")
+    except Exception as e:
+        logger.error(f"Erro ao carregar estado: {e}")
+
 TIMEFRAMES = ["5m", "15m", "1h", "4h", "1d"]
 ATIVOS = ["WIN", "WDO"]
 
@@ -271,6 +303,9 @@ async def lifespan(app: FastAPI):
     except Exception:
         pass
 
+    # Restaurar estado do operador (sobrevive restart/F5)
+    carregar_estado_operador()
+    
     app_state["auto_refresh_task"] = asyncio.create_task(auto_refresh_loop())
     logger.info("Auto-refresh iniciado (intervalo: 5 minutos)")
 
@@ -294,7 +329,7 @@ templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
 
 @app.get("/api/version")
 async def api_version():
-    return {"version": "2.9.0", "build": "20260504b", "changes": "analise_sempre_visivel_forcar_trade_detalhes"}
+    return {"version": "3.0.0", "build": "20260504e", "changes": "analise_sempre_visivel_forcar_trade_detalhes"}
 
 @app.get("/", response_class=HTMLResponse)
 async def dashboard(request: Request):
@@ -2443,6 +2478,7 @@ async def operador_entrar(request: Request):
         
         # Marcar como aguardando entrada
         op_state["aguardando_entrada"] = True
+        salvar_estado_operador()
         
         return JSONResponse({"ok": True, "msg": f"Operador aguardando próximo setup para {ativo}..."})
     except Exception as e:
@@ -2553,6 +2589,7 @@ async def operador_monitor(ativo: str = Query("WIN")):
             op_state["operacoes"].append(dict(trade))
             op_state["total_pts"] += trade["pts"]
             op_state["trade_ativo"] = None
+            salvar_estado_operador()
             
             if resultado == "LOSS":
                 op_state["losses_consecutivos"] += 1
@@ -2631,13 +2668,12 @@ async def operador_live(ativo: str = Query("WIN"), max_entradas: int = Query(5),
             op_state.update({
                 "operacoes": [], "total_pts": 0, "losses_consecutivos": 0,
                 "dia_bloqueado": False, "ultimo_trade_hora": None,
-                "cooldown_ate": None, "dia": str(hoje)
+                "cooldown_ate": None, "dia": str(hoje), "trade_ativo": None, "aguardando_entrada": False
             })
+            salvar_estado_operador()
         
-        # ===== TRADE ATIVO? MONITORAR =====
-        if op_state.get("trade_ativo"):
-            # Tem trade ativo - informar frontend para monitorar
-            pass  # Monitor endpoint handles this, but flag it in response
+        # ===== TRADE ATIVO? =====
+        trade_ativo_info = op_state.get("trade_ativo")
         
         # ===== CARREGAR MEMÓRIA DE ERROS =====
         if not app_state.get("operador_erros"):
@@ -3012,6 +3048,21 @@ async def operador_live(ativo: str = Query("WIN"), max_entradas: int = Query(5),
             "alerta_erro": alerta_erro,
         }
         
+        # Se trade ativo, enriquecer raciocínio com detalhes do trade
+        if trade_ativo_info:
+            ta = trade_ativo_info
+            response["raciocinio"] = (
+                f"TRADE ABERTO: {ta.get('tipo','')} às {ta.get('hora_entrada','')}
+"
+                f"Estratégia: {ta.get('estrategia','')} | {ta.get('conf_label','')} ({ta.get('score',0)}/7)
+"
+                f"Entrada: {ta.get('preco_entrada',0)} | Stop: {ta.get('stop_loss',0)} | Alvo: {ta.get('take_profit',0)}
+"
+                f"Janela: {ta.get('janela','')} ({ta.get('janela_qualidade','')})
+"
+                f"Monitorando... alvo em {ta.get('alvo_pts',0)}pts, stop em {ta.get('stop_pts',0)}pts"
+            )
+        
         # ===== AUTO-ENTRAR se aguardando_entrada OU forçar_entrada =====
         deve_entrar = (op_state.get("aguardando_entrada") or forcar_entrada) and operar and tipo_sinal and not op_state.get("trade_ativo")
         if deve_entrar:
@@ -3046,6 +3097,7 @@ async def operador_live(ativo: str = Query("WIN"), max_entradas: int = Query(5),
                 f"Monitorando... alvo em {alvo_pts}pts, stop em {stop_pts}pts"
             )
             logger.info(f"OPERADOR: Trade aberto {tipo_sinal} {ativo} @ {preco_atual}")
+            salvar_estado_operador()
         
         return JSONResponse(response)
         

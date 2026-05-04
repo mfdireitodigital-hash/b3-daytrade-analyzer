@@ -157,6 +157,7 @@ def detectar_setup_profissional(
     # Primeiro: qual direção o mercado indica?
     direcao = None
     motivos_direcao = []
+    motivos_direcao_extra = []  # motivos extras da definição de direção
     
     # EMA alignment
     if ema9 > ema21 and c > ema9:
@@ -192,15 +193,20 @@ def detectar_setup_profissional(
         # Empate - usar tendência macro como desempate (Elder: Tela 1 decide)
         if tend_macro["tendencia"] == "ALTA":
             direcao = "COMPRA"
-            motivos_operar.append("Empate indicadores - macro ALTA desempata para COMPRA")
+            motivos_direcao_extra.append("Empate indicadores - macro ALTA desempata para COMPRA")
         elif tend_macro["tendencia"] == "BAIXA":
             direcao = "VENDA"
-            motivos_operar.append("Empate indicadores - macro BAIXA desempata para VENDA")
+            motivos_direcao_extra.append("Empate indicadores - macro BAIXA desempata para VENDA")
         # LATERAL = sem desempate, fica None
+    
+    # Fallback: nenhum indicador votou mas macro tem direção clara
+    if direcao is None and tend_macro["tendencia"] in ("ALTA", "BAIXA"):
+        direcao = "COMPRA" if tend_macro["tendencia"] == "ALTA" else "VENDA"
+        motivos_direcao_extra.append(f"Indicadores neutros - macro {tend_macro['tendencia']} define direção (Elder: Tela 1 prevalece)")
     
     # ===== CONFLUENCE CHECKLIST =====
     confluencia = {}
-    motivos_operar = []
+    motivos_operar = list(motivos_direcao_extra)  # manter motivos de direção
     motivos_nao_operar = []
     
     # --- FATOR 1: Tendência TF maior (Elder T1) ---

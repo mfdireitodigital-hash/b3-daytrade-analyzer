@@ -4489,13 +4489,20 @@ async function operadorLiveCheck(forcar) {
     const decSub = document.getElementById('opLiveDecisaoSub');
     
     // First check if there's an active trade to monitor
+    let tradeAberto = false;
     try {
         const monResult = await operadorMonitorTrade();
         if (monResult && monResult.status === 'MONITORANDO') {
+            tradeAberto = true;
             if (statusEl) statusEl.textContent = 'Trade ativo - monitorando...';
             if (decEl) { decEl.textContent = 'MONITORANDO TRADE'; decEl.style.color = '#6366f1'; }
             if (decSub) decSub.textContent = 'Stop/alvo sendo verificados a cada atualização';
-            return; // Don't analyze while trade is open
+            // Update buttons
+            var btnEnt = document.getElementById('opBtnEntrar');
+            if (btnEnt) { btnEnt.textContent = 'EM TRADE...'; btnEnt.style.background = '#6366f1'; btnEnt.disabled = true; }
+            var decDiv = document.getElementById('opLiveDecisao');
+            if (decDiv) { decDiv.style.borderColor = '#6366f1'; decDiv.style.background = 'rgba(99,102,241,0.06)'; }
+            // Don't return - continue to fetch analysis data
         }
     } catch(monErr) { console.log('Monitor check skipped:', monErr); }
     
@@ -4518,7 +4525,10 @@ async function operadorLiveCheck(forcar) {
         
         // Status dot
         const dot = document.getElementById('opLiveDot');
-        if (data.status === 'ENTRADA') {
+        if (tradeAberto && data.trade_ativo) {
+            // Trade is active - keep MONITORANDO display, but update analysis/raciocinio below
+            if (dot) dot.style.background = '#6366f1';
+        } else if (data.status === 'ENTRADA') {
             if (dot) dot.style.background = '#22c55e';
             if (decEl) { decEl.textContent = 'ENTRADA ' + (data.analise_atual?.direcao || ''); decEl.style.color = '#22c55e'; }
             if (decSub) decSub.innerHTML = '<strong style="color:#a78bfa;">' + (data.analise_atual?.setup_playbook || 'Confluência') + '</strong> | ' + (data.analise_atual?.qualidade || '') + ' (' + (data.analise_atual?.score || 0) + '/7) | ' + data.janela + ' (' + data.janela_qualidade + ')';
