@@ -188,7 +188,15 @@ def detectar_setup_profissional(
         direcao = "COMPRA"
     elif venda_votes > compra_votes:
         direcao = "VENDA"
-    # else: no clear direction
+    elif compra_votes == venda_votes and compra_votes > 0:
+        # Empate - usar tendência macro como desempate (Elder: Tela 1 decide)
+        if tend_macro["tendencia"] == "ALTA":
+            direcao = "COMPRA"
+            motivos_operar.append("Empate indicadores - macro ALTA desempata para COMPRA")
+        elif tend_macro["tendencia"] == "BAIXA":
+            direcao = "VENDA"
+            motivos_operar.append("Empate indicadores - macro BAIXA desempata para VENDA")
+        # LATERAL = sem desempate, fica None
     
     # ===== CONFLUENCE CHECKLIST =====
     confluencia = {}
