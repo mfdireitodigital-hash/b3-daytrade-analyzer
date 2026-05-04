@@ -1488,10 +1488,10 @@ async function ptCarregarMelhoresEntradas() {
         }
         
         // Best setups by hour (score 5+)
-        h += '<div style="font-size:11px;font-weight:800;color:#22c55e;margin:10px 0 6px;padding-bottom:4px;border-bottom:1px solid var(--border);">MELHORES MOMENTOS DO DIA (' + boas.length + ' velas com Score 5+)</div>';
+        h += '<div style="font-size:11px;font-weight:800;color:#22c55e;margin:10px 0 6px;padding-bottom:4px;border-bottom:1px solid var(--border);">MELHORES MOMENTOS DO DIA (' + boas.length + ' velas com Score 4+)</div>';
         
         if (boas.length === 0) {
-            h += '<div style="padding:12px;color:var(--text-muted);text-align:center;">Nenhuma vela atingiu score 5+ neste pregao. Dia de ficar fora.</div>';
+            h += '<div style="padding:12px;color:var(--text-muted);text-align:center;">Nenhuma vela atingiu score 4+ neste pregao. Dia de ficar fora.</div>';
         } else {
             // Group by hour
             const porHora = {};
@@ -2025,7 +2025,7 @@ function ptRenderHistorico() {
     }
 
     if (trades.length === 0) {
-        container.innerHTML = '<div class="pt-empty">Nenhuma operacao no periodo selecionado.</div>';
+        container.innerHTML = '<div class="pt-empty">Nenhuma operacao manual registrada. Clique OPERAR > COMPRAR/VENDER para operar, ou veja as operacoes automaticas em OPERAR > MELHORES ENTRADAS.</div>';
         return;
     }
 
@@ -2082,7 +2082,7 @@ function ptRenderRelatorio() {
     const trades = ptState.history.filter(t => t.dataISO === hoje);
 
     if (trades.length === 0) {
-        container.innerHTML = '<div class="pt-empty">Nenhuma operacao finalizada hoje. Use COMPRAR/VENDER ou o REPLAY PREGAO para simular operacoes.</div>';
+        container.innerHTML = '<div class="pt-empty">Nenhuma operacao finalizada hoje. Adicione saldo e opere via COMPRAR/VENDER, ou analise o pregao anterior em MELHORES ENTRADAS.</div>';
         return;
     }
 
@@ -4564,7 +4564,7 @@ async function operadorLiveCheck(forcar) {
         }
         
         const tsEl = document.getElementById('opLiveTimestamp');
-        if (tsEl) tsEl.textContent = 'Atualizado: ' + data.timestamp;
+        if (tsEl) tsEl.textContent = 'Atualizado: ' + (data.timestamp || new Date().toLocaleTimeString('pt-BR'));
         
         // Status dot
         const dot = document.getElementById('opLiveDot');

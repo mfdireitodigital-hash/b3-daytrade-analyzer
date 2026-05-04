@@ -329,7 +329,7 @@ templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
 
 @app.get("/api/version")
 async def api_version():
-    return {"version": "3.2.0", "build": "20260504j", "changes": "fix_replay_dia_analise,banner_sinais_ia,null_check_preco,noticias_autoload"}
+    return {"version": "3.3.0", "build": "20260504k", "changes": "velas_treinamento,historico_ia,comprar_saldo_check,operador_undefined"}
 
 @app.get("/", response_class=HTMLResponse)
 async def dashboard(request: Request):
@@ -4549,6 +4549,7 @@ async def treinamento_ia(ativo: str = Query("WIN")):
             },
             "aprendizados": aprendizados,
             "operacoes": operacoes,
+            "velas": [v for v in velas_analisadas if v.get('score', 0) >= 3],
             "total_velas": len(velas_analisadas),
         })
     except Exception as e:
