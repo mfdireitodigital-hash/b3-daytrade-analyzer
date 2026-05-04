@@ -1453,7 +1453,8 @@ async function ptCarregarMelhoresEntradas() {
         
         // Operations executed
         if (ops.length > 0) {
-            h += '<div style="font-size:11px;font-weight:800;color:var(--accent-blue);margin:8px 0 6px;padding-bottom:4px;border-bottom:1px solid var(--border);">OPERACOES EXECUTADAS (' + ops.length + ')</div>';
+            h += '<div style="font-size:11px;font-weight:800;color:var(--accent-blue);margin:8px 0 6px;padding-bottom:4px;border-bottom:1px solid var(--border);">ANALISE EDUCATIVA - MELHORES OPORTUNIDADES DO DIA (' + ops.length + ')</div>';
+            h += '<div style="font-size:10px;color:var(--text-muted);margin-bottom:8px;padding:6px 8px;background:rgba(59,130,246,0.06);border-radius:6px;border-left:3px solid var(--accent-blue);">Estas sao as entradas que a IA identificou com maior confluencia no pregao anterior. Estude os motivos, clique em TREINAR para praticar no replay.</div>';
             ops.forEach((op, idx) => {
                 const isW = op.resultado === 'WIN';
                 const cOp = op.tipo === 'COMPRA' ? '#22c55e' : '#ef4444';
@@ -1470,9 +1471,9 @@ async function ptCarregarMelhoresEntradas() {
                 h += '<span style="font-size:12px;font-weight:800;color:' + cRes + ';">' + (op.pts>=0?'+':'') + op.pts + 'pts</span>';
                 h += '<span style="font-size:11px;color:' + cRes + ';">' + (op.resultado_rs>=0?'+':'') + 'R$ ' + op.resultado_rs.toFixed(2) + '</span>';
                 h += '</div></div>';
-                h += '<div style="font-size:10px;color:var(--text-muted);margin-top:4px;">Confluencia: ' + op.motivos.join(' | ') + '</div>';
+                h += '<div style="font-size:10px;color:var(--text-muted);margin-top:4px;"><strong style="color:var(--accent-blue);">POR QUE ENTRAR:</strong> ' + op.motivos.join(' | ') + '</div>';
                 // Train button
-                h += '<div style="margin-top:6px;"><button onclick="ptTreinarEntrada(' + idx + ',\'' + op.tipo + '\',' + op.stop_pts + ',' + op.alvo_pts + ',\x27' + op.hora_entrada + '\x27)" style="padding:4px 12px;background:' + cOp + ';color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:10px;font-weight:700;">TREINAR ESTA ENTRADA</button></div>';
+                h += '<div style="margin-top:6px;"><button onclick="ptTreinarEntrada(' + idx + ',\'' + op.tipo + '\',' + op.stop_pts + ',' + op.alvo_pts + ',\'' + op.hora_entrada + '\')" style="padding:4px 12px;background:' + cOp + ';color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:10px;font-weight:700;">PRATICAR NO REPLAY</button></div>';
                 h += '</div>';
                 if (op.detalhes_perda && op.resultado === 'LOSS') {
                     h += '<div style="background:rgba(239,68,68,0.06);border:1px solid rgba(239,68,68,0.2);border-radius:4px;padding:8px;margin-top:6px;font-size:10px;color:#fca5a5;">';
@@ -1570,10 +1571,24 @@ function ptTreinarEntrada(opIdx, tipo, stopPts, alvoPts, horaEntrada) {
     };
     
     if (!window.simVelas || !window.simVelas.velas) {
+        // Show loading in replay tab
+        var _simBox = document.getElementById('simTabelaBox');
+        if (_simBox) _simBox.innerHTML = '<div style="text-align:center;padding:30px;color:var(--text-muted);"><div style="font-size:24px;margin-bottom:8px;">Carregando pregao anterior...</div><div style="font-size:12px;">Aguarde, buscando dados de ' + (window.ptState ? ptState.ativo : 'WIN') + '</div></div>';
         simInit();
-        setTimeout(scrollToEntry, 3000);
+        // Poll until data loads (max 15s)
+        var _pollCount = 0;
+        var _pollTimer = setInterval(function() {
+            _pollCount++;
+            if (window.simVelas && window.simVelas.velas) {
+                clearInterval(_pollTimer);
+                setTimeout(scrollToEntry, 200);
+            } else if (_pollCount > 30) {
+                clearInterval(_pollTimer);
+                if (_simBox) _simBox.innerHTML = '<div style="text-align:center;padding:30px;color:#ef4444;">Timeout ao carregar dados. Tente novamente.</div>';
+            }
+        }, 500);
     } else {
-        setTimeout(scrollToEntry, 300);
+        setTimeout(scrollToEntry, 200);
     }
 }
 
@@ -2843,7 +2858,7 @@ async function simInit() {
             document.getElementById('simUltimoResult').style.display = 'none';
             document.getElementById('simHistBox').style.display = 'none';
             
-            fetch('/api/replay-velas?ativo=WIN').then(r=>r.json()).then(data=>{
+            fetch('/api/replay-velas?ativo=' + (window.ptState ? ptState.ativo : 'WIN')).then(r=>r.json()).then(data=>{
                 if(data.erro){document.getElementById('simDiaLabel').textContent='Erro: '+data.erro;return;}
                 window.simVelas = data;
                 const m = data.mercado;
@@ -2916,7 +2931,7 @@ async function simInit() {
             if(row) row.style.background = tipo==='COMPRA'?'rgba(34,197,94,0.15)':'rgba(239,68,68,0.15)';
             
             fetch('/api/simular-entrada',{method:'POST',headers:{'Content-Type':'application/json'},
-                body:JSON.stringify({ativo:'WIN',vela_idx:idx,tipo:tipo,stop_pts:stop,alvo_pts:alvo,contratos:ctrs})
+                body:JSON.stringify({ativo:(window.ptState?ptState.ativo:'WIN'),vela_idx:idx,tipo:tipo,stop_pts:stop,alvo_pts:alvo,contratos:ctrs})
             }).then(r=>r.json()).then(data=>{
                 if(data.erro){rd.innerHTML='<span style="color:#ef4444;">'+data.erro+'</span>';return;}
                 const e=data.entrada, s=data.saida;
@@ -2936,8 +2951,8 @@ async function simInit() {
                     ptState.history.push({
                         id: Date.now(),
                         tipo: e.tipo,
-                        ativo: 'WIN',
-                        contrato: window.simVelas ? window.simVelas.contrato : 'WINM26',
+                        ativo: (window.ptState ? ptState.ativo : 'WIN'),
+                        contrato: window.simVelas ? window.simVelas.contrato : (window.ptState ? ptState.ativo : 'WIN'),
                         entrada: e.preco,
                         saida: s.preco,
                         pts: s.pts,
@@ -3519,31 +3534,10 @@ function simRealCheckMarket() {
         if(label) label.innerHTML = '<span style="color:#22c55e;">AO VIVO</span> - Operando em Tempo Real | Modo Hard';
         return true;
     } else {
-        if(dot) dot.style.background = '#ef4444';
-        if(label) label.innerHTML = '<span style="color:#ef4444;">MERCADO FECHADO</span>';
-        // Show closed message
-        var _opsEl = document.getElementById('simRealOps');
-        if(_opsEl) _opsEl.innerHTML = '<div style="text-align:center;padding:40px 20px;">' +
-            '<div style="font-size:48px;margin-bottom:16px;">🔒</div>' +
-            '<div style="font-size:20px;font-weight:900;color:#ef4444;margin-bottom:12px;">MERCADO FECHADO</div>' +
-            '<div style="font-size:14px;color:var(--text-muted);margin-bottom:20px;">O Simulador Real funciona <strong style="color:#22c55e;">APENAS AO VIVO</strong> com o mercado aberto.</div>' +
-            '<div style="font-size:13px;color:var(--text-muted);margin-bottom:8px;">Isso aqui não é cassino. É coisa séria.</div>' +
-            '<div style="font-size:13px;color:var(--text-muted);margin-bottom:20px;">Cada entrada precisa de justificativa técnica, cada erro vira aprendizado.</div>' +
-            '<div style="background:rgba(59,130,246,0.1);border:1px solid rgba(59,130,246,0.3);border-radius:8px;padding:14px;max-width:400px;margin:0 auto;">' +
-            '<div style="font-size:12px;font-weight:700;color:var(--accent-blue);margin-bottom:6px;">HORARIO DE OPERACAO</div>' +
-            '<div style="font-size:14px;font-weight:600;">Segunda a Sexta: 09:00 - 18:00 (BRT)</div>' +
-            '<div style="font-size:11px;color:var(--text-muted);margin-top:6px;">Use o <strong>TREINAMENTO</strong> para praticar com dados do último pregão.</div>' +
-            '</div></div>';
-        var _veredEl = document.getElementById('simRealVeredictoText');
-        if(_veredEl) { _veredEl.textContent = 'MERCADO FECHADO'; _veredEl.style.color = '#ef4444'; }
-        var _veredSub = document.getElementById('simRealVeredictoSub');
-        if(_veredSub) _veredSub.textContent = 'Disponível seg-sex 09:00 às 18:00 BRT';
-        // Clear other panels
-        var _tripleEl = document.getElementById('simRealTriple'); if(_tripleEl) _tripleEl.innerHTML = '';
-        var _confEl = document.getElementById('simRealConf'); if(_confEl) _confEl.innerHTML = '';
-        var _newsEl = document.getElementById('simRealNews'); if(_newsEl) _newsEl.innerHTML = '';
-        var _heatEl = document.getElementById('simRealHeat'); if(_heatEl) _heatEl.innerHTML = '';
-        return false;
+        if(dot) dot.style.background = '#f59e0b';
+        if(label) label.innerHTML = '<span style="color:#f59e0b;">REPLAY</span> - Analisando Pregao Anterior';
+        // When closed, we still allow REPLAY DIA to work - just show replay label
+        return true;
     }
 }
 
@@ -4068,9 +4062,8 @@ function simChartRender() {
 }
 
 async function simRealAnalisar() {
-    // Block if market closed
-    const _mktOpen = simRealCheckMarket();
-    if (!_mktOpen) return;
+    // Update market status display (but don't block - replay works when closed)
+    simRealCheckMarket();
     
     const veredEl = document.getElementById('simRealVeredictoText');
     const veredSub = document.getElementById('simRealVeredictoSub');
