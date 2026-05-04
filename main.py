@@ -3124,7 +3124,7 @@ def _identificar_playbook_live(setup_data, rsi_v, macd_h, ema9, ema21, c, vwap, 
     if pa.get("pullback") and confl.get("tendencia_tf_maior"):
         return {"nome": "EMA 21 + Tendência", "desc": f"Pullback na EMA21 a favor de {tend_macro_dir}."}
     
-    if setup_data.get("total_confluencia", 0) >= 4:
+    if setup_data.get("total_confluencia", 0) >= 3:
         return {"nome": "Confluência Técnica", "desc": f"{setup_data['total_confluencia']}/7 fatores alinhados."}
     
     return {"nome": None, "desc": None}
@@ -3314,7 +3314,7 @@ async def simulador_real(ativo: str = Query("WIN"), max_entradas: int = Query(5)
                         1)
             
             # Setup genérico de confluência
-            if setup_data.get("total_confluencia", 0) >= 4:
+            if setup_data.get("total_confluencia", 0) >= 3:
                 return ("Confluência Técnica",
                         f"Múltiplos fatores alinhados ({setup_data['total_confluencia']}/7). Entrada por confluência.",
                         0)

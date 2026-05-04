@@ -4398,16 +4398,23 @@ async function operadorEntrar() {
     try {
         const btn = document.getElementById('opBtnEntrar');
         if (btn) { btn.textContent = 'AGUARDANDO...'; btn.style.background = '#f59e0b'; btn.disabled = true; }
-        await fetch('/api/operador-live/entrar', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ativo: _opLiveAtivo})});
+        const r = await fetch('/api/operador-live/entrar', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ativo: _opLiveAtivo})});
+        const d = await r.json();
+        console.log('Entrar response:', d);
         // Force immediate check
-        operadorLiveCheck();
-    } catch(e) { console.error(e); }
+        setTimeout(() => operadorLiveCheck(), 500);
+    } catch(e) { 
+        console.error('Entrar error:', e);
+        alert('Erro ao solicitar entrada: ' + e.message);
+        const btn2 = document.getElementById('opBtnEntrar');
+        if (btn2) { btn2.textContent = 'ENTRAR NA PRÓXIMA'; btn2.style.background = '#6366f1'; btn2.disabled = false; }
+    }
 }
 
 async function operadorMonitorTrade() {
     // Monitora trade ativo
     try {
-        const res = await fetch('/api/operador-live/monitor?ativo=' + _opLiveAtivo, {signal: AbortSignal.timeout(15000)});
+        const res = await fetch('/api/operador-live/monitor?ativo=' + _opLiveAtivo, );
         const d = await res.json();
         const panel = document.getElementById('opLiveTradeAtivo');
         if (!panel) return d;
@@ -4474,20 +4481,22 @@ async function operadorLiveCheck(forcar) {
     const decSub = document.getElementById('opLiveDecisaoSub');
     
     // First check if there's an active trade to monitor
-    const monResult = await operadorMonitorTrade();
-    if (monResult && monResult.status === 'MONITORANDO') {
-        if (statusEl) statusEl.textContent = 'Trade ativo - monitorando...';
-        if (decEl) { decEl.textContent = 'MONITORANDO TRADE'; decEl.style.color = '#6366f1'; }
-        if (decSub) decSub.textContent = 'Stop/alvo sendo verificados a cada atualização';
-        return; // Don't analyze while trade is open
-    }
+    try {
+        const monResult = await operadorMonitorTrade();
+        if (monResult && monResult.status === 'MONITORANDO') {
+            if (statusEl) statusEl.textContent = 'Trade ativo - monitorando...';
+            if (decEl) { decEl.textContent = 'MONITORANDO TRADE'; decEl.style.color = '#6366f1'; }
+            if (decSub) decSub.textContent = 'Stop/alvo sendo verificados a cada atualização';
+            return; // Don't analyze while trade is open
+        }
+    } catch(monErr) { console.log('Monitor check skipped:', monErr); }
     
     if (statusEl) statusEl.textContent = 'Analisando mercado...';
     if (decEl) { decEl.textContent = 'ANALISANDO...'; decEl.style.color = '#6366f1'; }
     
     try {
         const url = '/api/operador-live?ativo=' + _opLiveAtivo + '&max_entradas=' + maxEnt + (forcar ? '&forcar_entrada=true' : '');
-        const res = await fetch(url, {signal: AbortSignal.timeout(30000)});
+        const res = await fetch(url, );
         const data = await res.json();
         
         if (data.status === 'ERRO') {

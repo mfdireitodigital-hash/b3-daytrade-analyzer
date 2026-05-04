@@ -384,15 +384,17 @@ def detectar_setup_profissional(
         confianca = max(1, total_confluencia)
     
     # ===== FILTRO CONTRA-TENDÊNCIA =====
-    # Elder: NUNCA operar contra Tela 1 (exceto se 6+ confluências)
+    # Elder: cuidado contra Tela 1, mas permitir se confluência >= 5
     contra_tendencia = False
     if direcao and confluencia.get("tendencia_tf_maior") is False:
         if tend_macro["tendencia"] != "LATERAL":
-            contra_tendencia = True
-            if total_confluencia < 6:
+            if total_confluencia < 5:
+                contra_tendencia = True
                 qualidade = "SKIP"
                 confianca = min(confianca, 2)
-                motivos_nao_operar.append("Elder: proibido operar contra Tela 1 sem confluência excepcional")
+                motivos_nao_operar.append("Elder: contra Tela 1 sem confluência suficiente (precisa 5+)")
+            else:
+                motivos_operar.append("Contra tendência macro mas confluência forte (5+) = permitido")
     
     # ===== FILTRO REPETIÇÃO DE ENTRADA =====
     # Bellafiore: "Second chance" - não repita no mesmo nível
@@ -406,19 +408,20 @@ def detectar_setup_profissional(
                 break
     
     # ===== DECISÃO FINAL =====
+    # Operador menos conservador: 3/7 confluências já é aceitável (C+)
+    # Nem todos os fatores vão bater ao mesmo tempo - isso é normal
     operar = (
         direcao is not None
-        and qualidade in ("A+", "A", "B+")
+        and qualidade in ("A+", "A", "B+", "C+")
         and not contra_tendencia
         and not entrada_repetida
-        and total_confluencia >= 4
+        and total_confluencia >= 3
     )
     
-    # C+ pode operar se não for contra tendência e tiver bom price action
-    if qualidade == "C+" and not contra_tendencia and not entrada_repetida:
-        if confluencia.get("price_action_confirma") and confluencia.get("sr_relevante"):
-            operar = True  # C+ com PA + S/R = pode entrar com cautela
-            motivos_operar.append("C+ com Price Action + S/R = entrada cautelosa permitida")
+    # Ajuste de sizing por qualidade (Bellafiore)
+    # A+/A = tamanho cheio, B+ = normal, C+ = reduzido mas OPERA
+    if qualidade == "C+" and operar:
+        motivos_operar.append("C+ (3/7) = entrada válida com sizing reduzido")
     
     return {
         "direcao": direcao,
