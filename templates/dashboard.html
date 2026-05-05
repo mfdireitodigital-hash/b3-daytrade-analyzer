@@ -1405,6 +1405,17 @@
                 <div style="text-align:center;padding:24px;color:var(--text-muted);">Operador iniciando análise em tempo real...</div>
             </div>
         </div>
+
+        <!-- HISTÓRICO DE SESSÕES -->
+        <div style="margin:10px 0;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;padding-bottom:4px;border-bottom:1px solid var(--border);">
+                <span style="font-size:13px;font-weight:800;color:#f59e0b;text-transform:uppercase;">Historico de Sessoes</span>
+                <button onclick="carregarHistorico()" style="padding:3px 10px;background:rgba(245,158,11,0.1);color:#f59e0b;border:1px solid #f59e0b30;border-radius:6px;cursor:pointer;font-size:10px;font-weight:700;">CARREGAR</button>
+            </div>
+            <div id="simRealHistorico">
+                <div style="text-align:center;padding:16px;color:var(--text-muted);font-size:11px;">Clique em CARREGAR para ver sessoes anteriores</div>
+            </div>
+        </div>
     </div>
 </div>
 
@@ -5362,5 +5373,100 @@ function updateSafetyBar(seguro, data) {
             .then(reg => console.log('SW registered:', reg.scope))
             .catch(err => console.log('SW error:', err));
     }
-    </script>
+    
+    // =====================================================
+    // HISTORICO DE SESSOES
+    // =====================================================
+    async function carregarHistorico() {
+        const el = document.getElementById('simRealHistorico');
+        if (!el) return;
+        el.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-muted);">Carregando historico...</div>';
+        try {
+            const ativo = window._simRealAtivo || 'WIN';
+            const resp = await fetch('/api/historico-simulador?ativo=' + ativo + '&limite=30');
+            const data = await resp.json();
+            if (!data.sessoes || data.sessoes.length === 0) {
+                el.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-muted);">Nenhuma sessao registrada ainda.</div>';
+                return;
+            }
+            let h = '';
+            const r = data.resumo_global || {};
+            h += '<div style="background:linear-gradient(135deg,rgba(245,158,11,0.08),rgba(234,88,12,0.08));border:1px solid #f59e0b30;border-radius:10px;padding:12px;margin-bottom:10px;">';
+            h += '<div style="display:flex;justify-content:space-around;text-align:center;flex-wrap:wrap;gap:8px;">';
+            h += '<div><div style="font-size:18px;font-weight:900;color:#f59e0b;">' + (data.total_sessoes||0) + '</div><div style="font-size:9px;color:var(--text-muted);">SESSOES</div></div>';
+            h += '<div><div style="font-size:18px;font-weight:900;color:' + ((r.win_rate||0)>=55?'#22c55e':'#ef4444') + ';">' + (r.win_rate||0) + '%</div><div style="font-size:9px;color:var(--text-muted);">WIN RATE</div></div>';
+            h += '<div><div style="font-size:18px;font-weight:900;color:' + ((r.total_pts||0)>=0?'#22c55e':'#ef4444') + ';">' + (r.total_pts||0) + '</div><div style="font-size:9px;color:var(--text-muted);">PTS TOTAL</div></div>';
+            h += '<div><div style="font-size:18px;font-weight:900;color:' + ((r.total_rs||0)>=0?'#22c55e':'#ef4444') + ';">R$' + Math.round(r.total_rs||0) + '</div><div style="font-size:9px;color:var(--text-muted);">RESULTADO</div></div>';
+            h += '</div></div>';
+            data.sessoes.forEach(function(s, idx) {
+                const p = s.performance || {};
+                const isWin = (p.total_pts||0) >= 0;
+                const modoColor = s.modo === 'CT' ? '#a78bfa' : (s.modo === 'REAL' ? '#22c55e' : '#6366f1');
+                const modoLabel = s.modo === 'CT' ? 'TREINO' : (s.modo === 'REAL' ? 'LIVE' : 'REPLAY');
+                h += '<div style="background:var(--bg-card);border:1px solid ' + (isWin ? '#22c55e30' : '#ef444430') + ';border-radius:8px;margin-bottom:6px;overflow:hidden;">';
+                h += '<div onclick="toggleHistSessao(' + idx + ')" style="cursor:pointer;padding:10px 12px;display:flex;justify-content:space-between;align-items:center;">';
+                h += '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">';
+                h += '<span style="background:' + modoColor + '20;color:' + modoColor + ';padding:2px 6px;border-radius:4px;font-size:9px;font-weight:800;">' + modoLabel + '</span>';
+                h += '<span style="font-weight:700;font-size:12px;">' + (s.data||'?') + '</span>';
+                h += '<span style="color:var(--text-muted);font-size:10px;">' + (s.tend_macro?.tendencia||'') + '</span>';
+                h += '</div>';
+                h += '<div style="display:flex;align-items:center;gap:10px;">';
+                h += '<span style="font-size:10px;color:var(--text-muted);">' + (p.wins||0) + 'W/' + (p.losses||0) + 'L</span>';
+                h += '<span style="font-weight:900;font-size:13px;color:' + (isWin?'#22c55e':'#ef4444') + ';">' + ((p.total_pts||0)>0?'+':'') + (p.total_pts||0) + 'pts</span>';
+                h += '<span style="font-size:14px;transition:transform 0.2s;" id="histChevron' + idx + '">&#9660;</span>';
+                h += '</div></div>';
+                h += '<div id="histSessao' + idx + '" style="display:none;border-top:1px solid var(--border);padding:8px;">';
+                if (s.operacoes && s.operacoes.length > 0) {
+                    s.operacoes.forEach(function(op) {
+                        const opWin = op.resultado === 'WIN';
+                        h += '<div style="background:' + (opWin?'rgba(34,197,94,0.05)':'rgba(239,68,68,0.05)') + ';border:1px solid ' + (opWin?'#22c55e20':'#ef444420') + ';border-radius:6px;padding:8px 10px;margin-bottom:4px;font-size:11px;">';
+                        h += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;flex-wrap:wrap;">';
+                        h += '<div>';
+                        h += '<span style="font-weight:800;color:' + (op.tipo==='COMPRA'?'#22c55e':'#ef4444') + ';">' + (op.tipo||'?') + '</span>';
+                        h += ' <span style="color:var(--text-muted);">' + (op.hora_entrada||'') + ' - ' + (op.hora_saida||'') + '</span>';
+                        h += ' <span style="background:#6366f120;color:#818cf8;padding:1px 4px;border-radius:3px;font-size:9px;font-weight:700;">' + (op.conf_label||'?') + ' ' + (op.score||0) + '/7</span>';
+                        h += '</div>';
+                        h += '<span style="font-weight:900;color:' + (opWin?'#22c55e':'#ef4444') + ';">' + op.resultado + ' ' + ((op.pts||0)>0?'+':'') + Number(op.pts||0).toFixed(1) + 'pts</span>';
+                        h += '</div>';
+                        h += '<div style="color:var(--text-muted);font-size:10px;margin-bottom:3px;">';
+                        h += 'Entrada: ' + (op.preco_entrada||0) + ' | Saida: ' + (op.preco_saida||0) + ' | Stop: ' + (op.stop_pts||0) + 'pts | R:R ' + (op.rr||'?');
+                        h += '</div>';
+                        if (op.motivos && op.motivos.length > 0) {
+                            h += '<div style="color:#818cf8;font-size:10px;margin-bottom:3px;">POR QUE ENTROU: ' + op.motivos.slice(0,3).join(' | ') + '</div>';
+                        }
+                        if (op.detalhes_perda) {
+                            h += '<div style="color:#ef4444;font-size:10px;font-weight:600;">' + op.detalhes_perda + '</div>';
+                        }
+                        if (op.detalhes_vitoria) {
+                            h += '<div style="color:#22c55e;font-size:10px;font-weight:600;">' + op.detalhes_vitoria + '</div>';
+                        }
+                        if (op.licao_treino) {
+                            h += '<div style="color:#f59e0b;font-size:10px;margin-top:2px;">LICAO: ' + op.licao_treino + '</div>';
+                        }
+                        h += '</div>';
+                    });
+                } else {
+                    h += '<div style="text-align:center;color:var(--text-muted);font-size:10px;padding:8px;">Sem detalhes de operacoes</div>';
+                }
+                h += '</div></div>';
+            });
+            el.innerHTML = h;
+        } catch(e) {
+            el.innerHTML = '<div style="text-align:center;padding:20px;color:#ef4444;">Erro: ' + e.message + '</div>';
+        }
+    }
+    function toggleHistSessao(idx) {
+        const el = document.getElementById('histSessao' + idx);
+        const chevron = document.getElementById('histChevron' + idx);
+        if (!el) return;
+        if (el.style.display === 'none') {
+            el.style.display = 'block';
+            if (chevron) chevron.style.transform = 'rotate(180deg)';
+        } else {
+            el.style.display = 'none';
+            if (chevron) chevron.style.transform = 'rotate(0deg)';
+        }
+    }
+
+</script>
 </html>

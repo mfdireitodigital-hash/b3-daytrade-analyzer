@@ -499,3 +499,98 @@ def registrar_trade_replay(ativo: str, op: dict) -> dict:
         "regras_ativas": len(data["regras_aprendidas"]),
         "licao": erro["licao"] if resultado == "LOSS" else None,
     }
+
+
+# ================================================================
+# HISTÓRICO COMPLETO DE SESSÕES (Simulador Real + CT)
+# ================================================================
+HISTORICO_FILE = Path(os.path.dirname(os.path.abspath(__file__))) / "historico_sessoes.json"
+
+def _carregar_historico() -> list:
+    try:
+        if HISTORICO_FILE.exists():
+            with open(HISTORICO_FILE, "r") as f:
+                return json.load(f)
+    except:
+        pass
+    return []
+
+def _salvar_historico(hist: list):
+    # Manter últimas 50 sessões
+    if len(hist) > 50:
+        hist = hist[-50:]
+    with open(HISTORICO_FILE, "w") as f:
+        json.dump(hist, f, ensure_ascii=False, indent=1)
+
+def registrar_historico_completo(ativo: str, data_sessao: str, modo: str, operacoes: list, performance: dict, tend_macro: dict = None) -> dict:
+    """Salva sessão completa com todas as operações e análises detalhadas."""
+    hist = _carregar_historico()
+    
+    # Preparar operações para salvar (limpar campos pesados)
+    ops_salvar = []
+    for op in operacoes:
+        ops_salvar.append({
+            "tipo": op.get("tipo"),
+            "hora_entrada": op.get("hora_entrada"),
+            "hora_saida": op.get("hora_saida"),
+            "preco_entrada": op.get("preco_entrada"),
+            "preco_saida": op.get("preco_saida"),
+            "stop_loss": op.get("stop_loss"),
+            "take_profit": op.get("take_profit"),
+            "stop_pts": op.get("stop_pts"),
+            "alvo_pts": op.get("alvo_pts"),
+            "rr": op.get("rr"),
+            "resultado": op.get("resultado"),
+            "pts": op.get("pts"),
+            "resultado_rs": op.get("resultado_rs"),
+            "velas_na_op": op.get("velas_na_op"),
+            "score": op.get("score"),
+            "conf_label": op.get("conf_label"),
+            "motivos": op.get("motivos", [])[:5],
+            "detalhes_perda": op.get("detalhes_perda", ""),
+            "detalhes_vitoria": op.get("detalhes_vitoria", ""),
+            "analise_completa": op.get("analise_completa", "")[:500],
+            "licao_treino": op.get("licao_treino", ""),
+            "alerta_contra": op.get("alerta_contra", ""),
+            "tendencia": op.get("tendencia"),
+            "rsi": op.get("rsi"),
+            "vwap": op.get("vwap"),
+            "suporte": op.get("suporte"),
+            "resistencia": op.get("resistencia"),
+            "confluencia_detalhes": op.get("confluencia_detalhes", {}),
+        })
+    
+    sessao = {
+        "id": hashlib.md5(f"{ativo}{data_sessao}{datetime.now(BRT).isoformat()}".encode()).hexdigest()[:10],
+        "ativo": ativo,
+        "data": data_sessao,
+        "modo": modo,  # "REAL" ou "REPLAY" ou "CT"
+        "timestamp": datetime.now(BRT).isoformat(),
+        "tend_macro": {
+            "tendencia": tend_macro.get("tendencia", "?") if tend_macro else "?",
+            "forca": tend_macro.get("forca", 0) if tend_macro else 0,
+        },
+        "performance": {
+            "total_ops": performance.get("total_operacoes", len(operacoes)),
+            "wins": performance.get("wins", 0),
+            "losses": performance.get("losses", 0),
+            "win_rate": performance.get("win_rate", 0),
+            "total_pts": round(performance.get("total_pts", 0), 1),
+            "total_rs": round(performance.get("total_rs", 0), 2),
+            "fator_lucro": performance.get("fator_lucro", 0),
+        },
+        "operacoes": ops_salvar,
+    }
+    
+    hist.append(sessao)
+    _salvar_historico(hist)
+    return sessao
+
+def obter_historico(ativo: str = None, limite: int = 20) -> list:
+    """Retorna histórico de sessões, opcionalmente filtrado por ativo."""
+    hist = _carregar_historico()
+    if ativo:
+        hist = [s for s in hist if s.get("ativo") == ativo]
+    return hist[-limite:]
+
+import hashlib

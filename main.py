@@ -31,7 +31,8 @@ from analysis_engine import analisar_completo
 from data_provider import DataProvider, obter_contrato_vigente
 from learning_engine import (
     carregar_learning, registrar_sessao, registrar_trade_replay, obter_pesos_atuais,
-    obter_score_minimo, obter_resumo_aprendizado, registrar_livro, consultar_memoria
+    obter_score_minimo, obter_resumo_aprendizado, registrar_livro, consultar_memoria,
+    registrar_historico_completo, obter_historico
 )
 from trading_books_knowledge import (
     aplicar_scoring_avancado, obter_livros_lista, obter_todos_conceitos
@@ -4170,7 +4171,7 @@ async def simulador_real(ativo: str = Query("WIN"), max_entradas: int = Query(5)
         melhor_trade = max(operacoes_recomendadas, key=lambda x: x["pts"]) if operacoes_recomendadas else None
         pior_trade = min(operacoes_recomendadas, key=lambda x: x["pts"]) if operacoes_recomendadas else None
         
-        # Learning
+        # Learning + Histórico completo
         if operacoes_recomendadas:
             try:
                 registrar_sessao(
@@ -4178,8 +4179,22 @@ async def simulador_real(ativo: str = Query("WIN"), max_entradas: int = Query(5)
                     operacoes_recomendadas,
                     {"win_rate": win_rate, "total_pts": total_pts}
                 )
+                # Salvar histórico completo com todas as operações e análises
+                registrar_historico_completo(
+                    ativo=ativo,
+                    data_sessao=dia_analise.strftime("%d/%m/%Y"),
+                    modo=_modo if '_modo' in dir() else ("REAL" if modo_live else "REPLAY"),
+                    operacoes=operacoes_recomendadas,
+                    performance={
+                        "total_operacoes": total_ops, "wins": wins, "losses": losses,
+                        "win_rate": win_rate, "total_pts": total_pts, "total_rs": total_rs,
+                        "fator_lucro": fator_lucro,
+                    },
+                    tend_macro=tend_macro,
+                )
+                logger.info(f"Histórico salvo: {total_ops} ops, WR {win_rate}%")
             except Exception as e:
-                logger.error(f"Erro registrando aprendizado: {e}")
+                logger.error(f"Erro registrando aprendizado/histórico: {e}")
         
         aprendizado = obter_resumo_aprendizado()
         
@@ -4746,7 +4761,21 @@ async def treinamento_ia(ativo: str = Query("WIN")):
                 wins = sum(1 for op in operacoes if op["resultado"] == "WIN")
                 total_ops = len(operacoes)
                 wr = round(wins / total_ops * 100) if total_ops > 0 else 0
-                registrar_sessao(ativo, dia_anterior.strftime("%d/%m/%Y"), operacoes, {"win_rate": wr, "total_pts": sum(op["pts"] for op in operacoes)})
+                total_pts_ct = sum(op["pts"] for op in operacoes)
+                total_rs_ct = sum(op.get("resultado_rs", 0) for op in operacoes)
+                registrar_sessao(ativo, dia_analise.strftime("%d/%m/%Y"), operacoes, {"win_rate": wr, "total_pts": total_pts_ct})
+                registrar_historico_completo(
+                    ativo=ativo,
+                    data_sessao=dia_analise.strftime("%d/%m/%Y"),
+                    modo="CT",
+                    operacoes=operacoes,
+                    performance={
+                        "total_operacoes": total_ops, "wins": wins, "losses": total_ops - wins,
+                        "win_rate": wr, "total_pts": total_pts_ct, "total_rs": total_rs_ct,
+                        "fator_lucro": round(sum(op["pts"] for op in operacoes if op["resultado"]=="WIN") / max(abs(sum(op["pts"] for op in operacoes if op["resultado"]=="LOSS")), 0.01), 2),
+                    },
+                    tend_macro=tend_macro,
+                )
             except: pass
         
         # Resumo
@@ -4836,6 +4865,43 @@ async def get_learning():
         return JSONResponse(resumo)
     except Exception as e:
         return JSONResponse({"erro": str(e)}, status_code=500)
+
+
+
+
+@app.get("/api/historico-simulador")
+async def get_historico_simulador(ativo: str = Query(None), limite: int = Query(20)):
+    """Retorna histórico completo de sessões do Simulador Real e CT"""
+    try:
+        hist = obter_historico(ativo=ativo.upper() if ativo else None, limite=limite)
+        # Resumo geral
+        total_sessoes = len(hist)
+        total_ops = sum(s["performance"]["total_ops"] for s in hist)
+        total_wins = sum(s["performance"]["wins"] for s in hist)
+        total_pts = round(sum(s["performance"]["total_pts"] for s in hist), 1)
+        total_rs = round(sum(s["performance"].get("total_rs", 0) for s in hist), 2)
+        wr_global = round(total_wins / total_ops * 100) if total_ops > 0 else 0
+        
+        # Sessões por modo
+        sessoes_real = [s for s in hist if s.get("modo") in ("REAL", "REPLAY")]
+        sessoes_ct = [s for s in hist if s.get("modo") == "CT"]
+        
+        return JSONResponse({
+            "total_sessoes": total_sessoes,
+            "resumo_global": {
+                "total_ops": total_ops,
+                "total_wins": total_wins,
+                "win_rate": wr_global,
+                "total_pts": total_pts,
+                "total_rs": total_rs,
+            },
+            "sessoes_simulador": len(sessoes_real),
+            "sessoes_ct": len(sessoes_ct),
+            "sessoes": list(reversed(hist)),  # Mais recente primeiro
+        })
+    except Exception as e:
+        logger.error(f"Erro historico: {e}")
+        return JSONResponse({"erro": str(e), "sessoes": []}, status_code=500)
 
 
 @app.get("/api/heatmap")
