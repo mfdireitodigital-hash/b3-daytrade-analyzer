@@ -4497,19 +4497,8 @@ async def treinamento_ia(ativo: str = Query("WIN")):
                     posicao_aberta = None
             
             # ===== COOLDOWN APÓS LOSS (Tendler) =====
-            ct_cooldown_velas = getattr(ct_cooldown_velas, '__self__', None) if False else 0
-            if not hasattr(operador_ct_state, '__call__'):
-                if 'ct_cooldown_until_idx' not in dir():
-                    ct_cooldown_until_idx = 0
-            
-            # ===== EXECUTAR OPERAÇÃO =====
             current_vela_idx = day_indices.index(pos_idx) if pos_idx in day_indices else 0
-            em_cooldown_ct = current_vela_idx < getattr(type(''), '_ct_cool', {}).get(ativo, 0) if False else False
-            
-            # Cooldown simples: após loss, pular 3 velas (15min)
-            if '_ct_cool_idx' not in dir():
-                _ct_cool_idx = 0
-            em_cooldown_ct = current_vela_idx < _ct_cool_idx
+            em_cooldown_ct = current_vela_idx < _ct_cool_idx if '_ct_cool_idx' in locals() else False
             
             pode_operar = (
                 operar_treino and tipo_sinal
