@@ -330,7 +330,7 @@ templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
 
 @app.get("/api/version")
 async def api_version():
-    return {"version": "3.7.3", "build": "20260505h", "changes": "memoria_inteligente_bloqueio,aprender_erros,regras_auto"}
+    return {"version": "3.7.3", "build": "20260505i", "changes": "memoria_inteligente_bloqueio,aprender_erros,regras_auto"}
 
 @app.get("/", response_class=HTMLResponse)
 async def dashboard(request: Request):

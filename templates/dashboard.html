@@ -1421,24 +1421,7 @@
 </div>
 
 
-<!-- RELATÓRIO DO DIA - HISTÓRICO CONSOLIDADO -->
-<div class="pt-overlay" id="relatorioDiaOverlay" style="display:none;">
-    <div class="pt-container" style="max-width:900px;">
-        <div class="pt-header" style="border-bottom-color:#a855f7;">
-            <div>
-                <div class="pt-title" style="color:#a855f7;">RELATÓRIO DO DIA</div>
-                <div class="pt-title-sub" id="relDiaSub">Histórico consolidado de todas as operações</div>
-            </div>
-            <button class="pt-close" onclick="document.getElementById('relatorioDiaOverlay').style.display='none'">X</button>
-        </div>
-        <div style="padding:16px;overflow-y:auto;max-height:calc(100vh - 80px);" id="relDiaContent">
-            <div style="text-align:center;padding:40px;color:var(--text-muted);">Clique em CARREGAR para gerar o relatório</div>
-        </div>
-        <div style="padding:10px 16px;border-top:1px solid var(--border);display:flex;gap:8px;justify-content:center;">
-            <button onclick="carregarRelatorioDia()" class="btn btn-primary" style="background:#a855f7;font-size:12px;padding:8px 20px;">CARREGAR RELATÓRIO</button>
-        </div>
-    </div>
-</div>
+
 
 <script>
 // =====================================================
@@ -5738,5 +5721,25 @@ function updateSafetyBar(seguro, data) {
 
 
 </script>
+
+<!-- RELATÓRIO DO DIA - HISTÓRICO CONSOLIDADO -->
+<div class="pt-overlay" id="relatorioDiaOverlay" style="display:none;">
+    <div class="pt-container" style="max-width:900px;">
+        <div class="pt-header" style="border-bottom-color:#a855f7;">
+            <div>
+                <div class="pt-title" style="color:#a855f7;">RELATÓRIO DO DIA</div>
+                <div class="pt-title-sub" id="relDiaSub">Histórico consolidado de todas as operações</div>
+            </div>
+            <button class="pt-close" onclick="document.getElementById('relatorioDiaOverlay').style.display='none'">X</button>
+        </div>
+        <div style="padding:16px;overflow-y:auto;max-height:calc(100vh - 80px);" id="relDiaContent">
+            <div style="text-align:center;padding:40px;color:var(--text-muted);">Clique em CARREGAR para gerar o relatório</div>
+        </div>
+        <div style="padding:10px 16px;border-top:1px solid var(--border);display:flex;gap:8px;justify-content:center;">
+            <button onclick="carregarRelatorioDia()" class="btn btn-primary" style="background:#a855f7;font-size:12px;padding:8px 20px;">CARREGAR RELATÓRIO</button>
+        </div>
+    </div>
+</div>
+
 </body>
 </html>
