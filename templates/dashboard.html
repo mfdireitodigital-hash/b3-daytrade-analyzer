@@ -2646,16 +2646,48 @@ function atualizarBanner(a) {
 async function atualizarBannerIA() {
     try {
         const ativo = (state.ativo || 'WIN').toUpperCase();
-        const res = await fetch('/api/sinais-ia?ativo=' + ativo);
-        const data = await res.json();
-        if (!data.sinais || data.sinais.length === 0) return;
-        const s = data.sinais[0];
-        const sinal = s.tipo || 'NEUTRO';
-        const score = (data.confluencia || {}).score || 0;
-        const total = (data.confluencia || {}).total || 7;
-        const escala = s.escala || data.escala_confianca || {};
-        const label = escala.label || '';
-        const motivos = s.motivos || [];
+        
+        // Quando mercado aberto, usar operador live (dados reais TradingView)
+        // em vez do sinais-ia (que pode estar com yfinance defasado)
+        let sinal = 'NEUTRO', score = 0, total = 7, label = '', motivos = [];
+        try {
+            const opRes = await fetch('/api/operador-live?ativo=' + ativo);
+            const opData = await opRes.json();
+            if (opData.status !== 'MERCADO_FECHADO' && opData.analise_atual) {
+                const aa = opData.analise_atual;
+                if (aa.direcao) {
+                    sinal = aa.direcao;
+                    score = aa.score || 0;
+                    label = aa.qualidade || '';
+                    motivos = aa.motivos_operar || [];
+                    if (opData.status === 'ENTRADA') {
+                        motivos = [opData.janela + ' (' + opData.janela_qualidade + ')', ...(motivos || [])];
+                    }
+                } else {
+                    sinal = 'NEUTRO';
+                    motivos = ['Sem direção clara - ' + (opData.raciocinio || '').split('\n')[0].replace('PARECER: ', '')];
+                }
+            }
+        } catch(opErr) { console.log('Op fallback:', opErr); }
+        
+        // Fallback: sinais-ia se operador não retornou nada útil
+        if (sinal === 'NEUTRO') {
+            try {
+                const res = await fetch('/api/sinais-ia?ativo=' + ativo);
+                const data = await res.json();
+                if (data.sinais && data.sinais.length > 0) {
+                    const s = data.sinais[0];
+                    if (s.tipo && s.tipo !== 'NEUTRO') {
+                        sinal = s.tipo;
+                        score = (data.confluencia || {}).score || 0;
+                        total = (data.confluencia || {}).total || 7;
+                        const escala = s.escala || data.escala_confianca || {};
+                        label = escala.label || '';
+                        motivos = s.motivos || [];
+                    }
+                }
+            } catch(e2) {}
+        }
         const banner = document.getElementById('sinalBanner');
         const badge = document.getElementById('sinalBadge');
         const texto = document.getElementById('sinalTexto');

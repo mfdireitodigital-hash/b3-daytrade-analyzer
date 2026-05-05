@@ -371,6 +371,29 @@ async def get_analise(
             "mercado_aberto": mercado_aberto(),
             "preco_realtime": app_state.get("preco_realtime", {}).get(ativo, {}),
         }
+        
+        # Quando mercado aberto e preço RT disponível, enriquecer análise com dados live
+        if mercado_aberto() and response_data.get("preco_realtime"):
+            rt = response_data["preco_realtime"]
+            rt_preco = rt.get("preco", 0)
+            if rt_preco and isinstance(analise, dict) and analise.get("preco_atual"):
+                # Se preço RT diverge >0.5% do yfinance, dados estão defasados
+                yf_preco = analise.get("preco_atual", 0)
+                if yf_preco and abs(rt_preco - yf_preco) / yf_preco > 0.005:
+                    analise["preco_atual"] = rt_preco
+                    analise["_dados_defasados"] = True
+                    analise["_fonte_preco"] = rt.get("fonte", "TradingView")
+                    # Usar variação RT
+                    if rt.get("variacao"):
+                        analise["variacao_pct"] = rt["variacao"]
+                    if rt.get("variacao_pts"):
+                        analise["variacao"] = rt["variacao_pts"]
+                    if rt.get("high"):
+                        analise["high_dia"] = rt["high"]
+                    if rt.get("low"):
+                        analise["low_dia"] = rt["low"]
+                    if rt.get("open"):
+                        analise["abertura"] = rt["open"]
         try:
             json.dumps(response_data, default=str)
         except Exception:
