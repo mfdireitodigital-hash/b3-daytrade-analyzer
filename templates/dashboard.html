@@ -4988,13 +4988,21 @@ function _renderOpsSummary(container, perf) {
     requestAnimationFrame(() => { sum.style.opacity = '1'; sum.style.transform = 'scale(1)'; });
 }
 
-// Force Service Worker update on every page load
+// Force Service Worker: unregister old, register fresh v21
 if ('serviceWorker' in navigator) {
     navigator.serviceWorker.getRegistrations().then(function(registrations) {
-        registrations.forEach(function(reg) { reg.update(); });
-    });
-    navigator.serviceWorker.addEventListener('controllerchange', function() {
-        console.log('SW updated - page will use new version on next load');
+        registrations.forEach(function(reg) {
+            reg.unregister().then(function() {
+                console.log('Old SW unregistered');
+            });
+        });
+        // Re-register after cleanup
+        setTimeout(function() {
+            navigator.serviceWorker.register('/static/sw.js').then(function(r) {
+                console.log('SW v21 registered');
+                r.update();
+            });
+        }, 1000);
     });
 }
 
