@@ -329,7 +329,7 @@ templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
 
 @app.get("/api/version")
 async def api_version():
-    return {"version": "3.7.1", "build": "20260505a", "changes": "memoria_persistente_replay,alerta_erros_similares,gravar_todo_trade_ct"}
+    return {"version": "3.7.2", "build": "20260505b", "changes": "memoria_persistente_replay,alerta_erros_similares,gravar_todo_trade_ct"}
 
 @app.get("/", response_class=HTMLResponse)
 async def dashboard(request: Request):
@@ -4348,6 +4348,32 @@ async def treinamento_ia(ativo: str = Query("WIN")):
         macro_window = dados.iloc[:day_indices[-1]+1]
         tend_macro = calcular_tendencia_macro(macro_window, ativo)
 
+        # ---- JANELAS DE OPERAÇÃO (CT) ----
+        JANELAS_OTIMAS_CT = [
+            (9, 15, 10, 30, "Abertura Prime", "PRIME"),
+            (10, 30, 11, 30, "Manhã", "BOA"),
+            (14, 0, 16, 0, "Tarde Prime", "PRIME"),
+            (13, 30, 14, 0, "Pré-Tarde", "BOA"),
+            (16, 0, 16, 30, "Fim de Tarde", "BOA"),
+        ]
+        JANELAS_RUINS_CT = [
+            (9, 0, 9, 15, "Pré-Abertura", "RUIM"),
+            (11, 30, 13, 30, "Almoço", "RUIM"),
+            (12, 0, 13, 0, "Almoço Morto", "PROIBIDO"),
+            (16, 30, 18, 0, "Pré-Fechamento", "RUIM"),
+            (17, 0, 18, 0, "Leilão Fechamento", "PROIBIDO"),
+        ]
+        def classificar_janela_ct(hora_int, minuto):
+            for h_ini, m_ini, h_fim, m_fim, nome, qual in JANELAS_RUINS_CT:
+                t = hora_int * 60 + minuto
+                if h_ini * 60 + m_ini <= t < h_fim * 60 + m_fim:
+                    return nome, qual, qual != "PROIBIDO"
+            for h_ini, m_ini, h_fim, m_fim, nome, qual in JANELAS_OTIMAS_CT:
+                t = hora_int * 60 + minuto
+                if h_ini * 60 + m_ini <= t < h_fim * 60 + m_fim:
+                    return nome, qual, True
+            return "Normal", "NORMAL", True
+
         # ---- NOTICIAS DE IMPACTO ----
         try:
             noticias_dia = obter_noticias_do_dia()
@@ -4606,7 +4632,10 @@ async def treinamento_ia(ativo: str = Query("WIN")):
                 analise += f"\nRESULTADO: {resultado} | {round(abs(pts),1)}pts | R${round(abs(rs),2)}"
                 analise += f"\nEntrada: {preco_op} ({_hora_real}) | Saída: {round(preco_saida,2)} ({hora_saida})"
                 
-                # Detalhes
+                # Detalhes - classificar janela e obter vwap
+                janela_nome, janela_qual, _ = classificar_janela_ct(hora_int, minuto)
+                vwap = setup.get("vwap")
+                
                 detalhes_perda = ""
                 detalhes_vitoria = ""
                 licao_treino = ""
