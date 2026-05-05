@@ -330,7 +330,7 @@ templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
 
 @app.get("/api/version")
 async def api_version():
-    return {"version": "3.7.3", "build": "20260505e", "changes": "memoria_inteligente_bloqueio,aprender_erros,regras_auto"}
+    return {"version": "3.7.3", "build": "20260505f", "changes": "memoria_inteligente_bloqueio,aprender_erros,regras_auto"}
 
 @app.get("/", response_class=HTMLResponse)
 async def dashboard(request: Request):
@@ -5049,6 +5049,254 @@ async def get_historico_simulador(ativo: str = Query(None), limite: int = Query(
     except Exception as e:
         logger.error(f"Erro historico: {e}")
         return JSONResponse({"erro": str(e), "sessoes": []}, status_code=500)
+
+
+
+
+@app.get("/api/relatorio-dia")
+async def relatorio_dia():
+    """
+    Relatório consolidado do dia - combina dados de todos os módulos
+    (Simulador Real, Centro de Treinamento, Operador) para os 2 usuários.
+    Gera métricas de assertividade, média, e análise completa.
+    """
+    try:
+        from learning_engine import carregar_learning, obter_historico
+        
+        # Carregar learning data (global - compartilhado)
+        learning = carregar_learning()
+        historico = obter_historico(limite=50)
+        
+        # Data de hoje
+        hoje_str = datetime.now(timezone(timedelta(hours=-3))).strftime("%d/%m/%Y")
+        
+        # Filtrar sessões de hoje
+        sessoes_hoje = [s for s in historico if s.get("data") == hoje_str]
+        
+        # Se não tem de hoje, pegar o último dia com dados
+        if not sessoes_hoje:
+            datas_disponiveis = sorted(set(s.get("data", "") for s in historico if s.get("data")), 
+                                       key=lambda d: datetime.strptime(d, "%d/%m/%Y") if d else datetime.min,
+                                       reverse=True)
+            if datas_disponiveis:
+                ultimo_dia = datas_disponiveis[0]
+                sessoes_hoje = [s for s in historico if s.get("data") == ultimo_dia]
+                hoje_str = ultimo_dia
+        
+        # Separar por modo
+        sessoes_simreal = [s for s in sessoes_hoje if s.get("modo") in ("REAL", "REPLAY")]
+        sessoes_ct = [s for s in sessoes_hoje if s.get("modo") == "CT"]
+        sessoes_operador = [s for s in sessoes_hoje if s.get("modo") == "OPERADOR"]
+        
+        # Consolidar operações
+        todas_ops = []
+        for s in sessoes_hoje:
+            for op in s.get("operacoes", []):
+                op_copy = dict(op)
+                op_copy["modo"] = s.get("modo", "?")
+                op_copy["sessao_id"] = s.get("id", "?")
+                op_copy["ativo"] = s.get("ativo", "?")
+                todas_ops.append(op_copy)
+        
+        total_ops = len(todas_ops)
+        wins = sum(1 for op in todas_ops if op.get("resultado") == "WIN")
+        losses = total_ops - wins
+        win_rate = round(wins / total_ops * 100, 1) if total_ops > 0 else 0
+        total_pts = round(sum(op.get("pts", 0) for op in todas_ops), 1)
+        total_rs = round(sum(op.get("resultado_rs", 0) for op in todas_ops), 2)
+        
+        # Ganhos e perdas separados
+        ganhos_pts = sum(op.get("pts", 0) for op in todas_ops if op.get("resultado") == "WIN")
+        perdas_pts = abs(sum(op.get("pts", 0) for op in todas_ops if op.get("resultado") == "LOSS"))
+        fator_lucro = round(ganhos_pts / perdas_pts, 2) if perdas_pts > 0 else (999 if ganhos_pts > 0 else 0)
+        
+        # Métricas por modo
+        def calc_metricas_modo(sessoes):
+            ops_m = []
+            for s in sessoes:
+                ops_m.extend(s.get("operacoes", []))
+            t = len(ops_m)
+            w = sum(1 for op in ops_m if op.get("resultado") == "WIN")
+            pts = round(sum(op.get("pts", 0) for op in ops_m), 1)
+            rs = round(sum(op.get("resultado_rs", 0) for op in ops_m), 2)
+            return {
+                "sessoes": len(sessoes),
+                "total_ops": t,
+                "wins": w,
+                "losses": t - w,
+                "win_rate": round(w / t * 100, 1) if t > 0 else 0,
+                "total_pts": pts,
+                "total_rs": rs,
+            }
+        
+        # Métricas por ativo
+        ativos_no_dia = list(set(s.get("ativo", "WIN") for s in sessoes_hoje))
+        metricas_por_ativo = {}
+        for at in ativos_no_dia:
+            ops_at = [op for op in todas_ops if op.get("ativo") == at]
+            t = len(ops_at)
+            w = sum(1 for op in ops_at if op.get("resultado") == "WIN")
+            pts = round(sum(op.get("pts", 0) for op in ops_at), 1)
+            rs = round(sum(op.get("resultado_rs", 0) for op in ops_at), 2)
+            metricas_por_ativo[at] = {
+                "total_ops": t, "wins": w, "losses": t - w,
+                "win_rate": round(w / t * 100, 1) if t > 0 else 0,
+                "total_pts": pts, "total_rs": rs,
+            }
+        
+        # Melhor e pior trade
+        melhor = max(todas_ops, key=lambda x: x.get("pts", 0)) if todas_ops else None
+        pior = min(todas_ops, key=lambda x: x.get("pts", 0)) if todas_ops else None
+        
+        # Análise por horário
+        por_hora = {}
+        for op in todas_ops:
+            h = op.get("hora_entrada", "00:00")[:2]
+            if h not in por_hora:
+                por_hora[h] = {"total": 0, "wins": 0, "pts": 0}
+            por_hora[h]["total"] += 1
+            if op.get("resultado") == "WIN":
+                por_hora[h]["wins"] += 1
+            por_hora[h]["pts"] += op.get("pts", 0)
+        for h in por_hora:
+            por_hora[h]["win_rate"] = round(por_hora[h]["wins"] / por_hora[h]["total"] * 100) if por_hora[h]["total"] > 0 else 0
+            por_hora[h]["pts"] = round(por_hora[h]["pts"], 1)
+        
+        # Análise por setup
+        por_setup = {}
+        for op in todas_ops:
+            setup = op.get("conf_label", "?")
+            if setup not in por_setup:
+                por_setup[setup] = {"total": 0, "wins": 0, "pts": 0}
+            por_setup[setup]["total"] += 1
+            if op.get("resultado") == "WIN":
+                por_setup[setup]["wins"] += 1
+            por_setup[setup]["pts"] += op.get("pts", 0)
+        for s in por_setup:
+            por_setup[s]["win_rate"] = round(por_setup[s]["wins"] / por_setup[s]["total"] * 100) if por_setup[s]["total"] > 0 else 0
+            por_setup[s]["pts"] = round(por_setup[s]["pts"], 1)
+        
+        # Erros mais comuns do dia
+        erros_dia = []
+        for op in todas_ops:
+            if op.get("resultado") == "LOSS" and op.get("detalhes_perda"):
+                erros_dia.append({
+                    "hora": op.get("hora_entrada", "?"),
+                    "tipo": op.get("tipo", "?"),
+                    "pts": op.get("pts", 0),
+                    "detalhes": op.get("detalhes_perda", "")[:200],
+                    "modo": op.get("modo", "?"),
+                })
+        
+        # Memória inteligente
+        mem_info = {
+            "total_erros_memoria": len(learning.get("memoria_erros", [])),
+            "regras_ativas": len(learning.get("regras_aprendidas", [])),
+            "win_rate_global": learning.get("win_rate_global", 0),
+            "total_ops_global": learning.get("total_operacoes", 0),
+            "regras": learning.get("regras_aprendidas", [])[:10],
+        }
+        
+        # Histórico dos últimos 7 dias
+        todas_datas = sorted(set(s.get("data", "") for s in historico if s.get("data")),
+                            key=lambda d: datetime.strptime(d, "%d/%m/%Y") if d else datetime.min)
+        historico_7d = []
+        for dt in todas_datas[-7:]:
+            sess_dt = [s for s in historico if s.get("data") == dt]
+            ops_dt = []
+            for s in sess_dt:
+                ops_dt.extend(s.get("operacoes", []))
+            t_dt = len(ops_dt)
+            w_dt = sum(1 for op in ops_dt if op.get("resultado") == "WIN")
+            pts_dt = round(sum(op.get("pts", 0) for op in ops_dt), 1)
+            historico_7d.append({
+                "data": dt,
+                "total_ops": t_dt,
+                "wins": w_dt,
+                "win_rate": round(w_dt / t_dt * 100, 1) if t_dt > 0 else 0,
+                "total_pts": pts_dt,
+            })
+        
+        # Veredicto do dia
+        if total_ops == 0:
+            veredicto = "SEM OPERAÇÕES"
+            veredicto_detalhe = "Nenhuma operação realizada hoje."
+            nota = 0
+        elif win_rate >= 70 and total_pts > 0:
+            veredicto = "DIA EXCELENTE"
+            veredicto_detalhe = f"Win rate de {win_rate}% com lucro de {total_pts}pts. Bellafiore: dia do PlayBook!"
+            nota = 5
+        elif win_rate >= 55 and total_pts > 0:
+            veredicto = "DIA BOM"
+            veredicto_detalhe = f"Acima de 55% de acerto e lucrativo. Consistência é o caminho."
+            nota = 4
+        elif total_pts > 0:
+            veredicto = "DIA POSITIVO"
+            veredicto_detalhe = f"Lucro no dia apesar de WR abaixo de 55%. R:R compensou."
+            nota = 3
+        elif total_pts == 0:
+            veredicto = "DIA NEUTRO"
+            veredicto_detalhe = "Zero a zero. Axiomas: preservou capital."
+            nota = 2
+        else:
+            veredicto = "DIA DE PREJUÍZO"
+            veredicto_detalhe = f"Perda de {abs(total_pts)}pts. Revisar erros e ajustar amanhã."
+            nota = 1
+        
+        return {
+            "data": hoje_str,
+            "veredicto": veredicto,
+            "veredicto_detalhe": veredicto_detalhe,
+            "nota": nota,
+            "consolidado": {
+                "total_sessoes": len(sessoes_hoje),
+                "total_operacoes": total_ops,
+                "wins": wins,
+                "losses": losses,
+                "win_rate": win_rate,
+                "total_pts": total_pts,
+                "total_rs": total_rs,
+                "fator_lucro": fator_lucro,
+                "ganhos_pts": round(ganhos_pts, 1),
+                "perdas_pts": round(perdas_pts, 1),
+            },
+            "por_modo": {
+                "simulador_real": calc_metricas_modo(sessoes_simreal),
+                "centro_treinamento": calc_metricas_modo(sessoes_ct),
+                "operador": calc_metricas_modo(sessoes_operador),
+            },
+            "por_ativo": metricas_por_ativo,
+            "por_hora": por_hora,
+            "por_setup": por_setup,
+            "melhor_trade": {
+                "tipo": melhor.get("tipo"), "hora": melhor.get("hora_entrada"),
+                "pts": melhor.get("pts"), "setup": melhor.get("conf_label"),
+                "motivos": melhor.get("motivos", [])[:3],
+            } if melhor else None,
+            "pior_trade": {
+                "tipo": pior.get("tipo"), "hora": pior.get("hora_entrada"),
+                "pts": pior.get("pts"), "setup": pior.get("conf_label"),
+                "detalhes": pior.get("detalhes_perda", "")[:200],
+            } if pior else None,
+            "erros_dia": erros_dia[:10],
+            "memoria": mem_info,
+            "historico_7d": historico_7d,
+            "operacoes": [{
+                "tipo": op.get("tipo"), "hora_entrada": op.get("hora_entrada"),
+                "hora_saida": op.get("hora_saida"), "resultado": op.get("resultado"),
+                "pts": op.get("pts"), "resultado_rs": op.get("resultado_rs"),
+                "score": op.get("score"), "conf_label": op.get("conf_label"),
+                "modo": op.get("modo"), "ativo": op.get("ativo"),
+                "motivos": op.get("motivos", [])[:3],
+                "detalhes_perda": op.get("detalhes_perda", "")[:150],
+                "detalhes_vitoria": op.get("detalhes_vitoria", "")[:150],
+            } for op in todas_ops],
+        }
+    except Exception as e:
+        logger.error(f"Erro no relatorio-dia: {e}")
+        import traceback
+        traceback.print_exc()
+        return JSONResponse({"erro": str(e)}, status_code=500)
 
 
 @app.get("/api/heatmap")
