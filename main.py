@@ -330,7 +330,7 @@ templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
 
 @app.get("/api/version")
 async def api_version():
-    return {"version": "3.7.2", "build": "20260505b", "changes": "memoria_persistente_replay,alerta_erros_similares,gravar_todo_trade_ct"}
+    return {"version": "3.7.3", "build": "20260505c", "changes": "memoria_persistente_replay,alerta_erros_similares,gravar_todo_trade_ct"}
 
 @app.get("/", response_class=HTMLResponse)
 async def dashboard(request: Request):
@@ -3294,6 +3294,30 @@ async def operador_registrar_trade(request: Request):
         LOSS_LIMIT = -400 if ativo == "WIN" else -40
         if op_state["total_pts"] <= LOSS_LIMIT:
             op_state["dia_bloqueado"] = True
+        
+        # Salvar no histórico persistente
+        try:
+            from datetime import timezone, timedelta
+            BRT_tz2 = timezone(timedelta(hours=-3))
+            hoje_str = datetime.now(BRT_tz2).strftime("%d/%m/%Y")
+            registrar_historico_completo(
+                ativo=ativo,
+                data_sessao=hoje_str,
+                modo="OPERADOR",
+                operacoes=[trade],
+                performance={
+                    "total_operacoes": len(op_state["operacoes"]),
+                    "wins": sum(1 for t in op_state["operacoes"] if t.get("resultado") == "WIN"),
+                    "losses": sum(1 for t in op_state["operacoes"] if t.get("resultado") != "WIN"),
+                    "win_rate": round(sum(1 for t in op_state["operacoes"] if t.get("resultado") == "WIN") / max(len(op_state["operacoes"]),1) * 100),
+                    "total_pts": op_state["total_pts"],
+                    "total_rs": round(op_state["total_pts"] * valor_ponto, 2),
+                    "fator_lucro": 0,
+                },
+            )
+            logger.info(f"Operador trade salvo no histórico: {trade['resultado']} {trade['pts']}pts")
+        except Exception as he:
+            logger.error(f"Erro salvando trade do operador no histórico: {he}")
         
         return JSONResponse({"ok": True, "total_ops": len(op_state["operacoes"]), "total_pts": op_state["total_pts"]})
     except Exception as e:

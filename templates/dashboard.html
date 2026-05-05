@@ -3896,6 +3896,8 @@ function abrirSimuladorReal() {
     simRealCheckMarket();
     // Start live operator (always, works both open and closed)
     operadorLiveInit();
+    // Auto-load historico
+    setTimeout(function() { carregarHistorico(); }, 500);
 }
 function fecharSimuladorReal() {
     var _sro2 = document.getElementById('simRealOverlay'); if(_sro2) _sro2.style.display = 'none';
@@ -4813,6 +4815,7 @@ async function simRealAnalisar() {
         var _opsEl = document.getElementById('simRealOps'); if(_opsEl) _opsEl.innerHTML = oH;
         
         // ===== PROGRESSIVE OP RENDERING =====
+        carregarHistorico(); // Auto-refresh historico after analysis
         if (window._simRealOpsQueue && window._simRealOpsQueue.length > 0) {
             _renderOpsProgressively(window._simRealOpsQueue, window._simRealPerfData);
         }
