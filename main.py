@@ -2730,7 +2730,7 @@ async def operador_monitor(ativo: str = Query("WIN")):
 
 
 @app.get("/api/operador-live")
-async def operador_live(ativo: str = Query("WIN"), max_entradas: int = Query(5), forcar_entrada: bool = Query(False)):
+async def operador_live(ativo: str = Query("WIN"), max_entradas: int = Query(10), forcar_entrada: bool = Query(False)):
     """
     OPERADOR SENIOR LIVE - Análise em TEMPO REAL
     
@@ -2926,14 +2926,12 @@ async def operador_live(ativo: str = Query("WIN"), max_entradas: int = Query(5),
         try:
             noticias_dia = obter_noticias_do_dia()
             news_impact = avaliar_impacto_noticias(hora_atual, ativo, tipo_sinal, noticias_dia)
-            if news_impact["bloquear"] and operar:
-                operar = False
-                motivos_nao_operar.append(f"NOTÍCIA: {news_impact['motivo']}")
-            elif news_impact["modificador_score"] < 0:
-                score = max(0, score + news_impact["modificador_score"])
-                if score < 4 and operar:
-                    operar = False
-                    motivos_nao_operar.append(f"Score caiu para {score}/7 por notícia")
+            if news_impact["bloquear"]:
+                # Notícia não cancela - avisa e reduz sizing
+                motivos_operar.append(f"⚠️ NOTÍCIA: {news_impact['motivo']} - SIZING REDUZIDO")
+            if news_impact["modificador_score"] < 0:
+                score = max(1, score + news_impact["modificador_score"])
+                motivos_operar.append(f"Score ajustado {score}/7 (notícia)")
         except: pass
         
         # ===== IDENTIFICAR SETUP DO PLAYBOOK =====
@@ -2941,12 +2939,13 @@ async def operador_live(ativo: str = Query("WIN"), max_entradas: int = Query(5),
         
         # ===== FILTRO DE JANELA =====
         if janela_qual == "RUIM" and operar:
-            if conf_label in ("C+", "SKIP"):
+            if conf_label == "SKIP":
                 operar = False
-                motivos_nao_operar.append(f"Horário {janela_nome} exige no mínimo B+")
-            elif conf_label == "B+" and score < 5:
-                operar = False
-                motivos_nao_operar.append(f"B+ em horário ruim precisa 5+ confluências")
+                motivos_nao_operar.append(f"Setup SKIP em {janela_nome} - sem condições mínimas")
+            elif conf_label in ("C+", "C"):
+                motivos_operar.append(f"⚠️ {janela_nome} ({janela_qual}) + {conf_label} = sizing mínimo (1 contrato)")
+            elif conf_label == "B+" and score < 4:
+                motivos_operar.append(f"⚠️ B+ em {janela_nome} com {score}/7 - cautela no sizing")
         
         # ===== FORÇAR ENTRADA (botão FORÇAR ENTRADA) =====
         # Quando forcar=True, entra AGORA se tiver qualquer direção detectada

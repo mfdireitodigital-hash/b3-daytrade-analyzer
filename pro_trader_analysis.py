@@ -405,13 +405,16 @@ def detectar_setup_profissional(
     contra_tendencia = False
     if direcao and confluencia.get("tendencia_tf_maior") is False:
         if tend_macro["tendencia"] != "LATERAL":
-            contra_tendencia = True
-            if total_confluencia < 5:
-                # Mantém qualidade real mas sinaliza risco
-                motivos_nao_operar.append(f"Contra tendência macro ({tend_macro['tendencia']}) - cuidado extra")
+            if total_confluencia < 3:
+                contra_tendencia = True
+                motivos_nao_operar.append(f"Contra tendência macro ({tend_macro['tendencia']}) com apenas {total_confluencia}/7 - risco alto")
+            elif total_confluencia < 5:
+                # Permite mas avisa - sizing reduzido
+                contra_tendencia = False
+                motivos_operar.append(f"Contra tendência macro ({tend_macro['tendencia']}) mas {total_confluencia}/7 confluências = PERMITIDO (sizing -50%)")
             else:
-                contra_tendencia = False  # 5+ confluências = ok mesmo contra
-                motivos_operar.append("Contra tendência macro mas confluência forte (5+) = permitido")
+                contra_tendencia = False
+                motivos_operar.append("Contra tendência macro mas confluência forte (5+) = tamanho cheio")
     
     # ===== FILTRO REPETIÇÃO DE ENTRADA =====
     # Bellafiore: "Second chance" - não repita no mesmo nível
