@@ -1710,6 +1710,11 @@ async function ptCarregarMelhoresEntradas() {
         const label = document.getElementById('ptMelhoresLabel');
         if (label) label.textContent = 'Pregao ' + data.dia + ' | ' + data.contrato;
         
+        // Aviso de replay quando mercado aberto mas sem dados de hoje
+        if (data.aviso_replay) {
+            container.innerHTML = '<div style="background:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.3);border-radius:8px;padding:12px;margin-bottom:10px;font-size:12px;color:#fbbf24;text-align:center;"><strong>⚠️ REPLAY DO ÚLTIMO PREGÃO</strong><br><span style="font-size:11px;color:var(--text-muted);">' + data.aviso_replay + '</span></div>';
+        }
+        
         // Filter velas with score >= 4 (OPERAR with good confluence)
         const boas = (data.velas || []).filter(v => v.score >= 4 && v.decisao === 'OPERAR');
         const ops = data.operacoes || [];

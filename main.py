@@ -3372,6 +3372,7 @@ async def simulador_real(ativo: str = Query("WIN"), max_entradas: int = Query(5)
         dates = sorted(set(dados.index.date))
         
         # ===== MODO LIVE vs REPLAY =====
+        aviso_replay = None
         modo_live = False
         dia_analise = None
         dia_anterior = hoje  # default para modo live
@@ -3383,6 +3384,8 @@ async def simulador_real(ativo: str = Query("WIN"), max_entradas: int = Query(5)
                 day_indices = today_indices
                 modo_live = True
                 logger.info(f"SimReal LIVE: {len(day_indices)} candles de hoje {hoje}")
+            else:
+                aviso_replay = f"Mercado aberto mas dados de hoje ainda não disponíveis no yfinance. Mostrando replay do último pregão."
         
         if not modo_live:
             dia_anterior = None
@@ -4228,16 +4231,18 @@ async def treinamento_ia(ativo: str = Query("WIN")):
         dia_analise = None
         dia_anterior = hoje  # default para modo live
         
+        aviso_replay = None
         if mercado_aberto():
             today_indices = [i for i, d in enumerate(dados.index.date) if d == hoje and 9 <= dados.index[i].hour < 18]
-            if len(today_indices) >= 2:  # pelo menos 2 candles de 5min
+            if len(today_indices) >= 2:
                 dia_analise = hoje
                 day_indices = today_indices
                 modo_live = True
-                logger.info(f"SimReal LIVE: {len(day_indices)} candles de hoje {hoje}")
+                logger.info(f"CT/SimReal LIVE: {len(day_indices)} candles de hoje {hoje}")
+            else:
+                aviso_replay = f"Mercado aberto mas dados de hoje ainda não disponíveis no yfinance. Mostrando replay do último pregão para treino."
         
         if not modo_live:
-            # Fallback: dia anterior (replay) - skip weekends/holidays with no market data
             dia_anterior = None
             for d in reversed(dates):
                 if d < hoje:
