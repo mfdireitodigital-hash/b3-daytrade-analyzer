@@ -2751,7 +2751,7 @@ async def operador_live(ativo: str = Query("WIN"), max_entradas: int = Query(5),
         ativo = ativo.upper()
         ticker = "^BVSP" if ativo == "WIN" else "USDBRL=X"
         valor_ponto = 0.20 if ativo == "WIN" else 10.00
-        max_entradas = max(1, min(max_entradas, 15))
+        max_entradas = max(1, max_entradas)
         agora = datetime.now(BRT_tz)
         hoje = agora.date()
         hora_atual = agora.strftime("%H:%M")
@@ -3334,7 +3334,7 @@ async def simulador_real(ativo: str = Query("WIN"), max_entradas: int = Query(5)
         ativo = ativo.upper()
         ticker = "^BVSP" if ativo == "WIN" else "USDBRL=X"
         valor_ponto = 0.20 if ativo == "WIN" else 10.00
-        max_entradas = max(1, min(max_entradas, 15))  # clamp 1-15
+        max_entradas = max(1, max_entradas)
         
         from data_provider import obter_contrato_vigente as _ocv
         contrato_info = _ocv(ativo)
