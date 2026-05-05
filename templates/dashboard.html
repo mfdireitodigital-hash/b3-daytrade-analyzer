@@ -4991,18 +4991,25 @@ function _renderOpsSummary(container, perf) {
     requestAnimationFrame(() => { sum.style.opacity = '1'; sum.style.transform = 'scale(1)'; });
 }
 
-// Service Worker: limpar caches antigos e registrar v21
+// Service Worker: desregistrar SWs antigos, limpar caches, registrar v21
 if ('serviceWorker' in navigator) {
-    // Primeiro: limpar todos os caches antigos
-    if (window.caches) {
-        caches.keys().then(function(names) {
-            names.forEach(function(name) { caches.delete(name); });
-        });
-    }
-    // Registrar SW limpo
-    navigator.serviceWorker.register('/static/sw.js').then(function(r) {
-        r.update();
-    }).catch(function(){});
+    // Desregistrar TODOS os SWs antigos primeiro
+    navigator.serviceWorker.getRegistrations().then(function(regs) {
+        regs.forEach(function(reg) { reg.unregister(); });
+    }).then(function() {
+        // Limpar todos os caches
+        if (window.caches) {
+            caches.keys().then(function(names) {
+                names.forEach(function(name) { caches.delete(name); });
+            });
+        }
+        // Re-registrar SW limpo apos limpeza
+        setTimeout(function() {
+            navigator.serviceWorker.register("/static/sw.js").then(function(r) {
+                r.update();
+            }).catch(function(){});
+        }, 1000);
+    });
 }
 
 document.addEventListener('DOMContentLoaded', _startOperadorBackground);
@@ -5383,7 +5390,7 @@ function updateSafetyBar(seguro, data) {
             const resp = await fetch('/api/historico-simulador?ativo=' + ativo + '&limite=30');
             const data = await resp.json();
             if (!data.sessoes || data.sessoes.length === 0) {
-                el.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-muted);">Nenhuma sessao registrada ainda.</div>';
+                el.innerHTML = '<div style="text-align:center;padding:20px;"><div style="font-size:24px;margin-bottom:8px;">📊</div><div style="color:var(--text-muted);font-size:12px;">Nenhuma sessao registrada ainda</div><div style="color:#f59e0b;font-size:10px;margin-top:6px;">Use o Simulador Real ou Centro de Treinamento para gerar historico</div></div>';
                 return;
             }
             let h = '';

@@ -330,11 +330,15 @@ templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
 
 @app.get("/api/version")
 async def api_version():
-    return {"version": "3.7.3", "build": "20260505c", "changes": "memoria_persistente_replay,alerta_erros_similares,gravar_todo_trade_ct"}
+    return {"version": "3.7.3", "build": "20260505d", "changes": "memoria_persistente_replay,alerta_erros_similares,gravar_todo_trade_ct"}
 
 @app.get("/", response_class=HTMLResponse)
 async def dashboard(request: Request):
-    return templates.TemplateResponse("dashboard.html", {"request": request})
+    resp = templates.TemplateResponse("dashboard.html", {"request": request})
+    resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    resp.headers["Pragma"] = "no-cache"
+    resp.headers["Expires"] = "0"
+    return resp
 
 
 @app.get("/api/analise")
