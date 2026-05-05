@@ -4977,6 +4977,16 @@ function _renderOpsSummary(container, perf) {
     requestAnimationFrame(() => { sum.style.opacity = '1'; sum.style.transform = 'scale(1)'; });
 }
 
+// Force Service Worker update on every page load
+if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.getRegistrations().then(function(registrations) {
+        registrations.forEach(function(reg) { reg.update(); });
+    });
+    navigator.serviceWorker.addEventListener('controllerchange', function() {
+        console.log('SW updated - page will use new version on next load');
+    });
+}
+
 document.addEventListener('DOMContentLoaded', _startOperadorBackground);
 
 async function operadorEntrar(forcar) {
