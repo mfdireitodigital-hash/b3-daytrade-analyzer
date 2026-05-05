@@ -330,7 +330,7 @@ templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
 
 @app.get("/api/version")
 async def api_version():
-    return {"version": "3.7.3", "build": "20260505d", "changes": "memoria_persistente_replay,alerta_erros_similares,gravar_todo_trade_ct"}
+    return {"version": "3.7.3", "build": "20260505e", "changes": "memoria_inteligente_bloqueio,aprender_erros,regras_auto"}
 
 @app.get("/", response_class=HTMLResponse)
 async def dashboard(request: Request):
@@ -3851,6 +3851,71 @@ async def simulador_real(ativo: str = Query("WIN"), max_entradas: int = Query(5)
                 continue
             
             # ================================================================
+            # MEMÓRIA INTELIGENTE - CONSULTA ANTES DE ENTRAR (Douglas + Tendler)
+            # "Quem não aprende com os erros está condenado a repeti-los"
+            # ================================================================
+            alerta_memoria = None
+            memoria_bloqueou = False
+            try:
+                mem_op = {
+                    "tipo": tipo_sinal,
+                    "hora_entrada": hora,
+                    "tendencia": tend,
+                    "rsi": rsi_v,
+                    "macd_hist": macd_h,
+                    "score": score,
+                    "conf_label": conf_label,
+                    "motivos": motivos_operar[:5],
+                }
+                mem_check = consultar_memoria(mem_op)
+                if mem_check and mem_check.get("tem_alerta"):
+                    alerta_memoria = mem_check
+                    alertas = mem_check.get("alertas", [])
+                    # Similaridade >= 85%: BLOQUEIA a entrada (já errou assim antes)
+                    if alertas and alertas[0]["similaridade"] >= 85:
+                        memoria_bloqueou = True
+                        motivos_nao_operar.append(
+                            f"🧠 MEMÓRIA BLOQUEOU: {alertas[0]['similaridade']}% similar a erro anterior - "
+                            f"{alertas[0].get('licao', 'padrão já deu loss')}"
+                        )
+                        decisoes_operador.append(
+                            f"[{hora}] 🧠 MEMÓRIA INTELIGENTE BLOQUEOU: "
+                            f"{tipo_sinal} {conf_label} {score}/7 - "
+                            f"Similaridade {alertas[0]['similaridade']}% com erro de {alertas[0].get('erro_data', '?')}. "
+                            f"Lição: {alertas[0].get('licao', '?')}"
+                        )
+                        continue  # PULA esta entrada
+                    # Similaridade 70-84%: ALERTA mas permite (com score reduzido)
+                    elif alertas and alertas[0]["similaridade"] >= 70:
+                        score = max(score - 1, 0)
+                        motivos_nao_operar.append(
+                            f"⚠ MEMÓRIA: {alertas[0]['similaridade']}% similar a erro - "
+                            f"score reduzido. {alertas[0].get('licao', '')}"
+                        )
+                        # Se score caiu abaixo de 4, não opera
+                        if score < 4:
+                            memoria_bloqueou = True
+                            motivos_nao_operar.append(f"Score caiu para {score}/7 após penalidade de memória")
+                            decisoes_operador.append(
+                                f"[{hora}] ⚠ MEMÓRIA penalizou score para {score}/7 - entrada cancelada"
+                            )
+                            continue
+                
+                # Verificar regras aprendidas
+                regras = mem_check.get("regras_ativas", []) if mem_check else []
+                for regra in regras:
+                    if regra.get("tipo") == "CUIDADO":
+                        motivos_nao_operar.append(f"📋 REGRA: {regra.get('descricao', '')}")
+                        score = max(score - 1, 0)
+                        if score < 4:
+                            decisoes_operador.append(
+                                f"[{hora}] 📋 REGRA APRENDIDA bloqueou: {regra.get('descricao', '')}"
+                            )
+                            continue
+            except Exception as mem_err:
+                logger.error(f"Erro consultando memória: {mem_err}")
+            
+            # ================================================================
             # STOP E ALVO PRO (Elder + Murphy)
             # ================================================================
             stop_pts = round(atr_v * 1.5, 4) if ativo != 'WIN' else round(atr_v * 1.5)
@@ -4164,6 +4229,51 @@ async def simulador_real(ativo: str = Query("WIN"), max_entradas: int = Query(5)
                 motivo_parada = f"{MAX_LOSSES_CONSECUTIVOS} losses consecutivos. Tendler: identificar tilt antes de continuar."
                 decisoes_operador.append(f"[{hora_saida}] PARADA: {motivo_parada}")
             
+            # ================================================================
+            # GRAVAR NA MEMÓRIA INTELIGENTE (cada trade individual)
+            # ================================================================
+            try:
+                op_mem = {
+                    "tipo": tipo_sinal,
+                    "hora_entrada": hora_op,
+                    "hora_saida": hora_saida,
+                    "resultado": resultado,
+                    "pts": pts,
+                    "resultado_rs": rs,
+                    "tendencia": tend,
+                    "rsi": rsi_v,
+                    "macd_hist": macd_h,
+                    "score": score,
+                    "conf_label": conf_label,
+                    "motivos": motivos_operar[:5],
+                    "detalhes_perda": detalhes_perda if resultado == "LOSS" else "",
+                    "detalhes_vitoria": detalhes_vitoria if resultado == "WIN" else "",
+                    "janela": janela_nome,
+                    "janela_qualidade": janela_qual,
+                    "setup_playbook": setup_playbook_nome,
+                    "vwap": round(vwap, 0) if vwap else None,
+                    "suporte": round(suporte, 0) if suporte else None,
+                    "resistencia": round(resistencia, 0) if resistencia else None,
+                }
+                mem_resultado = registrar_trade_replay(ativo, op_mem)
+                logger.info(
+                    f"SimReal MEMÓRIA: {resultado} {pts}pts gravado | "
+                    f"Total ops: {mem_resultado.get('total_operacoes')} | "
+                    f"WR: {mem_resultado.get('win_rate_global')}% | "
+                    f"Erros na memória: {mem_resultado.get('memoria_erros')}"
+                )
+                # Guardar alerta de memória na operação para o frontend
+                if alerta_memoria and alerta_memoria.get("tem_alerta"):
+                    operacoes_recomendadas[-1]["alerta_memoria"] = {
+                        "alertas": alerta_memoria["alertas"][:2],
+                        "total_erros": alerta_memoria.get("total_erros_memoria", 0),
+                    }
+                # Guardar licao da memória
+                if resultado == "LOSS" and mem_resultado.get("licao"):
+                    operacoes_recomendadas[-1]["licao_memoria"] = mem_resultado["licao"]
+            except Exception as mem_save_err:
+                logger.error(f"Erro gravando trade na memória: {mem_save_err}")
+            
             posicao_aberta = {"close_idx": future_start + velas_na_op + cooldown_velas}
         
         # ================================================================
@@ -4240,6 +4350,15 @@ async def simulador_real(ativo: str = Query("WIN"), max_entradas: int = Query(5)
             "modo": _modo,
             "mercado_aberto": _mercado_aberto,
             "aprendizado": aprendizado,
+            "memoria_inteligente": {
+                "total_erros_gravados": aprendizado.get("memoria_erros_total", 0),
+                "regras_aprendidas": len(aprendizado.get("regras_aprendidas", [])),
+                "win_rate_global": aprendizado.get("win_rate_global", 0),
+                "total_operacoes_historico": aprendizado.get("total_operacoes", 0),
+                "trades_bloqueados_memoria": sum(1 for d in decisoes_operador if "MEMÓRIA" in d and "BLOQUEOU" in d),
+                "trades_penalizados_memoria": sum(1 for d in decisoes_operador if "MEMÓRIA penalizou" in d),
+                "regras_detalhes": aprendizado.get("regras_aprendidas", [])[:5],
+            },
             "max_entradas_config": max_entradas,
             "briefing_operador": briefing,
             "decisoes_operador": decisoes_operador,

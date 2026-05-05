@@ -1778,6 +1778,20 @@ async function ptCarregarMelhoresEntradas() {
                     h += '<span style="font-weight:800;color:#22c55e;">POR QUE GANHEI: </span>' + op.detalhes_vitoria;
                     h += '</div>';
                 }
+                // MEMÓRIA INTELIGENTE - alertas
+                if (op.alerta_memoria && op.alerta_memoria.alertas && op.alerta_memoria.alertas.length > 0) {
+                    h += '<div style="background:rgba(168,85,247,0.08);border:1px solid rgba(168,85,247,0.3);border-radius:4px;padding:8px;margin-top:6px;font-size:10px;">';
+                    h += '<span style="font-weight:900;color:#a855f7;">MEMORIA INTELIGENTE: </span>';
+                    op.alerta_memoria.alertas.forEach(function(al) {
+                        h += '<div style="color:#c084fc;margin-top:3px;">Similaridade ' + al.similaridade + '% com erro de ' + (al.erro_data||'?') + ' - ' + (al.licao||'') + '</div>';
+                    });
+                    h += '</div>';
+                }
+                if (op.licao_memoria) {
+                    h += '<div style="background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.3);border-radius:4px;padding:6px 8px;margin-top:4px;font-size:10px;color:#fbbf24;">';
+                    h += '<span style="font-weight:900;">LICAO APRENDIDA: </span>' + op.licao_memoria;
+                    h += '</div>';
+                }
             });
         }
         
@@ -4499,7 +4513,9 @@ async function simRealAnalisar() {
             _decisoesDiv.style.display = 'block';
             _decisoesContent.innerHTML = simRes.decisoes_operador.map(d => {
                 let cor = 'var(--text-muted)';
-                if (d.includes('ENTRAR')) cor = '#22c55e';
+                if (d.includes('MEMÓRIA') && d.includes('BLOQUEOU')) cor = '#a855f7';
+                else if (d.includes('MEMÓRIA') || d.includes('REGRA APRENDIDA')) cor = '#c084fc';
+                else if (d.includes('ENTRAR')) cor = '#22c55e';
                 else if (d.includes('LOSS')) cor = '#ef4444';
                 else if (d.includes('WIN!')) cor = '#22c55e';
                 else if (d.includes('BLOQUEADO') || d.includes('PARADA')) cor = '#f59e0b';
@@ -4551,6 +4567,31 @@ async function simRealAnalisar() {
             if(veredEl) { veredEl.innerHTML = 'SEM OPORTUNIDADES CLARAS'; veredEl.style.color = '#ca8a04'; }
             if(veredSub) { veredSub.textContent = 'Nenhum setup atingiu confluencia 4/7 neste pregao. Dia de ficar de fora.'; }
             var _vb2 = document.getElementById('simRealVeredicto'); if(_vb2) _vb2.style.borderColor = '#ca8a04';
+        }
+        
+        // ---- PAINEL MEMÓRIA INTELIGENTE ----
+        var mem = simRes.memoria_inteligente;
+        if (mem && (mem.total_erros_gravados > 0 || mem.trades_bloqueados_memoria > 0)) {
+            var memHtml = '<div style="background:linear-gradient(135deg,rgba(168,85,247,0.08),rgba(139,92,246,0.05));border:1px solid rgba(168,85,247,0.3);border-radius:10px;padding:12px;margin:10px 0;">';
+            memHtml += '<div style="font-size:11px;font-weight:900;color:#a855f7;margin-bottom:8px;">MEMORIA INTELIGENTE</div>';
+            memHtml += '<div style="display:flex;justify-content:space-around;text-align:center;flex-wrap:wrap;gap:6px;">';
+            memHtml += '<div><div style="font-size:16px;font-weight:900;color:#a855f7;">' + (mem.total_erros_gravados||0) + '</div><div style="font-size:9px;color:var(--text-muted);">ERROS NA MEMORIA</div></div>';
+            memHtml += '<div><div style="font-size:16px;font-weight:900;color:#c084fc;">' + (mem.regras_aprendidas||0) + '</div><div style="font-size:9px;color:var(--text-muted);">REGRAS CRIADAS</div></div>';
+            memHtml += '<div><div style="font-size:16px;font-weight:900;color:#ef4444;">' + (mem.trades_bloqueados_memoria||0) + '</div><div style="font-size:9px;color:var(--text-muted);">BLOQUEADOS</div></div>';
+            memHtml += '<div><div style="font-size:16px;font-weight:900;color:#f59e0b;">' + (mem.trades_penalizados_memoria||0) + '</div><div style="font-size:9px;color:var(--text-muted);">PENALIZADOS</div></div>';
+            memHtml += '<div><div style="font-size:16px;font-weight:900;color:' + ((mem.win_rate_global||0)>=55?'#22c55e':'#ef4444') + ';">' + (mem.win_rate_global||0) + '%</div><div style="font-size:9px;color:var(--text-muted);">WR GLOBAL</div></div>';
+            memHtml += '</div>';
+            if (mem.regras_detalhes && mem.regras_detalhes.length > 0) {
+                memHtml += '<div style="margin-top:8px;border-top:1px solid rgba(168,85,247,0.15);padding-top:6px;">';
+                mem.regras_detalhes.forEach(function(r) {
+                    var rCor = r.tipo === 'CUIDADO' ? '#ef4444' : '#22c55e';
+                    memHtml += '<div style="font-size:9px;color:' + rCor + ';padding:2px 0;">' + (r.tipo === 'CUIDADO' ? '🚫' : '✅') + ' ' + (r.descricao||'') + '</div>';
+                });
+                memHtml += '</div>';
+            }
+            memHtml += '</div>';
+            var _veredDiv = document.getElementById('simRealVeredicto');
+            if (_veredDiv) _veredDiv.insertAdjacentHTML('afterend', memHtml);
         }
         
         // ---- TRIPLE SCREEN (ultimo estado) ----
