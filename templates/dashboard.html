@@ -1231,7 +1231,7 @@
                     </div>
                     <button onclick="operadorLiveCheck()" style="padding:6px 14px;background:#22c55e;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:11px;font-weight:800;">ANALISAR AGORA</button>
                     <button onclick="operadorEntrar()" id="opBtnEntrar" style="padding:6px 14px;background:#6366f1;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:11px;font-weight:800;">ENTRAR NA PRÓXIMA</button>
-                    <button onclick="operadorLiveCheck(true)" style="padding:6px 14px;background:#f59e0b;color:#000;border:none;border-radius:6px;cursor:pointer;font-size:11px;font-weight:800;">FORÇAR ENTRADA</button>
+                    <button onclick="operadorEntrar(true)" style="padding:6px 14px;background:#f59e0b;color:#000;border:none;border-radius:6px;cursor:pointer;font-size:11px;font-weight:800;">FORÇAR ENTRADA</button>
                 </div>
             </div>
             <!-- Decisão principal -->
@@ -4785,14 +4785,14 @@ var _opLiveInterval = null;
 var _opLiveAtivo = 'WIN';
 
 function operadorLiveInit() {
-    // Start auto-refresh every 2 minutes
+    // Start auto-refresh - runs ALWAYS even in background tabs
     operadorLiveCheck();
     if (_opLiveInterval) clearInterval(_opLiveInterval);
     _opLiveInterval = setInterval(() => {
         operadorLiveCheck();
     }, 120000); // 2 min
     
-    // Keep operator alive when returning to tab
+    // When tab becomes visible, refresh immediately
     document.addEventListener('visibilitychange', function() {
         if (!document.hidden) {
             console.log('Tab visible - refreshing operator');
@@ -4801,16 +4801,46 @@ function operadorLiveInit() {
     });
 }
 
-async function operadorEntrar() {
-    // Botão "ENTRAR NA PRÓXIMA" - marca o operador para entrar no próximo setup
+// === BACKGROUND OPERATOR ENGINE ===
+// Runs every 2 min even when user is on other tabs (gráficos, CT, etc)
+// Uses a separate interval that never gets cleared
+var _opBgInterval = null;
+function _startOperadorBackground() {
+    if (_opBgInterval) return; // already running
+    _opBgInterval = setInterval(async () => {
+        try {
+            const maxEnt = document.getElementById('opLiveMaxEntradas')?.value || 10;
+            const res = await fetch('/api/operador-live?ativo=' + _opLiveAtivo + '&max_entradas=' + maxEnt);
+            const data = await res.json();
+            // Update dot indicator in header if exists
+            var headerDot = document.getElementById('opBgDot');
+            if (headerDot) {
+                if (data.status === 'ENTRADA') headerDot.style.background = '#22c55e';
+                else if (data.status === 'TRADE_ABERTO') headerDot.style.background = '#6366f1';
+                else headerDot.style.background = '#f59e0b';
+            }
+            // If ENTRADA found and we have aguardando_entrada or forcar, auto-register
+            if (data.status === 'ENTRADA' && data.trade_entry) {
+                console.log('🎯 BACKGROUND: Entrada encontrada!', data.trade_entry);
+            }
+            console.log('🔄 BG check:', data.status, data.hora_atual || '');
+        } catch(e) { console.log('BG check error:', e); }
+    }, 120000);
+    console.log('🟢 Operador background engine ATIVO - roda a cada 2min em QUALQUER aba');
+}
+// Start background engine on page load
+document.addEventListener('DOMContentLoaded', _startOperadorBackground);
+
+async function operadorEntrar(forcar) {
+    // Botão "ENTRAR NA PRÓXIMA" ou "FORÇAR ENTRADA"
     try {
         const btn = document.getElementById('opBtnEntrar');
-        if (btn) { btn.textContent = 'AGUARDANDO...'; btn.style.background = '#f59e0b'; btn.disabled = true; }
-        const r = await fetch('/api/operador-live/entrar', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ativo: _opLiveAtivo})});
+        if (btn) { btn.textContent = forcar ? 'FORÇANDO...' : 'AGUARDANDO...'; btn.style.background = '#f59e0b'; btn.disabled = true; }
+        const r = await fetch('/api/operador-live/entrar', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ativo: _opLiveAtivo, forcar: !!forcar})});
         const d = await r.json();
         console.log('Entrar response:', d);
-        // Force immediate check
-        setTimeout(() => operadorLiveCheck(), 500);
+        // Force immediate check with forcar flag
+        setTimeout(() => operadorLiveCheck(forcar), 500);
     } catch(e) { 
         console.error('Entrar error:', e);
         alert('Erro ao solicitar entrada: ' + e.message);

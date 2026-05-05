@@ -2574,13 +2574,17 @@ async def operador_entrar(request: Request):
     try:
         data = await request.json()
         ativo = data.get("ativo", "WIN").upper()
+        forcar = data.get("forcar", False)
         op_state = app_state["operador_live"][ativo]
         
         # Marcar como aguardando entrada
         op_state["aguardando_entrada"] = True
+        if forcar:
+            op_state["forcar_proxima"] = True
+            logger.info(f"FORÇAR PROXIMA ativado para {ativo} - background vai entrar na próxima")
         salvar_estado_operador()
         
-        return JSONResponse({"ok": True, "msg": f"Operador aguardando próximo setup para {ativo}..."})
+        return JSONResponse({"ok": True, "forcar": forcar, "msg": f"Operador {'FORÇANDO' if forcar else 'aguardando'} próximo setup para {ativo}..."})
     except Exception as e:
         return JSONResponse({"ok": False, "erro": str(e)})
 
@@ -2768,7 +2772,8 @@ async def operador_live(ativo: str = Query("WIN"), max_entradas: int = Query(10)
             op_state.update({
                 "operacoes": [], "total_pts": 0, "losses_consecutivos": 0,
                 "dia_bloqueado": False, "ultimo_trade_hora": None,
-                "cooldown_ate": None, "dia": str(hoje), "trade_ativo": None, "aguardando_entrada": False
+                "cooldown_ate": None, "dia": str(hoje), "trade_ativo": None, "aguardando_entrada": False,
+                "forcar_proxima": False
             })
             salvar_estado_operador()
         
@@ -2950,6 +2955,11 @@ async def operador_live(ativo: str = Query("WIN"), max_entradas: int = Query(10)
         # ===== FORÇAR ENTRADA (botão FORÇAR ENTRADA) =====
         # Quando forcar=True, entra AGORA se tiver qualquer direção detectada
         # O usuário decidiu forçar - relaxar TODOS os filtros exceto horário proibido
+        # Check persistent forcar flag (set by FORÇAR ENTRADA button, survives tab switch)
+        if not forcar_entrada and op_state.get("forcar_proxima"):
+            forcar_entrada = True
+            logger.info(f"FORÇAR PROXIMA ativo (flag persistente) - aplicando na análise atual")
+        
         if forcar_entrada and not operar:
             if tipo_sinal and score >= 1 and janela_qual != "PROIBIDO":
                 operar = True
@@ -3031,6 +3041,10 @@ async def operador_live(ativo: str = Query("WIN"), max_entradas: int = Query(10)
                 f"Operação #{len(op_state['operacoes'])+1} de {max_entradas}"
             )
             status = "ENTRADA"
+            # Clear forcar flag after successful entry
+            if op_state.get("forcar_proxima"):
+                op_state["forcar_proxima"] = False
+                salvar_estado_operador()
         else:
             # Dar parecer mesmo sem operar - NUNCA ficar mudo
             motivo_espera = motivos_nao_operar[0] if motivos_nao_operar else "Aguardando melhores condições"
