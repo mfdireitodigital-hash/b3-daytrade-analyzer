@@ -4623,27 +4623,53 @@ async def treinamento_ia(ativo: str = Query("WIN")):
                 licao_treino = ""
                 
                 if resultado == "LOSS":
-                    detalhes_perda = f"STOP em {hora_saida} | -{round(abs(pts),1)}pts | "
-                    if setup["contra_tendencia"]:
-                        detalhes_perda += "CONTRA TENDÊNCIA - confirma que Elder tinha razão. "
-                        licao_treino = "Aprendizado: não operar contra tendência macro no Simulador Real"
-                    elif score <= 3:
-                        detalhes_perda += f"Setup fraco ({conf_label}, {score}/7). "
-                        licao_treino = "Aprendizado: C+ não é confiável - no Simulador Real, mínimo B+"
-                    else:
-                        detalhes_perda += f"Setup {conf_label} mas mercado não respondeu. "
-                        licao_treino = "Loss com setup correto faz parte (Douglas)"
-                    if alerta_memoria and alerta_memoria["tem_alerta"]:
-                        licao_treino += f" | MEMÓRIA ALERTOU: {alerta_memoria['alertas'][0]['licao']}"
+                    problemas_ct = []
+                    licoes_ct = []
+                    if velas_na_op <= 1:
+                        problemas_ct.append(f"STOP em {velas_na_op} vela = entrada prematura, sem confirmação")
+                        licoes_ct.append("Bellafiore: espere reteste/segunda chance")
+                    if setup.get("contra_tendencia"):
+                        problemas_ct.append(f"CONTRA tendência macro ({tend_macro['tendencia']}) - Elder proíbe")
+                        licoes_ct.append("Nunca opere contra Tela 1")
+                    if stop_pts < atr_v * 1.0 if ativo == 'WIN' else stop_pts < atr_v * 0.8:
+                        problemas_ct.append(f"Stop curto ({stop_pts}pts) vs ATR ({round(atr_v)}pts)")
+                        licoes_ct.append("Stop mínimo = 1.5x ATR")
+                    if janela_qual in ("RUIM", "PROIBIDO"):
+                        problemas_ct.append(f"{janela_nome} ({janela_qual}) = volume baixo")
+                    if 40 <= rsi_v <= 60:
+                        problemas_ct.append(f"RSI neutro ({rsi_v}) - sem pressão")
+                    if not setup["confluencia"].get("price_action_confirma"):
+                        problemas_ct.append("Sem candle de confirmação")
+                    if not setup["confluencia"].get("sr_relevante"):
+                        problemas_ct.append("Longe de S/R")
+                    if vwap and ((is_compra and c < vwap) or (not is_compra and c > vwap)):
+                        problemas_ct.append(f"Contra VWAP ({round(vwap, 0)})")
+                    if losses_consecutivos >= 2:
+                        problemas_ct.append(f"{losses_consecutivos} losses seguidos - Tendler: parar")
+                    if not problemas_ct:
+                        problemas_ct.append(f"Setup {conf_label} correto - Douglas: loss individual é normal")
+                        licoes_ct.append("Confie no edge estatístico sobre muitos trades")
+                    
+                    detalhes_perda = f"STOP em {hora_saida} | -{round(abs(pts),1)}pts | " + " | ".join(problemas_ct[:4])
+                    if licoes_ct:
+                        detalhes_perda += " | LIÇÃO: " + licoes_ct[0]
+                    licao_treino = licoes_ct[0] if licoes_ct else "Loss faz parte do processo"
+                    if alerta_memoria and alerta_memoria.get("tem_alerta"):
+                        licao_treino += f" | MEMÓRIA: {alerta_memoria['alertas'][0]['licao']}"
                 else:
-                    detalhes_vitoria = f"Alvo em {hora_saida} | +{round(abs(pts),1)}pts R${round(abs(rs),2)} | "
-                    detalhes_vitoria += f"Setup {conf_label} ({score}/7). "
-                    if score >= 5:
-                        licao_treino = "Aprendizado: A+ e A confirmam alta taxa de acerto"
-                    elif score >= 4:
-                        licao_treino = "Aprendizado: B+ funciona bem com tendência alinhada"
-                    else:
-                        licao_treino = "Aprendizado: C+ pode funcionar mas é arriscado - cautela no real"
+                    acertos_ct = []
+                    if setup["confluencia"].get("tendencia_tf_maior"):
+                        acertos_ct.append(f"A FAVOR tendência ({tend_macro['tendencia']})")
+                    if setup["confluencia"].get("price_action_confirma"):
+                        acertos_ct.append("Candle confirmou")
+                    if setup["confluencia"].get("sr_relevante"):
+                        acertos_ct.append("Entrada em S/R")
+                    if janela_qual in ("PRIME", "BOA"):
+                        acertos_ct.append(f"{janela_nome} = volume bom")
+                    if not acertos_ct:
+                        acertos_ct.append(f"Confluência {score}/7 alinhada")
+                    detalhes_vitoria = f"ALVO em {hora_saida} | +{round(abs(pts),1)}pts | " + " | ".join(acertos_ct[:4])
+                    licao_treino = f"PlayBook: {conf_label} a favor da tendência = alta probabilidade"
                 
                 operacoes.append({
                     "tipo": tipo_sinal,
