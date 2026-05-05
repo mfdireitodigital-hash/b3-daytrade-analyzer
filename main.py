@@ -3978,39 +3978,90 @@ async def simulador_real(ativo: str = Query("WIN"), max_entradas: int = Query(5)
             detalhes_vitoria = ""
             
             if resultado == "LOSS":
-                detalhes_perda = f"STOP atingido em {hora_saida} ({velas_na_op} velas). "
-                detalhes_perda += f"Prejuízo: -{round(abs(pts),1)}pts (-R${round(abs(rs),2)}). "
+                # Análise PROFUNDA do loss - usar TODA a técnica
+                detalhes_perda = ""
                 problemas = []
-                if setup["contra_tendencia"]:
-                    problemas.append("CONTRA TENDÊNCIA - Elder proíbe")
-                if not setup["confluencia"].get("sr_relevante"):
-                    problemas.append("Preço longe de S/R - sem proteção natural")
-                if not setup["confluencia"].get("indicadores_confirmam"):
-                    problemas.append("Indicadores não estavam todos alinhados")
+                licoes = []
+                
+                # 1. Timing - entrou cedo demais?
+                if velas_na_op <= 1:
+                    problemas.append(f"STOP em apenas {velas_na_op} vela(s) = entrada prematura. Bellafiore: espere segunda chance/reteste")
+                    licoes.append("Esperar pullback de confirmação antes de entrar")
+                
+                # 2. Contra tendência?
+                if setup.get("contra_tendencia"):
+                    problemas.append(f"CONTRA TENDÊNCIA macro ({tend_macro['tendencia']}) - Elder Tela 1: NUNCA opere contra o timeframe maior")
+                    licoes.append("Axioma #11: Teimosia mata. Siga a tendência macro")
+                
+                # 3. Stop curto demais para o ATR?
+                if stop_pts < atr_v * 1.0:
+                    problemas.append(f"Stop ({stop_pts}pts) menor que 1x ATR ({round(atr_v)}pts) - qualquer volatilidade tira")
+                    licoes.append("Stop mínimo = 1.5x ATR para dar respiração ao trade")
+                
+                # 4. Horário ruim?
+                if janela_qual in ("RUIM", "PROIBIDO"):
+                    problemas.append(f"Entrou em {janela_nome} ({janela_qual}) - volume baixo = movimentos erráticos")
+                    licoes.append("Stormer: janela ruim = falsos rompimentos")
+                
+                # 5. RSI em zona neutra (sem extremo)?
+                if 40 <= rsi_v <= 60:
+                    problemas.append(f"RSI neutro ({rsi_v}) - sem sobrecompra/venda = sem pressão clara")
+                    licoes.append("RSI entre 40-60 = mercado indeciso, melhor esperar extremo")
+                
+                # 6. MACD sem momento?
+                if abs(macd_h) < 5:
+                    problemas.append(f"MACD fraco ({macd_h}) - sem momentum na direção")
+                
+                # 7. Sem confirmação de Price Action?
                 if not setup["confluencia"].get("price_action_confirma"):
-                    problemas.append("Sem confirmação de Price Action")
-                if vwap and ((is_compra and c < vwap) or (not is_compra and c > vwap)):
-                    problemas.append(f"Contra VWAP ({round(vwap, 0)})")
+                    problemas.append("Sem candle de confirmação (martelo/engolfo/pin bar)")
+                    licoes.append("Murphy: sempre espere candle de reversão ANTES de entrar")
+                
+                # 8. Longe do S/R?
+                if not setup["confluencia"].get("sr_relevante"):
+                    problemas.append("Entrada longe de S/R - sem proteção natural de nível")
+                    licoes.append("Melhor entrada é perto de suporte (compra) ou resistência (venda)")
+                
+                # 9. Contra VWAP?
+                if vwap:
+                    if (is_compra and c < vwap) or (not is_compra and c > vwap):
+                        problemas.append(f"Contra VWAP ({round(vwap, 0)}) - institucional opera a favor do VWAP")
+                
+                # 10. Sequência de losses?
+                if losses_consecutivos >= 2:
+                    problemas.append(f"{losses_consecutivos} losses seguidos - Tendler: provável tilt, parar e respirar")
+                    licoes.append("Mental Game: após 2+ losses, o emocional contamina a análise")
+                
                 if not problemas:
-                    problemas.append(f"Setup {conf_label} correto - loss faz parte (Douglas: distribuição aleatória)")
-                detalhes_perda += "ANÁLISE: " + "; ".join(problemas) + ". "
-                detalhes_perda += f"Confluência era {score}/7 ({conf_label}). "
-                detalhes_perda += "Lição: " + (
-                    "Aumentar filtro de confluência - só A+ e B+." if score < 4
-                    else "Loss com setup correto é normal. Disciplina > resultado individual."
-                )
+                    problemas.append(f"Setup {conf_label} ({score}/7) estava correto mas loss acontece - Douglas: distribuição aleatória")
+                    licoes.append("Trading in the Zone: aceite o risco individual, confie no edge estatístico")
+                
+                detalhes_perda = f"STOP em {hora_saida} | -{round(abs(pts),1)}pts | "
+                detalhes_perda += " | ".join(problemas[:4])
+                if licoes:
+                    detalhes_perda += " | LIÇÃO: " + licoes[0]
                 analise_completa += f"\nANÁLISE DO LOSS:\n{detalhes_perda}\n"
             else:
-                detalhes_vitoria = f"Alvo atingido em {hora_saida} (+{round(abs(pts),1)}pts = R${round(abs(rs),2)}). "
-                detalhes_vitoria += f"Confluência {score}/7 ({conf_label}). "
+                acertos = []
                 if setup["confluencia"].get("tendencia_tf_maior"):
-                    detalhes_vitoria += "Triple Screen alinhado. "
+                    acertos.append(f"A FAVOR da tendência macro ({tend_macro['tendencia']}) - Elder Tela 1 confirmou")
                 if setup["confluencia"].get("price_action_confirma"):
-                    detalhes_vitoria += "Price Action confirmou. "
+                    acertos.append("Candle de confirmação na entrada")
                 if setup["confluencia"].get("sr_relevante"):
-                    detalhes_vitoria += "S/R deu proteção. "
-                detalhes_vitoria += f"Duração: {velas_na_op*5}min. "
-                detalhes_vitoria += "Lição: Setups com alta confluência e a favor da tendência = maior probabilidade."
+                    acertos.append("Entrada em nível de S/R = proteção natural")
+                if vwap and ((is_compra and c >= vwap) or (not is_compra and c <= vwap)):
+                    acertos.append(f"A favor do VWAP ({round(vwap,0)})")
+                if janela_qual in ("PRIME", "BOA"):
+                    acertos.append(f"Janela {janela_nome} ({janela_qual}) = volume institucional")
+                if rsi_v < 35 and is_compra:
+                    acertos.append(f"RSI sobrevendido ({rsi_v}) = reversão provável")
+                elif rsi_v > 65 and not is_compra:
+                    acertos.append(f"RSI sobrecomprado ({rsi_v}) = reversão provável")
+                if not acertos:
+                    acertos.append(f"Confluência {score}/7 alinhada na direção certa")
+                detalhes_vitoria = f"ALVO em {hora_saida} | +{round(abs(pts),1)}pts | "
+                detalhes_vitoria += " | ".join(acertos[:4])
+                detalhes_vitoria += f" | Bellafiore: este é um trade do PlayBook - registre no diário"
                 analise_completa += f"\nANÁLISE DO WIN:\n{detalhes_vitoria}\n"
             
             operacoes_recomendadas.append({
@@ -4445,7 +4496,21 @@ async def treinamento_ia(ativo: str = Query("WIN")):
                 if current_day_idx >= posicao_aberta.get("close_idx", 0):
                     posicao_aberta = None
             
+            # ===== COOLDOWN APÓS LOSS (Tendler) =====
+            ct_cooldown_velas = getattr(ct_cooldown_velas, '__self__', None) if False else 0
+            if not hasattr(operador_ct_state, '__call__'):
+                if 'ct_cooldown_until_idx' not in dir():
+                    ct_cooldown_until_idx = 0
+            
             # ===== EXECUTAR OPERAÇÃO =====
+            current_vela_idx = day_indices.index(pos_idx) if pos_idx in day_indices else 0
+            em_cooldown_ct = current_vela_idx < getattr(type(''), '_ct_cool', {}).get(ativo, 0) if False else False
+            
+            # Cooldown simples: após loss, pular 3 velas (15min)
+            if '_ct_cool_idx' not in dir():
+                _ct_cool_idx = 0
+            em_cooldown_ct = current_vela_idx < _ct_cool_idx
+            
             pode_operar = (
                 operar_treino and tipo_sinal
                 and posicao_aberta is None
@@ -4453,6 +4518,7 @@ async def treinamento_ia(ativo: str = Query("WIN")):
                 and not (hora_int == 16 and minuto > 30)
                 and len(operacoes) < MAX_OPS_DIA
                 and losses_consecutivos < MAX_LOSSES_CONSECUTIVOS
+                and not em_cooldown_ct
             )
             
             if pode_operar:
@@ -4620,6 +4686,7 @@ async def treinamento_ia(ativo: str = Query("WIN")):
                 total_pts_dia += pts
                 if resultado == "LOSS":
                     losses_consecutivos += 1
+                    _ct_cool_idx = current_vela_idx + 3  # Cooldown 3 velas (15min) após loss
                     # Operador de verdade: cooldown PROGRESSIVO
                     # 1º loss: 3 velas, 2º: 5 velas, 3º: 8 velas (respira, analisa)
                     cooldown = 3 + losses_consecutivos * 2
