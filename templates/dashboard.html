@@ -4611,8 +4611,14 @@ async function simRealAnalisar() {
             }
             oH += '</div>';
             
-            oH += '<div style="font-size:12px;font-weight:800;color:var(--accent-blue);margin-bottom:8px;padding:6px 0;border-bottom:1px solid var(--border);">OPERACOES EXECUTADAS (' + ops.length + ')</div>';
-            ops.forEach(op => {
+            oH += '<div style="font-size:12px;font-weight:800;color:var(--accent-blue);margin-bottom:8px;padding:6px 0;border-bottom:1px solid var(--border);">OPERACOES EXECUTADAS (<span id="simRealOpCount">0</span>/' + ops.length + ')</div>';
+            oH += '<div id="simRealOpsProgressive"></div>';
+            // Progressive rendering happens AFTER the main HTML is set
+            window._simRealOpsQueue = ops;
+            window._simRealPerfData = perf;
+            // Placeholder - ops will be rendered progressively below
+            var _skipOldRender = true;
+            [].forEach(op => {
                 const isW = op.resultado==='WIN';
                 const cOp = op.tipo==='COMPRA'?'#22c55e':'#ef4444';
                 const cRes = isW?'#22c55e':'#ef4444';
@@ -4660,20 +4666,7 @@ async function simRealAnalisar() {
                 oH += '</div>';
             });
             
-            // Summary
-            oH += '<div style="background:var(--bg-card);border:2px solid var(--border);border-radius:8px;padding:14px;margin:10px 0;display:flex;justify-content:space-around;text-align:center;flex-wrap:wrap;gap:10px;">';
-            oH += '<div><div style="font-size:10px;color:var(--text-muted);">Total Ops</div><div style="font-size:22px;font-weight:800;">' + perf.total_operacoes + '</div></div>';
-            oH += '<div><div style="font-size:10px;color:var(--text-muted);">Win Rate</div><div style="font-size:22px;font-weight:800;color:' + (perf.win_rate>=60?'#22c55e':'#ca8a04') + ';">' + perf.win_rate + '%</div></div>';
-            oH += '<div><div style="font-size:10px;color:var(--text-muted);">Pontos</div><div style="font-size:22px;font-weight:800;color:' + (perf.total_pts>=0?'#22c55e':'#ef4444') + ';">' + (perf.total_pts>=0?'+':'') + perf.total_pts + '</div></div>';
-            oH += '<div><div style="font-size:10px;color:var(--text-muted);">P&L</div><div style="font-size:22px;font-weight:800;color:' + (perf.total_rs>=0?'#22c55e':'#ef4444') + ';">' + (perf.total_rs>=0?'+':'') + 'R$ ' + perf.total_rs.toFixed(2) + '</div></div>';
-            if (perf.fator_lucro !== undefined) { oH += '<div><div style="font-size:10px;color:var(--text-muted);">Fator Lucro</div><div style="font-size:22px;font-weight:800;color:' + (perf.fator_lucro>=1.5?'#22c55e':perf.fator_lucro>=1?'#ca8a04':'#ef4444') + ';">' + perf.fator_lucro + '</div></div>'; }
-            oH += '</div>';
-            if (perf.melhor_trade || perf.pior_trade) {
-                oH += '<div style="display:flex;gap:8px;margin:6px 0;flex-wrap:wrap;">';
-                if (perf.melhor_trade) { oH += '<div style="flex:1;min-width:200px;background:rgba(34,197,94,0.06);border:1px solid rgba(34,197,94,0.2);border-radius:6px;padding:8px;font-size:10px;"><span style="font-weight:800;color:#22c55e;">MELHOR:</span> +' + perf.melhor_trade.pts + 'pts às ' + perf.melhor_trade.hora + (perf.melhor_trade.estrategia?' (' + perf.melhor_trade.estrategia + ')':'') + '</div>'; }
-                if (perf.pior_trade) { oH += '<div style="flex:1;min-width:200px;background:rgba(239,68,68,0.06);border:1px solid rgba(239,68,68,0.2);border-radius:6px;padding:8px;font-size:10px;"><span style="font-weight:800;color:#ef4444;">PIOR:</span> ' + perf.pior_trade.pts + 'pts às ' + perf.pior_trade.hora + (perf.pior_trade.estrategia?' (' + perf.pior_trade.estrategia + ')':'') + '</div>'; }
-                oH += '</div>';
-            }
+            // Summary is now rendered progressively by _renderOpsSummary
         }
         
         // ---- APRENDIZADO DA AI ----
@@ -4771,6 +4764,11 @@ async function simRealAnalisar() {
         oH += '</div></details>'; // Close vela-by-vela collapsible
         var _opsEl = document.getElementById('simRealOps'); if(_opsEl) _opsEl.innerHTML = oH;
         
+        // ===== PROGRESSIVE OP RENDERING =====
+        if (window._simRealOpsQueue && window._simRealOpsQueue.length > 0) {
+            _renderOpsProgressively(window._simRealOpsQueue, window._simRealPerfData);
+        }
+        
     } catch(e) {
         if (veredEl) { veredEl.textContent = 'ERRO'; veredEl.style.color = '#ef4444'; }
         const _msg = e.name === 'AbortError' ? 'Timeout: API demorou mais de 60s. Tente novamente.' : e.message;
@@ -4829,6 +4827,119 @@ function _startOperadorBackground() {
     console.log('🟢 Operador background engine ATIVO - roda a cada 2min em QUALQUER aba');
 }
 // Start background engine on page load
+
+// ===== PROGRESSIVE OPERATION RENDERER =====
+// Shows each operation one by one with animation and immediate result
+function _renderOpsProgressively(ops, perf) {
+    const container = document.getElementById('simRealOpsProgressive');
+    const countEl = document.getElementById('simRealOpCount');
+    if (!container) return;
+    container.innerHTML = '';
+    
+    let idx = 0;
+    const delay = 1500; // 1.5s between each op
+    
+    function renderNextOp() {
+        if (idx >= ops.length) {
+            // All done - show summary
+            _renderOpsSummary(container, perf);
+            return;
+        }
+        const op = ops[idx];
+        idx++;
+        if (countEl) countEl.textContent = idx;
+        
+        const isW = op.resultado === 'WIN';
+        const cOp = op.tipo === 'COMPRA' ? '#22c55e' : '#ef4444';
+        const cRes = isW ? '#22c55e' : '#ef4444';
+        
+        const card = document.createElement('div');
+        card.style.cssText = 'background:rgba(255,255,255,0.02);border:1px solid ' + cOp + '30;border-left:4px solid ' + cOp + ';border-radius:8px;padding:12px 14px;margin-bottom:8px;opacity:0;transform:translateY(20px);transition:all 0.4s ease;';
+        
+        let h = '';
+        // Header: tipo + hora + resultado grande
+        h += '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">';
+        h += '<div style="display:flex;align-items:center;gap:8px;">';
+        h += '<span style="font-size:11px;font-weight:900;color:#fff;background:' + cOp + ';padding:3px 10px;border-radius:4px;">#' + idx + ' ' + op.tipo + '</span>';
+        h += '<span style="font-weight:700;font-size:14px;font-family:monospace;color:#fff;">' + op.hora_entrada + ' → ' + op.hora_saida + '</span>';
+        if (op.estrategia) h += '<span style="font-size:10px;font-weight:800;color:#a78bfa;background:rgba(167,139,250,0.15);padding:3px 8px;border-radius:4px;">' + op.estrategia + '</span>';
+        h += '</div>';
+        h += '<div style="display:flex;align-items:center;gap:8px;">';
+        h += '<span style="font-size:24px;font-weight:900;color:' + cRes + ';text-shadow:0 0 10px ' + cRes + '50;">' + op.resultado + '</span>';
+        h += '<div style="text-align:right;">';
+        h += '<div style="font-size:16px;font-weight:900;color:' + cRes + ';">' + (op.pts >= 0 ? '+' : '') + op.pts + 'pts</div>';
+        h += '<div style="font-size:12px;color:' + cRes + ';">' + (op.resultado_rs >= 0 ? '+' : '') + 'R$ ' + op.resultado_rs.toFixed(2) + '</div>';
+        h += '</div></div></div>';
+        
+        // Details row
+        h += '<div style="display:flex;gap:6px;margin-top:8px;font-size:10px;flex-wrap:wrap;">';
+        h += '<span style="background:rgba(255,255,255,0.06);padding:2px 8px;border-radius:3px;">@ ' + op.preco_entrada.toLocaleString("pt-BR") + ' → ' + op.preco_saida.toLocaleString("pt-BR") + '</span>';
+        h += '<span style="background:rgba(255,255,255,0.06);padding:2px 8px;border-radius:3px;">Stop: ' + op.stop_pts + 'pts</span>';
+        h += '<span style="background:rgba(255,255,255,0.06);padding:2px 8px;border-radius:3px;">Alvo: ' + op.alvo_pts + 'pts</span>';
+        h += '<span style="background:rgba(255,255,255,0.06);padding:2px 8px;border-radius:3px;">R:R ' + op.rr + '</span>';
+        h += '<span style="background:rgba(255,255,255,0.06);padding:2px 8px;border-radius:3px;">' + op.conf_label + ' (' + op.score + '/7)</span>';
+        if (op.janela) h += '<span style="background:rgba(59,130,246,0.1);color:#93c5fd;padding:2px 8px;border-radius:3px;">' + op.janela + '</span>';
+        h += '<span style="background:rgba(255,255,255,0.06);padding:2px 8px;border-radius:3px;">' + op.velas_na_op + ' velas</span>';
+        h += '</div>';
+        
+        // WHY section - most important part
+        if (op.resultado === 'LOSS' && op.detalhes_perda) {
+            h += '<div style="background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.25);border-radius:6px;padding:10px;margin-top:8px;font-size:11px;color:#fca5a5;line-height:1.5;">';
+            h += '<span style="font-weight:900;color:#ef4444;font-size:12px;">ONDE ERROU: </span>' + op.detalhes_perda;
+            h += '</div>';
+        }
+        if (op.resultado === 'WIN' && op.detalhes_vitoria) {
+            h += '<div style="background:rgba(34,197,94,0.08);border:1px solid rgba(34,197,94,0.25);border-radius:6px;padding:10px;margin-top:8px;font-size:11px;color:#86efac;line-height:1.5;">';
+            h += '<span style="font-weight:900;color:#22c55e;font-size:12px;">ONDE ACERTOU: </span>' + op.detalhes_vitoria;
+            h += '</div>';
+        }
+        
+        // Motivos
+        if (op.motivos && op.motivos.length > 0) {
+            h += '<div style="font-size:10px;color:var(--text-muted);margin-top:6px;"><strong>Motivos:</strong> ' + op.motivos.join(' | ') + '</div>';
+        }
+        
+        // Full analysis collapsible
+        if (op.analise_completa) {
+            h += '<details style="margin-top:6px;"><summary style="cursor:pointer;font-size:10px;font-weight:700;color:#60a5fa;padding:4px;">VER ANALISE COMPLETA</summary>';
+            h += '<div style="background:rgba(96,165,250,0.05);border:1px solid rgba(96,165,250,0.15);border-radius:4px;padding:10px;margin-top:4px;font-size:10px;color:var(--text-muted);white-space:pre-line;line-height:1.6;">' + op.analise_completa + '</div></details>';
+        }
+        
+        card.innerHTML = h;
+        container.appendChild(card);
+        
+        // Animate in
+        requestAnimationFrame(() => {
+            card.style.opacity = '1';
+            card.style.transform = 'translateY(0)';
+        });
+        
+        // Scroll to show new card
+        card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        
+        // Next op
+        setTimeout(renderNextOp, delay);
+    }
+    
+    // Start rendering
+    setTimeout(renderNextOp, 500);
+}
+
+function _renderOpsSummary(container, perf) {
+    if (!perf) return;
+    const sum = document.createElement('div');
+    sum.style.cssText = 'background:var(--bg-card);border:2px solid var(--border);border-radius:8px;padding:14px;margin:10px 0;display:flex;justify-content:space-around;text-align:center;flex-wrap:wrap;gap:10px;opacity:0;transform:scale(0.95);transition:all 0.5s ease;';
+    let sh = '';
+    sh += '<div><div style="font-size:10px;color:var(--text-muted);">Total Ops</div><div style="font-size:22px;font-weight:800;">' + perf.total_operacoes + '</div></div>';
+    sh += '<div><div style="font-size:10px;color:var(--text-muted);">Win Rate</div><div style="font-size:22px;font-weight:800;color:' + (perf.win_rate >= 60 ? '#22c55e' : '#ca8a04') + ';">' + perf.win_rate + '%</div></div>';
+    sh += '<div><div style="font-size:10px;color:var(--text-muted);">Pontos</div><div style="font-size:22px;font-weight:800;color:' + (perf.total_pts >= 0 ? '#22c55e' : '#ef4444') + ';">' + (perf.total_pts >= 0 ? '+' : '') + perf.total_pts + '</div></div>';
+    sh += '<div><div style="font-size:10px;color:var(--text-muted);">P&L</div><div style="font-size:22px;font-weight:800;color:' + (perf.total_rs >= 0 ? '#22c55e' : '#ef4444') + ';">' + (perf.total_rs >= 0 ? '+' : '') + 'R$ ' + perf.total_rs.toFixed(2) + '</div></div>';
+    if (perf.fator_lucro !== undefined) sh += '<div><div style="font-size:10px;color:var(--text-muted);">Fator Lucro</div><div style="font-size:22px;font-weight:800;color:' + (perf.fator_lucro >= 1.5 ? '#22c55e' : perf.fator_lucro >= 1 ? '#ca8a04' : '#ef4444') + ';">' + perf.fator_lucro + '</div></div>';
+    sum.innerHTML = sh;
+    container.appendChild(sum);
+    requestAnimationFrame(() => { sum.style.opacity = '1'; sum.style.transform = 'scale(1)'; });
+}
+
 document.addEventListener('DOMContentLoaded', _startOperadorBackground);
 
 async function operadorEntrar(forcar) {
