@@ -5538,7 +5538,7 @@ function updateSafetyBar(seguro, data) {
     // RELATÓRIO DO DIA - HISTÓRICO CONSOLIDADO
     // =====================================================
     function abrirRelatorioDia() {
-        document.getElementById('relatorioDiaOverlay').style.display = 'flex';
+        document.getElementById('relatorioDiaOverlay').classList.add('active');
         carregarRelatorioDia();
     }
 

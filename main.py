@@ -330,7 +330,7 @@ templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
 
 @app.get("/api/version")
 async def api_version():
-    return {"version": "3.7.3", "build": "20260505f", "changes": "memoria_inteligente_bloqueio,aprender_erros,regras_auto"}
+    return {"version": "3.7.3", "build": "20260505g", "changes": "memoria_inteligente_bloqueio,aprender_erros,regras_auto"}
 
 @app.get("/", response_class=HTMLResponse)
 async def dashboard(request: Request):
@@ -5070,25 +5070,26 @@ async def relatorio_dia():
         # Data de hoje
         hoje_str = datetime.now(timezone(timedelta(hours=-3))).strftime("%d/%m/%Y")
         
-        # Filtrar sessões de hoje
-        sessoes_hoje = [s for s in historico if s.get("data") == hoje_str]
+        # Filtrar sessões de hoje - APENAS SIMULADOR REAL (não CT)
+        sessoes_hoje = [s for s in historico if s.get("data") == hoje_str and s.get("modo") in ("REAL", "REPLAY", "OPERADOR")]
         
-        # Se não tem de hoje, pegar o último dia com dados
+        # Se não tem de hoje, pegar o último dia com dados (só SimReal)
         if not sessoes_hoje:
-            datas_disponiveis = sorted(set(s.get("data", "") for s in historico if s.get("data")), 
+            all_simreal = [s for s in historico if s.get("modo") in ("REAL", "REPLAY", "OPERADOR")]
+            datas_disponiveis = sorted(set(s.get("data", "") for s in all_simreal if s.get("data")), 
                                        key=lambda d: datetime.strptime(d, "%d/%m/%Y") if d else datetime.min,
                                        reverse=True)
             if datas_disponiveis:
                 ultimo_dia = datas_disponiveis[0]
-                sessoes_hoje = [s for s in historico if s.get("data") == ultimo_dia]
+                sessoes_hoje = [s for s in historico if s.get("data") == ultimo_dia and s.get("modo") in ("REAL", "REPLAY", "OPERADOR")]
                 hoje_str = ultimo_dia
         
-        # Separar por modo
+        # Separar por modo (só SimReal e Operador)
         sessoes_simreal = [s for s in sessoes_hoje if s.get("modo") in ("REAL", "REPLAY")]
-        sessoes_ct = [s for s in sessoes_hoje if s.get("modo") == "CT"]
+        sessoes_ct = []  # CT excluído do relatório
         sessoes_operador = [s for s in sessoes_hoje if s.get("modo") == "OPERADOR"]
         
-        # Consolidar operações
+        # Consolidar operações (só SimReal)
         todas_ops = []
         for s in sessoes_hoje:
             for op in s.get("operacoes", []):
@@ -5197,12 +5198,13 @@ async def relatorio_dia():
             "regras": learning.get("regras_aprendidas", [])[:10],
         }
         
-        # Histórico dos últimos 7 dias
-        todas_datas = sorted(set(s.get("data", "") for s in historico if s.get("data")),
+        # Histórico dos últimos 7 dias (só SimReal)
+        hist_simreal = [s for s in historico if s.get("modo") in ("REAL", "REPLAY", "OPERADOR")]
+        todas_datas = sorted(set(s.get("data", "") for s in hist_simreal if s.get("data")),
                             key=lambda d: datetime.strptime(d, "%d/%m/%Y") if d else datetime.min)
         historico_7d = []
         for dt in todas_datas[-7:]:
-            sess_dt = [s for s in historico if s.get("data") == dt]
+            sess_dt = [s for s in hist_simreal if s.get("data") == dt]
             ops_dt = []
             for s in sess_dt:
                 ops_dt.extend(s.get("operacoes", []))
