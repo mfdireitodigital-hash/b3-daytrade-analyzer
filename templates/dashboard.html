@@ -1819,53 +1819,60 @@ async function ptCarregarMelhoresEntradas() {
 
 // Train a specific recommended entry
 function ptTreinarEntrada(opIdx, tipo, stopPts, alvoPts, horaEntrada) {
-    // Switch to REPLAY PREGAO tab so user can study this entry
-    // Set stop/alvo for when user clicks COMPRA/VENDA in replay
-    document.getElementById('ptStop').value = stopPts;
-    document.getElementById('ptAlvo').value = alvoPts;
+    // Set stop/alvo in BOTH operar and replay inputs
+    try { document.getElementById('ptStop').value = stopPts; } catch(e) {}
+    try { document.getElementById('ptAlvo').value = alvoPts; } catch(e) {}
+    try { document.getElementById('simStopInput').value = stopPts; } catch(e) {}
+    try { document.getElementById('simAlvoInput').value = alvoPts; } catch(e) {}
     
-    // Switch to replay tab
-    document.querySelectorAll('.pt-tab').forEach(t => t.classList.remove('active'));
-    document.querySelectorAll('.pt-tab-content').forEach(c => c.classList.remove('active'));
-    document.getElementById('ptTabReplayBtn').classList.add('active');
-    document.getElementById('ptTabReplay').classList.add('active');
+    // Switch to replay tab using ptMudarTab (safer than manual DOM)
+    if (typeof ptMudarTab === 'function') {
+        ptMudarTab('replay');
+    } else {
+        // Fallback: manual tab switch
+        document.querySelectorAll('.pt-tab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.pt-tab-content').forEach(c => c.classList.remove('active'));
+        var replayBtn = document.getElementById('ptTabReplayBtn');
+        var replayContent = document.getElementById('ptTabReplay');
+        if (replayBtn) replayBtn.classList.add('active');
+        if (replayContent) replayContent.classList.add('active');
+    }
     
-    // Load replay if not loaded, then scroll to the entry time
-    const scrollToEntry = function() {
+    // Scroll to top of overlay so user sees the replay
+    var overlay = document.getElementById('ptOverlay');
+    if (overlay) overlay.scrollTop = 0;
+    
+    // Function to scroll to the specific entry row
+    var scrollToEntry = function() {
         if (!window.simVelas || !window.simVelas.velas) return;
-        const velas = window.simVelas.velas;
-        let targetIdx = -1;
-        for (let i = 0; i < velas.length; i++) {
+        var velas = window.simVelas.velas;
+        var targetIdx = -1;
+        for (var i = 0; i < velas.length; i++) {
             if (velas[i].hora === horaEntrada) { targetIdx = i; break; }
         }
         if (targetIdx >= 0) {
-            const row = document.getElementById('sR' + targetIdx);
+            var row = document.getElementById('sR' + targetIdx);
             if (row) {
                 row.scrollIntoView({behavior: 'smooth', block: 'center'});
-                row.style.background = tipo === 'COMPRA' ? 'rgba(34,197,94,0.15)' : 'rgba(239,68,68,0.15)';
+                row.style.background = tipo === 'COMPRA' ? 'rgba(34,197,94,0.2)' : 'rgba(239,68,68,0.2)';
                 row.style.outline = '2px solid ' + (tipo === 'COMPRA' ? '#22c55e' : '#ef4444');
-                setTimeout(() => { row.style.outline = 'none'; row.style.background = ''; }, 5000);
+                setTimeout(function() { row.style.outline = 'none'; row.style.background = ''; }, 5000);
             }
         }
     };
     
     if (!window.simVelas || !window.simVelas.velas) {
-        // Show loading in replay tab
-        var _simBox = document.getElementById('simTabelaBox');
-        if (_simBox) _simBox.innerHTML = '<div style="text-align:center;padding:30px;color:var(--text-muted);"><div style="font-size:24px;margin-bottom:8px;">Carregando pregao anterior...</div><div style="font-size:12px;">Aguarde, buscando dados de ' + (window.ptState ? ptState.ativo : 'WIN') + '</div></div>';
-        simInit();
-        // Poll until data loads (max 15s)
-        var _pollCount = 0;
-        var _pollTimer = setInterval(function() {
-            _pollCount++;
-            if (window.simVelas && window.simVelas.velas) {
-                clearInterval(_pollTimer);
-                setTimeout(scrollToEntry, 200);
-            } else if (_pollCount > 30) {
-                clearInterval(_pollTimer);
-                if (_simBox) _simBox.innerHTML = '<div style="text-align:center;padding:30px;color:#ef4444;">Timeout ao carregar dados. Tente novamente.</div>';
-            }
-        }, 500);
+        // Show loading
+        var simBox = document.getElementById('simTabelaBox');
+        if (simBox) simBox.innerHTML = '<div style="text-align:center;padding:30px;color:var(--text-muted);"><div style="font-size:18px;margin-bottom:8px;">Carregando pregao...</div><div style="font-size:11px;">Buscando dados de ' + (window.ptState ? ptState.ativo : 'WIN') + '</div></div>';
+        
+        // Call simInit and poll for data
+        simInit().then(function() {
+            setTimeout(scrollToEntry, 300);
+        }).catch(function(err) {
+            console.error('ptTreinarEntrada simInit error:', err);
+            if (simBox) simBox.innerHTML = '<div style="text-align:center;padding:30px;color:#ef4444;">Erro ao carregar: ' + err.message + '</div>';
+        });
     } else {
         setTimeout(scrollToEntry, 200);
     }
