@@ -1227,8 +1227,7 @@
                 <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
                     <div style="display:flex;align-items:center;gap:6px;">
                         <label style="font-size:10px;font-weight:700;color:var(--text-secondary);">ENTRADAS:</label>
-                        <input type="number" id="opLiveMaxEntradas" min="1" value="10" style="width:50px;background:#1e1b4b;color:#fff;border:1px solid #6366f1;border-radius:4px;padding:2px 6px;text-align:center;font-size:12px;font-weight:700;" oninput="document.getElementById('opLiveMaxVal').textContent=this.value">
-                        <span id="opLiveMaxVal" style="font-size:14px;font-weight:900;color:#a78bfa;min-width:18px;">5</span>
+                        <input type="number" id="opLiveMaxEntradas" min="1" value="10" style="width:50px;background:#1e1b4b;color:#fff;border:1px solid #6366f1;border-radius:4px;padding:2px 6px;text-align:center;font-size:14px;font-weight:900;">
                     </div>
                     <button onclick="operadorLiveCheck()" style="padding:6px 14px;background:#22c55e;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:11px;font-weight:800;">ANALISAR AGORA</button>
                     <button onclick="operadorEntrar()" id="opBtnEntrar" style="padding:6px 14px;background:#6366f1;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:11px;font-weight:800;">ENTRAR NA PRÓXIMA</button>
@@ -1299,8 +1298,7 @@
                 </div>
                 <div style="display:flex;align-items:center;gap:12px;">
                     <label style="font-size:11px;font-weight:700;color:var(--text-secondary);">MAX ENTRADAS/DIA:</label>
-                    <input type="range" id="simRealMaxEntradas" min="1" max="15" value="5" oninput="document.getElementById('simRealMaxEntradasVal').textContent=this.value" style="width:100px;accent-color:var(--accent-blue);">
-                    <span id="simRealMaxEntradasVal" style="font-size:16px;font-weight:900;color:var(--accent-blue);min-width:20px;text-align:center;">5</span>
+                    <input type="number" id="simRealMaxEntradas" min="1" value="10" style="width:50px;background:#1e1b4b;color:#fff;border:1px solid var(--accent-blue);border-radius:4px;padding:2px 6px;text-align:center;font-size:14px;font-weight:900;">
                 </div>
             </div>
         </div>
