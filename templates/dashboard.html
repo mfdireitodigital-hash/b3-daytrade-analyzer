@@ -4967,15 +4967,97 @@ function _renderOpsProgressively(ops, perf) {
         h += '<div style="font-size:12px;color:' + cRes + ';">' + (op.resultado_rs >= 0 ? '+' : '') + 'R$ ' + op.resultado_rs.toFixed(2) + '</div>';
         h += '</div></div></div>';
         
-        // Details row
-        h += '<div style="display:flex;gap:6px;margin-top:8px;font-size:10px;flex-wrap:wrap;">';
-        h += '<span style="background:rgba(255,255,255,0.06);padding:2px 8px;border-radius:3px;">@ ' + op.preco_entrada.toLocaleString("pt-BR") + ' → ' + op.preco_saida.toLocaleString("pt-BR") + '</span>';
-        h += '<span style="background:rgba(255,255,255,0.06);padding:2px 8px;border-radius:3px;">Stop: ' + op.stop_pts + 'pts</span>';
-        h += '<span style="background:rgba(255,255,255,0.06);padding:2px 8px;border-radius:3px;">Alvo: ' + op.alvo_pts + 'pts</span>';
-        h += '<span style="background:rgba(255,255,255,0.06);padding:2px 8px;border-radius:3px;">R:R ' + op.rr + '</span>';
-        h += '<span style="background:rgba(255,255,255,0.06);padding:2px 8px;border-radius:3px;">' + op.conf_label + ' (' + op.score + '/7)</span>';
+        // ====== PAINEL DA OPERAÇÃO - DETALHES COMPLETOS ======
+        
+        // ROW 1: Entrada / Stop / Alvo com PREÇOS
+        h += '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-top:10px;">';
+        h += '<div style="background:rgba(59,130,246,0.1);border:1px solid rgba(59,130,246,0.3);border-radius:6px;padding:8px;text-align:center;">';
+        h += '<div style="font-size:9px;color:#93c5fd;font-weight:700;">ENTRADA</div>';
+        h += '<div style="font-size:16px;font-weight:900;color:#60a5fa;font-family:monospace;">' + op.preco_entrada.toLocaleString("pt-BR") + '</div>';
+        h += '<div style="font-size:9px;color:var(--text-muted);">' + op.hora_entrada + '</div>';
+        h += '</div>';
+        h += '<div style="background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.3);border-radius:6px;padding:8px;text-align:center;">';
+        h += '<div style="font-size:9px;color:#fca5a5;font-weight:700;">STOP LOSS</div>';
+        h += '<div style="font-size:16px;font-weight:900;color:#ef4444;font-family:monospace;">' + (op.stop_loss||0).toLocaleString("pt-BR") + '</div>';
+        h += '<div style="font-size:9px;color:#fca5a5;">-' + op.stop_pts + 'pts | -R$' + (op.stop_pts * (op.tipo === 'COMPRA' ? 0.20 : 10)).toFixed(2) + '</div>';
+        h += '</div>';
+        h += '<div style="background:rgba(34,197,94,0.1);border:1px solid rgba(34,197,94,0.3);border-radius:6px;padding:8px;text-align:center;">';
+        h += '<div style="font-size:9px;color:#86efac;font-weight:700;">TAKE PROFIT</div>';
+        h += '<div style="font-size:16px;font-weight:900;color:#22c55e;font-family:monospace;">' + (op.take_profit||0).toLocaleString("pt-BR") + '</div>';
+        h += '<div style="font-size:9px;color:#86efac;">+' + op.alvo_pts + 'pts | +R$' + (op.alvo_pts * (op.tipo === 'COMPRA' ? 0.20 : 10)).toFixed(2) + ' | R:R ' + op.rr + '</div>';
+        h += '</div></div>';
+        
+        // ROW 2: Indicadores + Direção do Mercado
+        h += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px;">';
+        // Indicadores
+        h += '<div style="background:rgba(255,255,255,0.03);border:1px solid var(--border);border-radius:6px;padding:8px;">';
+        h += '<div style="font-size:9px;font-weight:700;color:var(--text-muted);margin-bottom:4px;">INDICADORES</div>';
+        h += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:3px;font-size:10px;">';
+        const rsiColor = op.rsi > 70 ? '#ef4444' : op.rsi < 30 ? '#22c55e' : '#f59e0b';
+        h += '<span style="color:var(--text-muted);">RSI:</span><span style="color:' + rsiColor + ';font-weight:700;">' + op.rsi + '</span>';
+        h += '<span style="color:var(--text-muted);">MACD:</span><span style="color:' + (op.macd_hist > 0 ? '#22c55e' : '#ef4444') + ';font-weight:700;">' + op.macd_hist + '</span>';
+        h += '<span style="color:var(--text-muted);">EMA9:</span><span style="font-family:monospace;">' + (op.ema9||0).toLocaleString("pt-BR") + '</span>';
+        h += '<span style="color:var(--text-muted);">EMA21:</span><span style="font-family:monospace;">' + (op.ema21||0).toLocaleString("pt-BR") + '</span>';
+        if (op.vwap) { h += '<span style="color:var(--text-muted);">VWAP:</span><span style="font-family:monospace;color:#a78bfa;">' + op.vwap.toLocaleString("pt-BR") + '</span>'; }
+        h += '<span style="color:var(--text-muted);">ATR:</span><span style="font-family:monospace;">' + (op.atr||0) + '</span>';
+        h += '</div></div>';
+        // Direção do Mercado + Fluxo
+        h += '<div style="background:rgba(255,255,255,0.03);border:1px solid var(--border);border-radius:6px;padding:8px;">';
+        h += '<div style="font-size:9px;font-weight:700;color:var(--text-muted);margin-bottom:4px;">FLUXO & DIREÇÃO</div>';
+        if (op.direcao_mercado) {
+            const dm = op.direcao_mercado;
+            h += '<div style="font-size:10px;font-weight:700;color:#60a5fa;margin-bottom:3px;">' + (dm.resumo||'') + '</div>';
+        }
+        if (op.fluxo) {
+            const fl = op.fluxo;
+            const flColor = fl.alinhado === true ? '#22c55e' : fl.alinhado === false ? '#ef4444' : '#f59e0b';
+            h += '<div style="font-size:10px;margin-top:3px;">';
+            h += '<div style="display:flex;align-items:center;gap:4px;margin-bottom:2px;">';
+            h += '<span style="color:#22c55e;font-weight:700;">' + (fl.compradores||50) + '% COMPRA</span>';
+            h += '<div style="flex:1;height:6px;background:rgba(239,68,68,0.3);border-radius:3px;overflow:hidden;"><div style="width:' + (fl.compradores||50) + '%;height:100%;background:#22c55e;border-radius:3px;"></div></div>';
+            h += '<span style="color:#ef4444;font-weight:700;">' + (fl.vendedores||50) + '% VENDA</span>';
+            h += '</div>';
+            if (fl.nota) h += '<div style="font-size:9px;color:' + flColor + ';font-weight:700;">' + fl.nota + '</div>';
+            h += '</div>';
+        }
+        h += '</div></div>';
+        
+        // ROW 3: S/R + Parciais + Fibonacci
+        h += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px;">';
+        // Suporte/Resistência
+        h += '<div style="background:rgba(255,255,255,0.03);border:1px solid var(--border);border-radius:6px;padding:8px;">';
+        h += '<div style="font-size:9px;font-weight:700;color:var(--text-muted);margin-bottom:4px;">NÍVEIS CHAVE</div>';
+        h += '<div style="font-size:10px;display:flex;flex-direction:column;gap:2px;">';
+        if (op.resistencia) h += '<div style="display:flex;justify-content:space-between;"><span style="color:#ef4444;">Resistência</span><span style="font-family:monospace;font-weight:700;">' + op.resistencia.toLocaleString("pt-BR") + '</span></div>';
+        if (op.vwap) h += '<div style="display:flex;justify-content:space-between;"><span style="color:#a78bfa;">VWAP</span><span style="font-family:monospace;font-weight:700;">' + op.vwap.toLocaleString("pt-BR") + '</span></div>';
+        if (op.suporte) h += '<div style="display:flex;justify-content:space-between;"><span style="color:#22c55e;">Suporte</span><span style="font-family:monospace;font-weight:700;">' + op.suporte.toLocaleString("pt-BR") + '</span></div>';
+        if (op.breakeven) h += '<div style="display:flex;justify-content:space-between;"><span style="color:#f59e0b;">Breakeven</span><span style="font-family:monospace;font-weight:700;">' + op.breakeven.toLocaleString("pt-BR") + '</span></div>';
+        h += '</div></div>';
+        // Parciais + Fibonacci
+        h += '<div style="background:rgba(255,255,255,0.03);border:1px solid var(--border);border-radius:6px;padding:8px;">';
+        h += '<div style="font-size:9px;font-weight:700;color:var(--text-muted);margin-bottom:4px;">PARCIAIS & ALVOS FIBO</div>';
+        h += '<div style="font-size:10px;display:flex;flex-direction:column;gap:2px;">';
+        if (op.parciais) {
+            op.parciais.forEach(function(p) {
+                h += '<div style="display:flex;justify-content:space-between;"><span style="color:#86efac;font-size:9px;">' + p.nivel + '</span><span style="font-family:monospace;font-weight:700;">' + p.preco.toLocaleString("pt-BR") + '</span></div>';
+            });
+        }
+        if (op.fib_targets && op.fib_targets.length > 0) {
+            h += '<div style="border-top:1px solid var(--border);margin-top:3px;padding-top:3px;">';
+            op.fib_targets.slice(0, 3).forEach(function(ft) {
+                h += '<div style="display:flex;justify-content:space-between;font-size:9px;"><span style="color:#fbbf24;">Fibo ' + ft.nivel + '</span><span style="font-family:monospace;">' + ft.preco.toLocaleString("pt-BR") + '</span></div>';
+            });
+            h += '</div>';
+        }
+        h += '</div></div></div>';
+        
+        // ROW 4: Setup info tags
+        h += '<div style="display:flex;gap:4px;margin-top:6px;font-size:10px;flex-wrap:wrap;">';
+        h += '<span style="background:rgba(255,255,255,0.06);padding:2px 8px;border-radius:3px;font-weight:700;">' + op.conf_label + ' (' + op.score + '/7)</span>';
+        h += '<span style="background:rgba(255,255,255,0.06);padding:2px 8px;border-radius:3px;">Tend: ' + (op.tendencia||'?') + '</span>';
         if (op.janela) h += '<span style="background:rgba(59,130,246,0.1);color:#93c5fd;padding:2px 8px;border-radius:3px;">' + op.janela + '</span>';
-        h += '<span style="background:rgba(255,255,255,0.06);padding:2px 8px;border-radius:3px;">' + op.velas_na_op + ' velas</span>';
+        h += '<span style="background:rgba(255,255,255,0.06);padding:2px 8px;border-radius:3px;">' + op.velas_na_op + ' velas (' + (op.velas_na_op * 5) + 'min)</span>';
+        if (op.trailing_ativado) h += '<span style="background:rgba(168,85,247,0.15);color:#c084fc;padding:2px 8px;border-radius:3px;font-weight:700;">TRAILING STOP ATIVADO</span>';
         h += '</div>';
         
         // WHY section - most important part

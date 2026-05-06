@@ -4158,6 +4158,129 @@ async def simulador_real(ativo: str = Query("WIN"), max_entradas: int = Query(5)
                 detalhes_vitoria += f" | Bellafiore: este é um trade do PlayBook - registre no diário"
                 analise_completa += f"\nANÁLISE DO WIN:\n{detalhes_vitoria}\n"
             
+            # ================================================================
+            # ALVOS FIBONACCI (Projeção de ganho significativo)
+            # ================================================================
+            fib_targets = []
+            _swing_range = atr_v * 3 if ativo == "WIN" else atr_v * 3
+            if is_compra:
+                fib_targets = [
+                    {"nivel": "38.2%", "preco": round(preco_op + _swing_range * 0.382, 2)},
+                    {"nivel": "50%", "preco": round(preco_op + _swing_range * 0.5, 2)},
+                    {"nivel": "61.8%", "preco": round(preco_op + _swing_range * 0.618, 2)},
+                    {"nivel": "100%", "preco": round(preco_op + _swing_range * 1.0, 2)},
+                    {"nivel": "161.8%", "preco": round(preco_op + _swing_range * 1.618, 2)},
+                ]
+            else:
+                fib_targets = [
+                    {"nivel": "38.2%", "preco": round(preco_op - _swing_range * 0.382, 2)},
+                    {"nivel": "50%", "preco": round(preco_op - _swing_range * 0.5, 2)},
+                    {"nivel": "61.8%", "preco": round(preco_op - _swing_range * 0.618, 2)},
+                    {"nivel": "100%", "preco": round(preco_op - _swing_range * 1.0, 2)},
+                    {"nivel": "161.8%", "preco": round(preco_op - _swing_range * 1.618, 2)},
+                ]
+            
+            # ================================================================
+            # ANÁLISE DE FLUXO COMPRADOR/VENDEDOR
+            # ================================================================
+            fluxo = {"direcao": "NEUTRO", "forca": 0, "compradores": 0, "vendedores": 0, "descricao": ""}
+            try:
+                _look = min(20, len(w))
+                _recent = w.iloc[-_look:]
+                _bull_candles = sum(1 for _, r in _recent.iterrows() if float(r['close']) > float(r['open']))
+                _bear_candles = _look - _bull_candles
+                _bull_vol = sum(float(r.get('volume', 0)) for _, r in _recent.iterrows() if float(r['close']) > float(r['open']))
+                _bear_vol = sum(float(r.get('volume', 0)) for _, r in _recent.iterrows() if float(r['close']) <= float(r['open']))
+                _total_vol = _bull_vol + _bear_vol
+                
+                if _total_vol > 0:
+                    _pct_bull = round(_bull_vol / _total_vol * 100)
+                    _pct_bear = round(_bear_vol / _total_vol * 100)
+                else:
+                    _pct_bull = round(_bull_candles / _look * 100)
+                    _pct_bear = 100 - _pct_bull
+                
+                fluxo["compradores"] = _pct_bull
+                fluxo["vendedores"] = _pct_bear
+                
+                _diff = _pct_bull - _pct_bear
+                if _diff > 20:
+                    fluxo["direcao"] = "COMPRADORES DOMINAM"
+                    fluxo["forca"] = min(round(_diff / 10), 5)
+                    fluxo["descricao"] = f"Fluxo comprador forte ({_pct_bull}% vs {_pct_bear}%). Pressão de alta."
+                elif _diff < -20:
+                    fluxo["direcao"] = "VENDEDORES DOMINAM"
+                    fluxo["forca"] = min(round(abs(_diff) / 10), 5)
+                    fluxo["descricao"] = f"Fluxo vendedor forte ({_pct_bear}% vs {_pct_bull}%). Pressão de baixa."
+                elif _diff > 8:
+                    fluxo["direcao"] = "COMPRADORES LEVE"
+                    fluxo["forca"] = 2
+                    fluxo["descricao"] = f"Leve pressão compradora ({_pct_bull}% vs {_pct_bear}%)."
+                elif _diff < -8:
+                    fluxo["direcao"] = "VENDEDORES LEVE"
+                    fluxo["forca"] = 2
+                    fluxo["descricao"] = f"Leve pressão vendedora ({_pct_bear}% vs {_pct_bull}%)."
+                else:
+                    fluxo["direcao"] = "EQUILIBRADO"
+                    fluxo["forca"] = 1
+                    fluxo["descricao"] = f"Fluxo equilibrado ({_pct_bull}% compra vs {_pct_bear}% venda). Sem tendência clara."
+                
+                # Check if flow aligns with trade direction
+                if is_compra and _diff > 15:
+                    fluxo["alinhado"] = True
+                    fluxo["nota"] = "Fluxo CONFIRMA compra"
+                elif not is_compra and _diff < -15:
+                    fluxo["alinhado"] = True
+                    fluxo["nota"] = "Fluxo CONFIRMA venda"
+                elif is_compra and _diff < -15:
+                    fluxo["alinhado"] = False
+                    fluxo["nota"] = "CUIDADO: Fluxo CONTRA a compra"
+                elif not is_compra and _diff > 15:
+                    fluxo["alinhado"] = False
+                    fluxo["nota"] = "CUIDADO: Fluxo CONTRA a venda"
+                else:
+                    fluxo["alinhado"] = None
+                    fluxo["nota"] = "Fluxo neutro - sem confirmação"
+            except Exception:
+                fluxo["descricao"] = "Dados de fluxo indisponíveis"
+            
+            # ================================================================
+            # PARCIAIS SUGERIDAS (Gestão ativa de posição)
+            # ================================================================
+            parcial_1 = round(preco_op + alvo_pts * 0.5, 2) if is_compra else round(preco_op - alvo_pts * 0.5, 2)
+            parcial_2 = round(preco_op + alvo_pts * 0.75, 2) if is_compra else round(preco_op - alvo_pts * 0.75, 2)
+            breakeven_price = round(preco_op + _custo_pts * (1 if is_compra else -1), 2)
+            
+            parciais = [
+                {"nivel": "Parcial 1 (50%)", "preco": parcial_1, "acao": "Realizar 50% + mover stop para breakeven"},
+                {"nivel": "Parcial 2 (75%)", "preco": parcial_2, "acao": "Realizar mais 25% + trailing stop"},
+                {"nivel": "Alvo Final (100%)", "preco": alvo_price, "acao": "Encerrar posição total"},
+            ]
+            
+            # Direção do mercado - resumo
+            direcao_mercado = {
+                "tendencia_macro": tend_macro["tendencia"],
+                "tendencia_local": tend,
+                "ema_alinhadas": ema9 > ema21 if is_compra else ema9 < ema21,
+                "acima_vwap": c > vwap if vwap else None,
+                "rsi_zona": "SOBRECOMPRADO" if rsi_v > 70 else "SOBREVENDIDO" if rsi_v < 30 else "NEUTRO",
+                "macd_momento": "POSITIVO" if macd_h > 0 else "NEGATIVO",
+                "resumo": "",
+            }
+            _sinais_alta = sum([
+                1 if tend == "ALTA" else 0,
+                1 if ema9 > ema21 else 0,
+                1 if (vwap and c > vwap) else 0,
+                1 if macd_h > 0 else 0,
+                1 if rsi_v > 50 else 0,
+            ])
+            if _sinais_alta >= 4:
+                direcao_mercado["resumo"] = f"MERCADO EM ALTA ({_sinais_alta}/5 sinais). Favorece COMPRA."
+            elif _sinais_alta <= 1:
+                direcao_mercado["resumo"] = f"MERCADO EM BAIXA ({5 - _sinais_alta}/5 sinais). Favorece VENDA."
+            else:
+                direcao_mercado["resumo"] = f"MERCADO INDEFINIDO ({_sinais_alta}/5 sinais alta). Cautela."
+
             operacoes_recomendadas.append({
                 "tipo": tipo_sinal,
                 "hora_entrada": hora_op,
@@ -4200,6 +4323,14 @@ async def simulador_real(ativo: str = Query("WIN"), max_entradas: int = Query(5)
                 "janela": janela_nome,
                 "janela_qualidade": janela_qual,
                 "raciocinio": raciocinio_operador,
+                "fib_targets": fib_targets,
+                "fluxo": fluxo,
+                "parciais": parciais,
+                "breakeven": breakeven_price,
+                "direcao_mercado": direcao_mercado,
+                "ema50": ema50,
+                "stop_price_final": stop_price,
+                "trailing_ativado": _trailing_active,
             })
             
             # ===== CONTROLES PÓS-TRADE =====
