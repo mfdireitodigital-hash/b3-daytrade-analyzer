@@ -2805,8 +2805,116 @@ async def operador_live(ativo: str = Query("WIN"), max_entradas: int = Query(10)
             })
             salvar_estado_operador()
         
-        # ===== TRADE ATIVO? =====
+        # ===== TRADE ATIVO? AUTO-RESOLVER =====
         trade_ativo_info = op_state.get("trade_ativo")
+        
+        # Auto-resolver trade ativo checando se stop/alvo foi atingido
+        if trade_ativo_info:
+            ta = trade_ativo_info
+            ta_is_compra = ta.get("tipo") == "COMPRA"
+            ta_stop = ta.get("stop_loss", 0)
+            ta_alvo = ta.get("take_profit", 0)
+            ta_entrada = ta.get("preco_entrada", 0)
+            
+            # Checar com dados recentes se stop ou alvo foi atingido
+            try:
+                _check_dados = yf.download(ticker, period="1d", interval="5m", progress=False)
+                if not _check_dados.empty:
+                    if isinstance(_check_dados.columns, pd.MultiIndex):
+                        _check_dados.columns = _check_dados.columns.get_level_values(0)
+                    _check_dados.columns = [cc.lower() for cc in _check_dados.columns]
+                    # Verificar as últimas velas desde a entrada
+                    _preco_check = float(_check_dados['close'].iloc[-1])
+                    _high_check = float(_check_dados['high'].iloc[-1])
+                    _low_check = float(_check_dados['low'].iloc[-1])
+                    
+                    _resultado_auto = None
+                    if ta_is_compra:
+                        if _high_check >= ta_alvo:
+                            _resultado_auto = "WIN"
+                            _preco_saida = ta_alvo
+                        elif _low_check <= ta_stop:
+                            _resultado_auto = "LOSS"
+                            _preco_saida = ta_stop
+                    else:
+                        if _low_check <= ta_alvo:
+                            _resultado_auto = "WIN"
+                            _preco_saida = ta_alvo
+                        elif _high_check >= ta_stop:
+                            _resultado_auto = "LOSS"
+                            _preco_saida = ta_stop
+                    
+                    # Auto-check com base no preço atual também
+                    if not _resultado_auto:
+                        if ta_is_compra:
+                            if _preco_check >= ta_alvo:
+                                _resultado_auto = "WIN"
+                                _preco_saida = _preco_check
+                            elif _preco_check <= ta_stop:
+                                _resultado_auto = "LOSS"
+                                _preco_saida = _preco_check
+                        else:
+                            if _preco_check <= ta_alvo:
+                                _resultado_auto = "WIN"
+                                _preco_saida = _preco_check
+                            elif _preco_check >= ta_stop:
+                                _resultado_auto = "LOSS"
+                                _preco_saida = _preco_check
+                    
+                    # Timeout: se passou mais de 30 min sem resolver, fechar no preço atual
+                    if not _resultado_auto and ta.get("hora_entrada"):
+                        try:
+                            _he_parts = ta["hora_entrada"].split(":")
+                            _entrada_mins = int(_he_parts[0]) * 60 + int(_he_parts[1])
+                            _agora_mins = agora.hour * 60 + agora.minute
+                            if (_agora_mins - _entrada_mins) > 30:
+                                if ta_is_compra:
+                                    _pnl = _preco_check - ta_entrada
+                                else:
+                                    _pnl = ta_entrada - _preco_check
+                                _resultado_auto = "WIN" if _pnl > 0 else "LOSS"
+                                _preco_saida = _preco_check
+                                logger.info(f"OPERADOR: Trade timeout 30min, fechando @ {_preco_check}")
+                        except:
+                            pass
+                    
+                    if _resultado_auto:
+                        # Fechar trade e mover para operacoes
+                        if ta_is_compra:
+                            _pnl_pts = round(_preco_saida - ta_entrada, 2)
+                        else:
+                            _pnl_pts = round(ta_entrada - _preco_saida, 2)
+                        if ativo == "WDO":
+                            _pnl_pts = round(_pnl_pts * 1000, 1)
+                        
+                        ta["resultado"] = _resultado_auto
+                        ta["pts"] = _pnl_pts
+                        ta["hora_saida"] = agora.strftime("%H:%M")
+                        ta["preco_saida"] = round(_preco_saida, 2)
+                        ta["resultado_rs"] = round(_pnl_pts * valor_ponto, 2)
+                        ta["status_trade"] = "FECHADO"
+                        
+                        op_state["operacoes"].append(dict(ta))
+                        op_state["total_pts"] += _pnl_pts
+                        op_state["trade_ativo"] = None
+                        trade_ativo_info = None
+                        
+                        if _resultado_auto == "LOSS":
+                            op_state["losses_consecutivos"] += 1
+                            cooldown_min = 15 if op_state["losses_consecutivos"] >= 2 else 10
+                            op_state["cooldown_ate"] = (agora + timedelta(minutes=cooldown_min)).isoformat()
+                        else:
+                            op_state["losses_consecutivos"] = 0
+                            op_state["cooldown_ate"] = None
+                        
+                        LOSS_LIMIT_CHECK = -400 if ativo == "WIN" else -40
+                        if op_state["total_pts"] <= LOSS_LIMIT_CHECK:
+                            op_state["dia_bloqueado"] = True
+                        
+                        salvar_estado_operador()
+                        logger.info(f"OPERADOR AUTO-CLOSE: {_resultado_auto} {_pnl_pts}pts {ativo}")
+            except Exception as _ae:
+                logger.error(f"Erro auto-resolve trade: {_ae}")
         
         # ===== CARREGAR MEMÓRIA DE ERROS =====
         if not app_state.get("operador_erros"):
@@ -3073,6 +3181,38 @@ async def operador_live(ativo: str = Query("WIN"), max_entradas: int = Query(10)
             if op_state.get("forcar_proxima"):
                 op_state["forcar_proxima"] = False
                 salvar_estado_operador()
+            
+            # ===== AUTO-REGISTRAR TRADE (sem precisar clicar botão) =====
+            # Se não tem trade ativo, registrar automaticamente como operação
+            if not op_state.get("trade_ativo"):
+                trade_auto = {
+                    "tipo": tipo_sinal,
+                    "hora_entrada": hora_atual,
+                    "preco_entrada": round(preco_atual, 2),
+                    "stop_loss": stop_price,
+                    "take_profit": alvo_price,
+                    "stop_pts": round(stop_pts * 1000, 1) if ativo == "WDO" else stop_pts,
+                    "alvo_pts": round(alvo_pts * 1000, 1) if ativo == "WDO" else alvo_pts,
+                    "rr": f"1:{round(rr_ratio, 1)}",
+                    "estrategia": setup_playbook["nome"] or "Confluência",
+                    "janela": janela_nome,
+                    "janela_qualidade": janela_qual,
+                    "conf_label": conf_label,
+                    "score": score,
+                    "rsi": rsi_v,
+                    "tend_macro": tend_macro["tendencia"],
+                    "motivos": motivos_operar[:5],
+                    "resultado": None,  # Ainda aberto
+                    "pts": 0,
+                    "hora_saida": None,
+                    "preco_saida": None,
+                    "resultado_rs": 0,
+                    "status_trade": "ABERTO",
+                }
+                op_state["trade_ativo"] = trade_auto
+                op_state["aguardando_entrada"] = False
+                salvar_estado_operador()
+                logger.info(f"OPERADOR AUTO: Trade registrado {tipo_sinal} {ativo} @ {preco_atual}")
         else:
             # Dar parecer mesmo sem operar - NUNCA ficar mudo
             motivo_espera = motivos_nao_operar[0] if motivos_nao_operar else "Aguardando melhores condições"
@@ -3207,41 +3347,12 @@ async def operador_live(ativo: str = Query("WIN"), max_entradas: int = Query(10)
                 + f"Monitorando... alvo em {ta.get('alvo_pts',0)}pts, stop em {ta.get('stop_pts',0)}pts"
             )
         
-        # ===== AUTO-ENTRAR se aguardando_entrada OU forçar_entrada =====
-        deve_entrar = (op_state.get("aguardando_entrada") or forcar_entrada) and operar and tipo_sinal and not op_state.get("trade_ativo")
-        if deve_entrar:
-            # Entrar automaticamente!
-            trade_novo = {
-                "tipo": tipo_sinal,
-                "hora_entrada": hora_atual,
-                "preco_entrada": round(preco_atual, 2),
-                "stop_loss": stop_price,
-                "take_profit": alvo_price,
-                "stop_pts": round(stop_pts * 1000, 1) if ativo == "WDO" else stop_pts,
-                "alvo_pts": round(alvo_pts * 1000, 1) if ativo == "WDO" else alvo_pts,
-                "rr": f"1:{round(rr_ratio, 1)}",
-                "estrategia": setup_playbook["nome"] or "Confluência",
-                "janela": janela_nome,
-                "janela_qualidade": janela_qual,
-                "conf_label": conf_label,
-                "score": score,
-                "rsi": rsi_v,
-                "tend_macro": tend_macro["tendencia"],
-                "motivos": motivos_operar[:5],
-            }
-            op_state["trade_ativo"] = trade_novo
-            op_state["aguardando_entrada"] = False
+        # ===== TRADE JÁ AUTO-REGISTRADO no bloco ENTRADA acima =====
+        # Se trade_ativo foi criado, atualizar response
+        if op_state.get("trade_ativo") and response.get("status") == "ENTRADA":
+            ta_new = op_state["trade_ativo"]
             response["status"] = "TRADE_ABERTO"
-            response["trade_ativo"] = trade_novo
-            response["raciocinio"] = (
-                f"TRADE ABERTO: {tipo_sinal} às {hora_atual}\n"
-                f"Estratégia: {trade_novo['estrategia']} | {conf_label} ({score}/7)\n"
-                f"Entrada: {round(preco_atual,2)} | Stop: {stop_price} | Alvo: {alvo_price}\n"
-                f"Janela: {janela_nome} ({janela_qual})\n"
-                f"Monitorando... alvo em {alvo_pts}pts, stop em {stop_pts}pts"
-            )
-            logger.info(f"OPERADOR: Trade aberto {tipo_sinal} {ativo} @ {preco_atual}")
-            salvar_estado_operador()
+            response["trade_ativo"] = ta_new
         
         return JSONResponse(response)
         
