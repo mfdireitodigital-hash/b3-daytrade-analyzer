@@ -2862,33 +2862,126 @@ function renderRSIChart(a) {
 
 function renderMACDChart(a) {
     const canvas = document.getElementById('macdChart'), ctx = canvas.getContext('2d');
-    canvas.width = canvas.parentElement.clientWidth; canvas.height = canvas.parentElement.clientHeight;
+    canvas.width = canvas.parentElement.clientWidth; canvas.height = canvas.parentElement.clientHeight || 120;
     const W = canvas.width, H = canvas.height;
     ctx.clearRect(0, 0, W, H);
-    ctx.beginPath(); ctx.strokeStyle = 'rgba(255,255,255,0.1)'; ctx.moveTo(0,H/2); ctx.lineTo(W,H/2); ctx.stroke();
-    const hist = a.macd_histograma || a.macd_hist || 0;
-    ctx.fillStyle = hist >= 0 ? 'rgba(34,197,94,0.6)' : 'rgba(239,68,68,0.6)';
-    const bH = Math.min(Math.abs(hist) * 2, H/2 - 5);
-    ctx.fillRect(W/2-20, hist>=0 ? H/2-bH : H/2, 40, bH);
+    
+    // Usar dados de candles para série completa do MACD
+    const candles = a.candles || a.dados || [];
+    if (candles.length < 2) {
+        // Fallback: mostrar valor único
+        ctx.beginPath(); ctx.strokeStyle = 'rgba(255,255,255,0.1)'; ctx.moveTo(0,H/2); ctx.lineTo(W,H/2); ctx.stroke();
+        const hist = a.macd_histograma || a.macd_hist || 0;
+        ctx.fillStyle = '#e6edf3'; ctx.font = '11px monospace';
+        ctx.fillText('MACD: ' + (a.macd_valor||0).toFixed(2) + '  Hist: ' + hist.toFixed(2), 8, 14);
+        return;
+    }
+    
+    const histData = candles.map(c => c.macd_hist || 0);
+    const macdData = candles.map(c => c.macd || 0);
+    const sigData = candles.map(c => c.macd_signal || 0);
+    
+    // Calcular range
+    const allVals = [...histData, ...macdData, ...sigData];
+    const maxAbs = Math.max(Math.abs(Math.min(...allVals)), Math.abs(Math.max(...allVals))) || 1;
+    const midY = H / 2;
+    const scale = (midY - 15) / maxAbs;
+    const bW = Math.max(1, (W / histData.length) - 1);
+    
+    // Linha zero
+    ctx.beginPath(); ctx.strokeStyle = 'rgba(255,255,255,0.15)'; ctx.moveTo(0, midY); ctx.lineTo(W, midY); ctx.stroke();
+    
+    // Histograma (barras)
+    histData.forEach((v, i) => {
+        const x = i * (bW + 1);
+        const barH = Math.abs(v) * scale;
+        ctx.fillStyle = v >= 0 ? 'rgba(34,197,94,0.55)' : 'rgba(239,68,68,0.55)';
+        if (v >= 0) {
+            ctx.fillRect(x, midY - barH, bW, barH);
+        } else {
+            ctx.fillRect(x, midY, bW, barH);
+        }
+    });
+    
+    // Linha MACD (azul)
+    ctx.beginPath(); ctx.strokeStyle = '#3b82f6'; ctx.lineWidth = 1.5;
+    macdData.forEach((v, i) => {
+        const x = i * (bW + 1) + bW/2;
+        const y = midY - v * scale;
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+    
+    // Linha Sinal (laranja)
+    ctx.beginPath(); ctx.strokeStyle = '#f59e0b'; ctx.lineWidth = 1;
+    sigData.forEach((v, i) => {
+        const x = i * (bW + 1) + bW/2;
+        const y = midY - v * scale;
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+    
+    // Label
+    const lastHist = histData[histData.length-1] || 0;
+    const lastMacd = macdData[macdData.length-1] || 0;
     ctx.fillStyle = '#e6edf3'; ctx.font = '10px monospace';
-    ctx.fillText('MACD: ' + (a.macd_valor||0).toFixed(2) + '  Hist: ' + hist.toFixed(2), 8, 14);
+    ctx.fillText('MACD: ' + lastMacd.toFixed(2) + '  Hist: ' + lastHist.toFixed(2) + '  Sig: ' + (sigData[sigData.length-1]||0).toFixed(2), 8, 12);
+    // Legend
+    ctx.fillStyle = '#3b82f6'; ctx.fillRect(W-100, 4, 12, 3);
+    ctx.fillStyle = '#f59e0b'; ctx.fillRect(W-100, 11, 12, 3);
+    ctx.fillStyle = '#e6edf3'; ctx.font = '9px sans-serif';
+    ctx.fillText('MACD', W-85, 9); ctx.fillText('Signal', W-85, 16);
 }
 
 function renderVolumeChart(a) {
     const canvas = document.getElementById('volumeChart'), ctx = canvas.getContext('2d');
-    canvas.width = canvas.parentElement.clientWidth; canvas.height = canvas.parentElement.clientHeight;
+    canvas.width = canvas.parentElement.clientWidth; canvas.height = canvas.parentElement.clientHeight || 100;
     const W = canvas.width, H = canvas.height;
     ctx.clearRect(0, 0, W, H);
     const dados = a.dados;
-    if (!dados || dados.length === 0) return;
-    const volumes = dados.map(d => d.volume || 0), maxV = Math.max(...volumes) || 1;
+    if (!dados || dados.length === 0) {
+        ctx.fillStyle = 'rgba(255,255,255,0.3)'; ctx.font = '11px sans-serif';
+        ctx.fillText('Volume indisponível para este ativo', 8, H/2);
+        return;
+    }
+    const volumes = dados.map(d => d.volume || 0);
+    const hasVolume = volumes.some(v => v > 0);
+    if (!hasVolume) {
+        // Sem dados de volume (comum para ^BVSP) - mostrar volume estimado por range de candle
+        const ranges = dados.map(d => Math.abs((d.high||0)-(d.low||0)));
+        const maxR = Math.max(...ranges) || 1;
+        const bW = Math.max(1, (W / ranges.length) - 1);
+        ranges.forEach((r, i) => {
+            const x = i * (bW + 1), bH2 = (r / maxR) * H * 0.85;
+            const cl = dados[i].close, pc = i > 0 ? dados[i-1].close : cl;
+            ctx.fillStyle = cl >= pc ? 'rgba(34,197,94,0.45)' : 'rgba(239,68,68,0.45)';
+            ctx.fillRect(x, H - bH2, bW, bH2);
+        });
+        ctx.fillStyle = 'rgba(255,255,255,0.4)'; ctx.font = '9px sans-serif';
+        ctx.fillText('Vol. estimado (range)', 8, 11);
+        return;
+    }
+    const maxV = Math.max(...volumes) || 1;
     const bW = Math.max(1, (W / volumes.length) - 1);
+    // Calcular média para destacar volume acima da média
+    const avgV = volumes.reduce((s,v) => s+v, 0) / volumes.length;
     volumes.forEach((v, i) => {
-        const x = i * (bW + 1), bH2 = (v / maxV) * H * 0.9;
+        const x = i * (bW + 1), bH2 = (v / maxV) * H * 0.85;
         const cl = dados[i].close, pc2 = i > 0 ? dados[i-1].close : cl;
-        ctx.fillStyle = cl >= pc2 ? 'rgba(34,197,94,0.5)' : 'rgba(239,68,68,0.5)';
+        const aboveAvg = v > avgV * 1.5;
+        if (cl >= pc2) {
+            ctx.fillStyle = aboveAvg ? 'rgba(34,197,94,0.8)' : 'rgba(34,197,94,0.45)';
+        } else {
+            ctx.fillStyle = aboveAvg ? 'rgba(239,68,68,0.8)' : 'rgba(239,68,68,0.45)';
+        }
         ctx.fillRect(x, H - bH2, bW, bH2);
     });
+    // Linha da média
+    const avgH = (avgV / maxV) * H * 0.85;
+    ctx.beginPath(); ctx.strokeStyle = 'rgba(255,255,255,0.3)'; ctx.setLineDash([3,3]);
+    ctx.moveTo(0, H - avgH); ctx.lineTo(W, H - avgH); ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle = 'rgba(255,255,255,0.4)'; ctx.font = '9px sans-serif';
+    ctx.fillText('Méd: ' + Math.round(avgV).toLocaleString('pt-BR'), 8, H - avgH - 3);
 }
 
 // Sidebar updates
