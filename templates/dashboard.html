@@ -1235,6 +1235,47 @@
                     <button onclick="operadorEntrar(true)" style="padding:6px 14px;background:#f59e0b;color:#000;border:none;border-radius:6px;cursor:pointer;font-size:11px;font-weight:800;">FORÇAR ENTRADA</button>
                 </div>
             </div>
+            <!-- PREÇO ATUAL EM TEMPO REAL -->
+            <div id="simRealPriceBar" style="background:linear-gradient(90deg, rgba(34,197,94,0.08), rgba(59,130,246,0.08));border:2px solid var(--accent-blue);border-radius:10px;padding:12px 16px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+                <div style="display:flex;align-items:center;gap:12px;">
+                    <div>
+                        <div style="font-size:9px;color:var(--text-muted);font-weight:700;">PREÇO ATUAL</div>
+                        <div id="simRealLivePrice" style="font-size:32px;font-weight:900;color:#22c55e;font-family:monospace;letter-spacing:-1px;">---</div>
+                    </div>
+                    <div style="display:flex;flex-direction:column;gap:2px;">
+                        <div style="display:flex;align-items:center;gap:4px;">
+                            <span style="font-size:9px;color:var(--text-muted);">VAR:</span>
+                            <span id="simRealLiveVar" style="font-size:13px;font-weight:800;font-family:monospace;">---</span>
+                        </div>
+                        <div style="display:flex;align-items:center;gap:4px;">
+                            <span style="font-size:9px;color:var(--text-muted);">TEND:</span>
+                            <span id="simRealLiveTend" style="font-size:11px;font-weight:800;">---</span>
+                        </div>
+                    </div>
+                </div>
+                <div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap;">
+                    <div style="text-align:center;">
+                        <div style="font-size:9px;color:var(--text-muted);">HIGH</div>
+                        <div id="simRealLiveHigh" style="font-size:13px;font-weight:700;color:#22c55e;font-family:monospace;">---</div>
+                    </div>
+                    <div style="text-align:center;">
+                        <div style="font-size:9px;color:var(--text-muted);">LOW</div>
+                        <div id="simRealLiveLow" style="font-size:13px;font-weight:700;color:#ef4444;font-family:monospace;">---</div>
+                    </div>
+                    <div style="text-align:center;">
+                        <div style="font-size:9px;color:var(--text-muted);">VWAP</div>
+                        <div id="simRealLiveVwap" style="font-size:13px;font-weight:700;color:#a78bfa;font-family:monospace;">---</div>
+                    </div>
+                    <div style="text-align:center;">
+                        <div style="font-size:9px;color:var(--text-muted);">RSI</div>
+                        <div id="simRealLiveRsi" style="font-size:13px;font-weight:700;font-family:monospace;">---</div>
+                    </div>
+                    <div style="text-align:center;">
+                        <div style="font-size:9px;color:var(--text-muted);">ATUALIZADO</div>
+                        <div id="simRealLiveTime" style="font-size:11px;font-weight:700;color:var(--text-muted);font-family:monospace;">---</div>
+                    </div>
+                </div>
+            </div>
             <!-- Decisão principal -->
             <div id="opLiveDecisao" style="background:var(--bg-card);border:2px solid var(--border);border-radius:10px;padding:16px;margin-bottom:8px;text-align:center;">
                 <div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;">Decisão do Operador</div>
@@ -3914,12 +3955,15 @@ function abrirSimuladorReal() {
     simRealCheckMarket();
     // Start live operator (always, works both open and closed)
     operadorLiveInit();
+    // Start real-time price updates
+    simRealStartPriceUpdates();
     // Auto-load historico
     setTimeout(function() { carregarHistorico(); }, 500);
 }
 function fecharSimuladorReal() {
     var _sro2 = document.getElementById('simRealOverlay'); if(_sro2) _sro2.style.display = 'none';
     if (_opLiveInterval) { clearInterval(_opLiveInterval); _opLiveInterval = null; }
+    simRealStopPriceUpdates();
 }
 // fecharPaperTrading defined above (line ~1141)
 
@@ -5221,6 +5265,103 @@ async function operadorMonitorTrade() {
         return d;
     } catch(e) { console.error('monitor error:', e); return null; }
 }
+
+// ================================================================
+    // PREÇO EM TEMPO REAL NO SIMULADOR REAL
+    // ================================================================
+    var _simRealPriceInterval = null;
+    
+    async function simRealUpdatePrice() {
+        try {
+            const ativo = window._simRealAtivo || 'WIN';
+            const resp = await fetch('/api/analise?ativo=' + ativo);
+            const d = await resp.json();
+            
+            const priceEl = document.getElementById('simRealLivePrice');
+            const varEl = document.getElementById('simRealLiveVar');
+            const tendEl = document.getElementById('simRealLiveTend');
+            const highEl = document.getElementById('simRealLiveHigh');
+            const lowEl = document.getElementById('simRealLiveLow');
+            const vwapEl = document.getElementById('simRealLiveVwap');
+            const rsiEl = document.getElementById('simRealLiveRsi');
+            const timeEl = document.getElementById('simRealLiveTime');
+            
+            if (!priceEl) return;
+            
+            const pr = d.preco_realtime || {};
+            const an = d.analise || {};
+            const preco = pr.preco || an.close || 0;
+            const prevPrice = parseFloat(priceEl.dataset.prev || preco);
+            priceEl.dataset.prev = preco;
+            
+            // Animate price change
+            const isUp = preco >= prevPrice;
+            priceEl.style.color = isUp ? '#22c55e' : '#ef4444';
+            priceEl.textContent = preco.toLocaleString('pt-BR');
+            
+            // Variation
+            const varPct = pr.variacao;
+            if (varPct !== undefined && varEl) {
+                varEl.style.color = varPct >= 0 ? '#22c55e' : '#ef4444';
+                varEl.textContent = (varPct >= 0 ? '+' : '') + varPct.toFixed(2) + '%';
+            }
+            // Also show pts variation
+            const varPts = pr.variacao_pts;
+            if (varPts !== undefined && varEl) {
+                varEl.textContent += ' (' + (varPts >= 0 ? '+' : '') + varPts + 'pts)';
+            }
+            
+            // Tendency
+            const tend = an.tendencia || '---';
+            if (tendEl) {
+                tendEl.textContent = tend;
+                tendEl.style.color = tend === 'ALTA' ? '#22c55e' : tend === 'BAIXA' ? '#ef4444' : '#f59e0b';
+            }
+            
+            // High/Low from realtime
+            if (pr.high && highEl) highEl.textContent = pr.high.toLocaleString('pt-BR');
+            if (pr.low && lowEl) lowEl.textContent = pr.low.toLocaleString('pt-BR');
+            
+            // VWAP from analise
+            const vwap = an.vwap;
+            if (vwap && vwapEl) vwapEl.textContent = Math.round(vwap).toLocaleString('pt-BR');
+            
+            // RSI from analise
+            const rsi = an.rsi;
+            if (rsi && rsiEl) {
+                rsiEl.textContent = Math.round(rsi);
+                rsiEl.style.color = rsi > 70 ? '#ef4444' : rsi < 30 ? '#22c55e' : '#f59e0b';
+            }
+            
+            // Timestamp
+            if (timeEl) {
+                const now = new Date();
+                timeEl.textContent = now.toLocaleTimeString('pt-BR', {hour:'2-digit',minute:'2-digit',second:'2-digit'});
+            }
+            
+            // Flash effect on border
+            const bar = document.getElementById('simRealPriceBar');
+            if (bar) {
+                bar.style.borderColor = isUp ? '#22c55e' : '#ef4444';
+                setTimeout(function() { bar.style.borderColor = 'var(--accent-blue)'; }, 800);
+            }
+        } catch(e) {
+            console.warn('Price update error:', e);
+        }
+    }
+    
+    function simRealStartPriceUpdates() {
+        simRealUpdatePrice(); // immediate
+        if (_simRealPriceInterval) clearInterval(_simRealPriceInterval);
+        _simRealPriceInterval = setInterval(simRealUpdatePrice, 10000); // every 10s
+    }
+    
+    function simRealStopPriceUpdates() {
+        if (_simRealPriceInterval) {
+            clearInterval(_simRealPriceInterval);
+            _simRealPriceInterval = null;
+        }
+    }
 
 async function operadorLiveCheck(forcar) {
     const maxEnt = document.getElementById('opLiveMaxEntradas')?.value || 5;
