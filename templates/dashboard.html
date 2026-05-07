@@ -1305,7 +1305,7 @@
             </div>
             <!-- Auto-refresh indicator -->
             <div style="text-align:center;font-size:9px;color:var(--text-muted);padding:4px;">
-                <span id="opLiveRefreshInfo">Auto-refresh: a cada 2 min com mercado aberto</span> |
+                <span id="opLiveRefreshInfo">Auto-refresh: a cada 30s com mercado aberto</span> |
                 <span id="opLiveTimestamp"></span>
             </div>
         </div>
@@ -4049,6 +4049,7 @@ function abrirSimuladorReal() {
     // Start live operator (always, works both open and closed)
     operadorLiveInit();
     // Start real-time price updates
+    window._simRealAtivo = _opLiveAtivo || state.ativo || 'WIN';
     simRealStartPriceUpdates();
     // Auto-load historico
     setTimeout(function() { carregarHistorico(); }, 500);
@@ -4082,6 +4083,7 @@ function simRealCheckMarket() {
 
 function simRealSetAtivo(a) {
     _opLiveAtivo = a;
+    window._simRealAtivo = a;
     state.ativo = a;
     document.getElementById('simBtnWIN').className = a === 'WIN' ? 'btn btn-primary' : 'btn';
     document.getElementById('simBtnWDO').className = a === 'WDO' ? 'btn btn-primary' : 'btn';
@@ -5021,7 +5023,7 @@ function operadorLiveInit() {
     if (_opLiveInterval) clearInterval(_opLiveInterval);
     _opLiveInterval = setInterval(() => {
         operadorLiveCheck();
-    }, 120000); // 2 min
+    }, 30000); // 30 seg - TEMPO REAL
     
     // When tab becomes visible, refresh immediately
     document.addEventListener('visibilitychange', function() {
@@ -5056,8 +5058,8 @@ function _startOperadorBackground() {
             }
             console.log('🔄 BG check:', data.status, data.hora_atual || '');
         } catch(e) { console.log('BG check error:', e); }
-    }, 120000);
-    console.log('🟢 Operador background engine ATIVO - roda a cada 2min em QUALQUER aba');
+    }, 60000);
+    console.log('🟢 Operador background engine ATIVO - roda a cada 60s em QUALQUER aba');
 }
 // Start background engine on page load
 
@@ -5366,9 +5368,23 @@ async function operadorMonitorTrade() {
     
     async function simRealUpdatePrice() {
         try {
-            const ativo = window._simRealAtivo || 'WIN';
-            const resp = await fetch('/api/analise?ativo=' + ativo);
-            const d = await resp.json();
+            const ativo = window._simRealAtivo || _opLiveAtivo || 'WIN';
+            // Usar /api/preco-realtime (mais rápido) + fallback /api/analise
+            let d = {};
+            try {
+                const rtResp = await fetch('/api/preco-realtime');
+                const rtData = await rtResp.json();
+                if (rtData.precos && rtData.precos[ativo]) {
+                    d.preco_realtime = rtData.precos[ativo];
+                }
+            } catch(e2) {}
+            // Buscar indicadores da analise (RSI, tendencia, VWAP)
+            try {
+                const anResp = await fetch('/api/analise?ativo=' + ativo);
+                const anData = await anResp.json();
+                d.analise = anData.analise || anData;
+                if (!d.preco_realtime) d.preco_realtime = anData.preco_realtime || {};
+            } catch(e3) {}
             
             const priceEl = document.getElementById('simRealLivePrice');
             const varEl = document.getElementById('simRealLiveVar');

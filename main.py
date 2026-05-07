@@ -2816,17 +2816,33 @@ async def operador_live(ativo: str = Query("WIN"), max_entradas: int = Query(10)
             ta_alvo = ta.get("take_profit", 0)
             ta_entrada = ta.get("preco_entrada", 0)
             
-            # Checar com dados recentes se stop ou alvo foi atingido
+            # Checar com preço RT se stop ou alvo foi atingido
             try:
-                _check_dados = yf.download(ticker, period="1d", interval="5m", progress=False)
-                if not _check_dados.empty:
-                    if isinstance(_check_dados.columns, pd.MultiIndex):
-                        _check_dados.columns = _check_dados.columns.get_level_values(0)
-                    _check_dados.columns = [cc.lower() for cc in _check_dados.columns]
-                    # Verificar as últimas velas desde a entrada
-                    _preco_check = float(_check_dados['close'].iloc[-1])
-                    _high_check = float(_check_dados['high'].iloc[-1])
-                    _low_check = float(_check_dados['low'].iloc[-1])
+                _preco_check = 0
+                _high_check = 0
+                _low_check = 0
+                # Tentar preço realtime primeiro (sem delay)
+                try:
+                    from data_provider import DataProvider
+                    _dp2 = DataProvider()
+                    _rt2 = _dp2.preco_realtime.get(ativo, {})
+                    if _rt2 and _rt2.get("preco"):
+                        _preco_check = float(_rt2["preco"])
+                        _high_check = float(_rt2.get("high", _preco_check))
+                        _low_check = float(_rt2.get("low", _preco_check))
+                except:
+                    pass
+                # Fallback yfinance se RT falhou
+                if not _preco_check:
+                    _check_dados = yf.download(ticker, period="1d", interval="5m", progress=False)
+                    if not _check_dados.empty:
+                        if isinstance(_check_dados.columns, pd.MultiIndex):
+                            _check_dados.columns = _check_dados.columns.get_level_values(0)
+                        _check_dados.columns = [cc.lower() for cc in _check_dados.columns]
+                        _preco_check = float(_check_dados['close'].iloc[-1])
+                        _high_check = float(_check_dados['high'].iloc[-1])
+                        _low_check = float(_check_dados['low'].iloc[-1])
+                if _preco_check > 0:
                     
                     _resultado_auto = None
                     if ta_is_compra:
@@ -3138,8 +3154,71 @@ async def operador_live(ativo: str = Query("WIN"), max_entradas: int = Query(10)
             elif alerta_erro:
                 motivos_nao_operar.append(alerta_erro)
         
+        # ===== CONSULTAR MEMÓRIA DE APRENDIZADO (CT + Replay) =====
+        alerta_memoria_live = None
+        if operar and tipo_sinal:
+            try:
+                from learning_engine import consultar_memoria
+                _mem_op = {
+                    "tipo": tipo_sinal,
+                    "hora_entrada": hora_atual,
+                    "tendencia": tend,
+                    "rsi": rsi_v,
+                    "macd_hist": macd_h,
+                    "score": score,
+                    "conf_label": conf_label,
+                    "janela": janela_nome,
+                    "ativo": ativo,
+                }
+                _mem_check = consultar_memoria(_mem_op)
+                if _mem_check and _mem_check.get("tem_alerta"):
+                    alerta_memoria_live = _mem_check
+                    _alertas = _mem_check.get("alertas", [])
+                    if _alertas and _alertas[0].get("similaridade", 0) >= 80:
+                        # Memória de treino bloqueia: setup similar já deu loss
+                        operar = False
+                        motivos_nao_operar.append(
+                            f"🧠 MEMÓRIA CT: {_alertas[0]['similaridade']}% similar a erro de treino - "
+                            f"{_alertas[0].get('licao', 'padrão já deu loss no treino')}"
+                        )
+                        logger.info(f"OPERADOR: Memória CT bloqueou {tipo_sinal} - {_alertas[0].get('licao','')}")
+                    elif _alertas and _alertas[0].get("similaridade", 0) >= 60:
+                        # Cautela: setup parecido com erro anterior
+                        motivos_operar.append(
+                            f"⚠️ Memória: {_alertas[0]['similaridade']}% similar a erro - sizing reduzido"
+                        )
+            except Exception as _me:
+                logger.warning(f"Erro consultando memória no operador: {_me}")
+        
+        # ===== OBTER PREÇO REALTIME (TradingView/Profit) =====
+        # yfinance tem delay de 5-15min, NUNCA usar para preço de entrada
+        preco_atual = c  # fallback
+        try:
+            from data_provider import DataProvider
+            _dp = DataProvider()
+            _rt_precos = {}
+            import asyncio
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    import concurrent.futures
+                    with concurrent.futures.ThreadPoolExecutor() as pool:
+                        _rt_precos = pool.submit(lambda: asyncio.run(_dp.obter_preco_realtime())).result()
+                else:
+                    _rt_precos = loop.run_until_complete(_dp.obter_preco_realtime())
+            except RuntimeError:
+                _rt_precos = asyncio.run(_dp.obter_preco_realtime())
+            
+            if _rt_precos and ativo in _rt_precos:
+                _rt_info = _rt_precos[ativo]
+                _rt_preco = _rt_info.get("preco", 0)
+                if _rt_preco and _rt_preco > 0:
+                    preco_atual = _rt_preco
+                    logger.info(f"OPERADOR: Preço RT {ativo} = {preco_atual} via {_rt_info.get('fonte','?')}")
+        except Exception as _rte:
+            logger.warning(f"Erro obtendo preço RT no operador: {_rte}")
+        
         # ===== DECISÃO DO OPERADOR =====
-        preco_atual = c
         
         # Calcular stop e alvo
         stop_pts = 0; alvo_pts = 0; stop_price = 0; alvo_price = 0; rr_ratio = 2.0
@@ -3333,6 +3412,7 @@ async def operador_live(ativo: str = Query("WIN"), max_entradas: int = Query(10)
             "aguardando_entrada": op_state.get("aguardando_entrada", False),
             "erros_memoria": len(app_state.get("operador_erros", [])),
             "alerta_erro": alerta_erro,
+            "alerta_memoria_ct": alerta_memoria_live,
             "motivo": motivos_nao_operar[0] if motivos_nao_operar else ("Entrada recomendada" if operar else "Sem sinal"),
         }
         

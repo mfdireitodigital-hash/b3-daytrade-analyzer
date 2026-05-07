@@ -401,45 +401,113 @@ def detectar_violinada(dados: pd.DataFrame, lookback: int = 10) -> float:
     return min(score, 100)
 
 
-def calcular_suportes_resistencias(dados: pd.DataFrame, lookback: int = 100) -> tuple:
-    """Identifica suportes e resistências baseado em pivôs"""
+def calcular_suportes_resistencias(dados: pd.DataFrame, lookback: int = 200) -> tuple:
+    """
+    Identifica suportes e resistências robusto com múltiplos métodos:
+    1. Pivôs de alta/baixa (2 e 3 barras)
+    2. VWAP do dia
+    3. High/Low do dia
+    4. Números redondos (múltiplos de 500/1000 para WIN, 50/100 para WDO)
+    5. Agrupamento por volume (mais toques = mais forte)
+    """
     recente = dados.tail(lookback)
-    suportes = []
-    resistencias = []
+    preco_atual = float(recente['close'].iloc[-1])
+    suportes_raw = []
+    resistencias_raw = []
 
+    # === MÉTODO 1: Pivôs de 2 barras ===
     for i in range(2, len(recente) - 2):
+        h = float(recente['high'].iloc[i])
+        l = float(recente['low'].iloc[i])
         # Pivô de resistência (topo)
-        if (recente['high'].iloc[i] > recente['high'].iloc[i-1] and
-            recente['high'].iloc[i] > recente['high'].iloc[i-2] and
-            recente['high'].iloc[i] > recente['high'].iloc[i+1] and
-            recente['high'].iloc[i] > recente['high'].iloc[i+2]):
-            resistencias.append(round(recente['high'].iloc[i], 2))
-
+        if (h > recente['high'].iloc[i-1] and h > recente['high'].iloc[i-2] and
+            h > recente['high'].iloc[i+1] and h > recente['high'].iloc[i+2]):
+            resistencias_raw.append(round(h, 2))
         # Pivô de suporte (fundo)
-        if (recente['low'].iloc[i] < recente['low'].iloc[i-1] and
-            recente['low'].iloc[i] < recente['low'].iloc[i-2] and
-            recente['low'].iloc[i] < recente['low'].iloc[i+1] and
-            recente['low'].iloc[i] < recente['low'].iloc[i+2]):
-            suportes.append(round(recente['low'].iloc[i], 2))
+        if (l < recente['low'].iloc[i-1] and l < recente['low'].iloc[i-2] and
+            l < recente['low'].iloc[i+1] and l < recente['low'].iloc[i+2]):
+            suportes_raw.append(round(l, 2))
 
-    # Remover duplicatas próximas
-    suportes = _agrupar_niveis(sorted(suportes), tolerancia=0.001)
-    resistencias = _agrupar_niveis(sorted(resistencias), tolerancia=0.001)
+    # === MÉTODO 2: Pivôs de 3 barras (mais fortes) ===
+    for i in range(3, len(recente) - 3):
+        h = float(recente['high'].iloc[i])
+        l = float(recente['low'].iloc[i])
+        if all(h > recente['high'].iloc[i+j] for j in [-3,-2,-1,1,2,3]):
+            resistencias_raw.append(round(h, 2))
+            resistencias_raw.append(round(h, 2))  # peso duplo
+        if all(l < recente['low'].iloc[i+j] for j in [-3,-2,-1,1,2,3]):
+            suportes_raw.append(round(l, 2))
+            suportes_raw.append(round(l, 2))  # peso duplo
 
-    return suportes[-5:], resistencias[-5:]  # Últimos 5 de cada
+    # === MÉTODO 3: High/Low do dia atual ===
+    try:
+        hoje_dados = recente[recente.index.date == recente.index[-1].date()] if hasattr(recente.index, 'date') else recente.tail(80)
+        if len(hoje_dados) > 0:
+            high_dia = float(hoje_dados['high'].max())
+            low_dia = float(hoje_dados['low'].min())
+            if high_dia > preco_atual:
+                resistencias_raw.append(round(high_dia, 2))
+            if low_dia < preco_atual:
+                suportes_raw.append(round(low_dia, 2))
+    except:
+        pass
+
+    # === MÉTODO 4: Números redondos próximos ===
+    if preco_atual > 1000:  # WIN (pontos grandes)
+        base = round(preco_atual / 500) * 500
+        for mult in [-1500, -1000, -500, 0, 500, 1000, 1500]:
+            nivel = base + mult
+            if abs(nivel - preco_atual) > 50:  # não muito perto do preço
+                if nivel < preco_atual:
+                    suportes_raw.append(nivel)
+                else:
+                    resistencias_raw.append(nivel)
+    else:  # WDO
+        base = round(preco_atual / 50) * 50
+        for mult in [-150, -100, -50, 0, 50, 100, 150]:
+            nivel = base + mult
+            if abs(nivel - preco_atual) > 5:
+                if nivel < preco_atual:
+                    suportes_raw.append(nivel)
+                else:
+                    resistencias_raw.append(nivel)
+
+    # === AGRUPAR por proximidade (tolerância maior) ===
+    tol = 0.003 if preco_atual > 1000 else 0.005  # 0.3% WIN, 0.5% WDO
+    suportes = _agrupar_niveis_ponderado(sorted(suportes_raw), tolerancia=tol)
+    resistencias = _agrupar_niveis_ponderado(sorted(resistencias_raw), tolerancia=tol)
+
+    # Filtrar: só manter níveis razoavelmente perto do preço (dentro de 2%)
+    range_max = preco_atual * 0.02
+    suportes = [s for s in suportes if preco_atual - s < range_max and s < preco_atual]
+    resistencias = [r for r in resistencias if r - preco_atual < range_max and r > preco_atual]
+
+    # Ordenar: suportes mais perto primeiro (desc), resistências mais perto primeiro (asc)
+    suportes = sorted(suportes, reverse=True)[:5]
+    resistencias = sorted(resistencias)[:5]
+
+    return suportes, resistencias
+
+
+def _agrupar_niveis_ponderado(niveis: list, tolerancia: float = 0.003) -> list:
+    """Agrupa níveis próximos com peso (mais toques = média ponderada)"""
+    if not niveis:
+        return []
+    grupos = [[niveis[0]]]
+    for n in niveis[1:]:
+        if abs(n - grupos[-1][-1]) / max(abs(grupos[-1][-1]), 1) <= tolerancia:
+            grupos[-1].append(n)
+        else:
+            grupos.append([n])
+    # Retornar média de cada grupo, ordenado por quantidade de toques (mais forte primeiro)
+    resultado = [(sum(g)/len(g), len(g)) for g in grupos]
+    resultado.sort(key=lambda x: -x[1])  # mais toques primeiro
+    return [round(r[0], 2) for r in resultado]
 
 
 def _agrupar_niveis(niveis: list, tolerancia: float = 0.001) -> list:
-    """Agrupa níveis de preço próximos"""
-    if not niveis:
-        return []
-    agrupados = [niveis[0]]
-    for n in niveis[1:]:
-        if abs(n - agrupados[-1]) / agrupados[-1] > tolerancia:
-            agrupados.append(n)
-        else:
-            agrupados[-1] = (agrupados[-1] + n) / 2
-    return agrupados
+    """Agrupa níveis de preço próximos (backward compat)"""
+    return _agrupar_niveis_ponderado(niveis, tolerancia)
 
 
 # =====================================================
