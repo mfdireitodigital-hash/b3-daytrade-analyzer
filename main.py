@@ -337,7 +337,7 @@ templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
 
 @app.get("/api/version")
 async def api_version():
-    return {"version": "3.9.6", "build": "20260508c", "changes": "fix_cola_delay,rt_cache_preco,anti_cheat_5min,learning_engine,sr_rewrite,macd_volume_charts"}
+    return {"version": "4.0.0", "build": "20260508d", "changes": "fix_cola_delay,rt_cache_preco,anti_cheat_5min,learning_engine,sr_rewrite,macd_volume_charts"}
 
 @app.get("/", response_class=HTMLResponse)
 async def dashboard(request: Request):
@@ -3522,6 +3522,436 @@ async def operador_live(ativo: str = Query("WIN"), max_entradas: int = Query(10)
         
     except Exception as e:
         logger.error(f"Erro operador-live: {e}")
+        import traceback; traceback.print_exc()
+        return JSONResponse({"status": "ERRO", "mensagem": str(e)}, status_code=500)
+
+
+@app.get("/api/operador-live/sugestao")
+async def operador_sugestao(ativo: str = Query("WIN")):
+    """
+    SUGESTÃO DO OPERADOR SENIOR
+    
+    Analisa o momento atual em PROFUNDIDADE e dá um parecer completo:
+    - Checklist de confluência (7 pontos do framework)
+    - Memória de erros passados (CT + replay)
+    - Análise macro + micro
+    - Prós e contras da entrada
+    - R:R calculado
+    - Veredicto final com % de confiança
+    
+    Diferente do endpoint principal que auto-opera, este é CONSULTIVO:
+    o trader pede a opinião do operador e decide se segue ou não.
+    """
+    try:
+        from datetime import timezone, timedelta
+        BRT_tz = timezone(timedelta(hours=-3))
+        ativo = ativo.upper()
+        ticker = "^BVSP" if ativo == "WIN" else "USDBRL=X"
+        valor_ponto = 0.20 if ativo == "WIN" else 10.00
+        agora = datetime.now(BRT_tz)
+        hora_atual = agora.strftime("%H:%M")
+        hora_int = agora.hour
+        minuto = agora.minute
+        t_min = hora_int * 60 + minuto
+        
+        from data_provider import obter_contrato_vigente as _ocv
+        contrato_info = _ocv(ativo)
+        
+        # Verificar mercado
+        if not mercado_aberto():
+            return JSONResponse({
+                "status": "MERCADO_FECHADO",
+                "sugestao": "AGUARDAR",
+                "resumo": "Mercado fechado. Aguarde abertura às 9:15 para análise.",
+                "confianca": 0,
+            })
+        
+        # Obter dados
+        import yfinance as yf
+        dados = yf.download(ticker, period="5d", interval="5m", progress=False)
+        if dados.empty:
+            return JSONResponse({"status": "ERRO", "mensagem": "Sem dados disponíveis"})
+        if isinstance(dados.columns, pd.MultiIndex):
+            dados.columns = dados.columns.get_level_values(0)
+        dados.columns = [c.lower() for c in dados.columns]
+        
+        c = float(dados['close'].iloc[-1])
+        h = float(dados['high'].iloc[-1])
+        l = float(dados['low'].iloc[-1])
+        o = float(dados['open'].iloc[-1])
+        
+        # ===== PREÇO RT (mesmo cascade do operador principal) =====
+        preco_atual = c
+        fonte_preco = "yfinance"
+        _rt_cache = app_state.get("preco_realtime", {}).get(ativo, {})
+        if _rt_cache and _rt_cache.get("preco"):
+            preco_atual = float(_rt_cache["preco"])
+            fonte_preco = _rt_cache.get("fonte", "RT cache")
+        else:
+            _prov = app_state.get("provider")
+            if _prov:
+                _rt_prov = _prov.preco_realtime.get(ativo, {})
+                if _rt_prov and _rt_prov.get("preco"):
+                    preco_atual = float(_rt_prov["preco"])
+                    fonte_preco = _rt_prov.get("fonte", "Provider RT")
+        
+        # ===== INDICADORES =====
+        from analysis_engine import (
+            calcular_rsi, calcular_macd, calcular_atr_series,
+            calcular_suportes_resistencias, analisar_tendencia_macro
+        )
+        
+        rsi_s = calcular_rsi(dados['close'])
+        rsi_v = round(float(rsi_s.iloc[-1]), 1) if len(rsi_s) > 0 else 50
+        
+        macd_line, signal, hist = calcular_macd(dados['close'])
+        macd_h = round(float(hist.iloc[-1]), 2) if len(hist) > 0 else 0
+        macd_val = round(float(macd_line.iloc[-1]), 2) if len(macd_line) > 0 else 0
+        signal_val = round(float(signal.iloc[-1]), 2) if len(signal) > 0 else 0
+        
+        atr_s = calcular_atr_series(dados)
+        atr_v = round(float(atr_s.iloc[-1]), 1) if len(atr_s) > 0 else (100 if ativo == "WIN" else 8)
+        
+        ema9 = float(dados['close'].ewm(span=9, adjust=False).mean().iloc[-1])
+        ema21 = float(dados['close'].ewm(span=21, adjust=False).mean().iloc[-1])
+        ema50 = float(dados['close'].ewm(span=50, adjust=False).mean().iloc[-1])
+        
+        # VWAP
+        vwap = None
+        try:
+            today_data = dados[dados.index.date == dados.index[-1].date()]
+            if len(today_data) > 0:
+                tp = (today_data['high'] + today_data['low'] + today_data['close']) / 3
+                vwap = round(float((tp * today_data['volume']).cumsum() / today_data['volume'].cumsum().replace(0, 1)).iloc[-1] if today_data['volume'].sum() > 0 else float(tp.mean()), 2)
+        except:
+            pass
+        
+        # S/R
+        suportes_resistencias = calcular_suportes_resistencias(dados)
+        suporte = None
+        resistencia = None
+        for sr in suportes_resistencias:
+            if sr["nivel"] < preco_atual and (suporte is None or sr["nivel"] > suporte):
+                suporte = sr["nivel"]
+            if sr["nivel"] > preco_atual and (resistencia is None or sr["nivel"] < resistencia):
+                resistencia = sr["nivel"]
+        
+        # Tendência macro
+        tend_macro = analisar_tendencia_macro(dados)
+        tend = tend_macro.get("tendencia", "LATERAL")
+        
+        # ===== JANELA DE OPERAÇÃO =====
+        JANELAS = [
+            (9*60, 9*60+15, "Leilão/Primeiros 15min", "PROIBIDO", False),
+            (9*60+15, 10*60+30, "Abertura Pós-Leilão", "PRIME", True),
+            (10*60+30, 11*60+30, "Manhã Institucional", "BOA", True),
+            (11*60+30, 13*60+30, "Almoço", "RUIM", True),
+            (12*60, 13*60, "Almoço Morto", "PROIBIDO", False),
+            (13*60+30, 14*60, "Pré-NY", "NORMAL", True),
+            (14*60, 15*60, "Retomada NY Open", "PRIME", True),
+            (15*60, 16*60+30, "Tarde Institucional", "BOA", True),
+            (16*60+30, 17*60, "Pré-Fechamento", "RUIM", True),
+            (17*60, 18*60, "Leilão Fechamento", "PROIBIDO", False),
+        ]
+        janela_nome = "Normal"
+        janela_qual = "NORMAL"
+        pode_janela = True
+        for j_inicio, j_fim, j_nome, j_qual, j_pode in JANELAS:
+            if j_inicio <= t_min < j_fim:
+                janela_nome = j_nome
+                janela_qual = j_qual
+                pode_janela = j_pode
+                break
+        
+        # ===== CHECKLIST DE CONFLUÊNCIA (7 PONTOS - Framework dos livros) =====
+        checklist = []
+        score = 0
+        
+        # 1. Tendência TF+ (Murphy/Elder)
+        tf_ok = tend in ("ALTA", "BAIXA")
+        checklist.append({
+            "item": "Tendência TF+ (Murphy/Elder)",
+            "status": "✅" if tf_ok else "❌",
+            "detalhe": f"Macro: {tend} (força {tend_macro.get('forca', 0)})",
+            "ok": tf_ok
+        })
+        if tf_ok: score += 1
+        
+        # 2. S/R relevante (Murphy)
+        sr_ok = False
+        sr_detalhe = "Sem S/R próximo"
+        if suporte and resistencia:
+            dist_sup = abs(preco_atual - suporte)
+            dist_res = abs(resistencia - preco_atual)
+            prox_sr = min(dist_sup, dist_res)
+            tolerancia = atr_v * 0.5
+            if prox_sr <= tolerancia:
+                sr_ok = True
+                sr_detalhe = f"Próximo de {'Suporte' if dist_sup < dist_res else 'Resistência'} ({round(prox_sr, 0)}pts, ATR*0.5={round(tolerancia,0)})"
+            else:
+                sr_detalhe = f"Sup={round(suporte,0)} Res={round(resistencia,0)} (distante: {round(prox_sr,0)}pts)"
+        checklist.append({
+            "item": "S/R relevante (Murphy)",
+            "status": "✅" if sr_ok else "❌",
+            "detalhe": sr_detalhe,
+            "ok": sr_ok
+        })
+        if sr_ok: score += 1
+        
+        # 3. Volume/Fluxo (Bellafiore)
+        vol_ok = False
+        vol_detalhe = "Volume indisponível (yfinance proxy)"
+        try:
+            vol_atual = float(dados['volume'].iloc[-1])
+            vol_media = float(dados['volume'].iloc[-20:].mean())
+            if vol_atual > 0 and vol_media > 0:
+                vol_ratio = vol_atual / vol_media
+                vol_ok = vol_ratio > 1.0
+                vol_detalhe = f"Volume {round(vol_ratio, 1)}x média ({'+' if vol_ok else '-'})"
+            else:
+                # Fallback: range candle vs ATR
+                candle_range = h - l
+                vol_ok = candle_range > atr_v * 0.3
+                vol_detalhe = f"Range candle: {round(candle_range, 1)} vs ATR*0.3={round(atr_v*0.3, 1)} ({'ativo' if vol_ok else 'fraco'})"
+        except:
+            pass
+        checklist.append({
+            "item": "Volume/Fluxo (Bellafiore)",
+            "status": "✅" if vol_ok else "⚠️",
+            "detalhe": vol_detalhe,
+            "ok": vol_ok
+        })
+        if vol_ok: score += 1
+        
+        # 4. Indicadores confirmam (Murphy)
+        ind_confirmam = 0
+        ind_detalhes = []
+        # RSI
+        if rsi_v < 35:
+            ind_confirmam += 1
+            ind_detalhes.append(f"RSI={rsi_v} (sobrevendido → compra)")
+        elif rsi_v > 65:
+            ind_confirmam += 1
+            ind_detalhes.append(f"RSI={rsi_v} (sobrecomprado → venda)")
+        else:
+            ind_detalhes.append(f"RSI={rsi_v} (neutro)")
+        # MACD
+        if macd_h > 0:
+            ind_confirmam += 1
+            ind_detalhes.append(f"MACD hist={macd_h} (positivo → compra)")
+        elif macd_h < 0:
+            ind_confirmam += 1
+            ind_detalhes.append(f"MACD hist={macd_h} (negativo → venda)")
+        # EMAs
+        if ema9 > ema21:
+            ind_confirmam += 1
+            ind_detalhes.append(f"EMA9>{'>'}EMA21 (alta)")
+        else:
+            ind_confirmam += 1
+            ind_detalhes.append(f"EMA9<EMA21 (baixa)")
+        
+        ind_ok = ind_confirmam >= 2
+        checklist.append({
+            "item": "Indicadores (Murphy)",
+            "status": "✅" if ind_ok else "❌",
+            "detalhe": " | ".join(ind_detalhes),
+            "ok": ind_ok
+        })
+        if ind_ok: score += 1
+        
+        # 5. Catalisador (Bellafiore PlayBook)
+        cat_ok = janela_qual in ("PRIME", "BOA")
+        checklist.append({
+            "item": "Catalisador/Janela (Bellafiore)",
+            "status": "✅" if cat_ok else "❌",
+            "detalhe": f"Janela: {janela_nome} ({janela_qual})",
+            "ok": cat_ok
+        })
+        if cat_ok: score += 1
+        
+        # 6. Risco definido (Elder/Douglas)
+        stop_pts = round(atr_v * 0.8, 0) if ativo == "WIN" else round(atr_v * 0.8, 2)
+        rr_ratio = 2.0
+        alvo_pts = round(stop_pts * rr_ratio, 0) if ativo == "WIN" else round(stop_pts * rr_ratio, 2)
+        rr_ok = True  # Sempre definimos risco
+        rr_detalhe = f"Stop: {stop_pts}pts | Alvo: {alvo_pts}pts | R:R 1:{rr_ratio}"
+        if ativo == "WIN":
+            risco_rs = round(stop_pts * valor_ponto, 2)
+            alvo_rs = round(alvo_pts * valor_ponto, 2)
+            rr_detalhe += f" | Risco: R${risco_rs} | Potencial: R${alvo_rs}"
+        checklist.append({
+            "item": "Risco definido (Elder/Douglas)",
+            "status": "✅" if rr_ok else "❌",
+            "detalhe": rr_detalhe,
+            "ok": rr_ok
+        })
+        if rr_ok: score += 1
+        
+        # 7. Estado mental/Dia (Douglas/Tendler)
+        op_state = app_state["operador_live"][ativo]
+        n_ops = len(op_state["operacoes"])
+        losses_seq = op_state.get("losses_consecutivos", 0)
+        bloqueado = op_state.get("dia_bloqueado", False)
+        mental_ok = not bloqueado and losses_seq < 3 and n_ops < 10
+        mental_detalhe = f"Ops hoje: {n_ops} | Losses seq: {losses_seq}/3 | {'BLOQUEADO' if bloqueado else 'OK'}"
+        checklist.append({
+            "item": "Estado do dia (Douglas/Tendler)",
+            "status": "✅" if mental_ok else "❌",
+            "detalhe": mental_detalhe,
+            "ok": mental_ok
+        })
+        if mental_ok: score += 1
+        
+        # ===== DIREÇÃO SUGERIDA =====
+        sinais_compra = 0
+        sinais_venda = 0
+        if tend == "ALTA": sinais_compra += 2
+        elif tend == "BAIXA": sinais_venda += 2
+        if rsi_v < 40: sinais_compra += 1
+        elif rsi_v > 60: sinais_venda += 1
+        if macd_h > 0: sinais_compra += 1
+        elif macd_h < 0: sinais_venda += 1
+        if ema9 > ema21: sinais_compra += 1
+        else: sinais_venda += 1
+        if preco_atual > ema50: sinais_compra += 1
+        else: sinais_venda += 1
+        
+        if sinais_compra > sinais_venda + 1:
+            direcao = "COMPRA"
+        elif sinais_venda > sinais_compra + 1:
+            direcao = "VENDA"
+        else:
+            direcao = "INDEFINIDA"
+        
+        # ===== CONFIANÇA =====
+        conf_label = "A+" if score >= 6 else "A" if score == 5 else "B+" if score == 4 else "B" if score == 3 else "C" if score == 2 else "D"
+        confianca_pct = round(score / 7 * 100)
+        
+        # ===== CONSULTAR MEMÓRIA =====
+        memoria_info = None
+        try:
+            from learning_engine import consultar_memoria
+            _mem_op = {
+                "tipo": direcao if direcao != "INDEFINIDA" else "COMPRA",
+                "hora_entrada": hora_atual,
+                "tendencia": tend,
+                "rsi": rsi_v,
+                "macd_hist": macd_h,
+                "score": score,
+                "conf_label": conf_label,
+                "janela": janela_nome,
+                "ativo": ativo,
+            }
+            _mem_result = consultar_memoria(_mem_op)
+            if _mem_result and _mem_result.get("tem_alerta"):
+                alertas = _mem_result.get("alertas", [])
+                memoria_info = {
+                    "tem_alerta": True,
+                    "alertas": alertas[:3],
+                    "mensagem": alertas[0].get("licao", "Setup similar já deu problema") if alertas else "",
+                    "similaridade": alertas[0].get("similaridade", 0) if alertas else 0,
+                }
+            else:
+                memoria_info = {"tem_alerta": False, "mensagem": "Nenhum erro similar na memória"}
+        except Exception as me:
+            memoria_info = {"tem_alerta": False, "mensagem": f"Memória indisponível: {me}"}
+        
+        # ===== PRÓS E CONTRAS =====
+        pros = []
+        contras = []
+        for item in checklist:
+            if item["ok"]:
+                pros.append(item["detalhe"])
+            else:
+                contras.append(f"{item['item']}: {item['detalhe']}")
+        
+        # ===== VEREDICTO =====
+        if score >= 5 and direcao != "INDEFINIDA" and pode_janela and not bloqueado:
+            veredicto = "ENTRAR"
+            veredicto_cor = "#22c55e"
+            veredicto_msg = f"Setup {conf_label} ({score}/7) com confluência forte. {direcao} recomendada."
+        elif score >= 4 and direcao != "INDEFINIDA" and pode_janela:
+            veredicto = "ENTRAR COM CAUTELA"
+            veredicto_cor = "#f59e0b"
+            veredicto_msg = f"Setup {conf_label} ({score}/7) razoável. {direcao} possível com sizing reduzido."
+        elif score >= 3 and direcao != "INDEFINIDA":
+            veredicto = "ESPERAR"
+            veredicto_cor = "#f59e0b"
+            veredicto_msg = f"Setup {conf_label} ({score}/7) fraco. Faltam confluências. Aguardar melhor momento."
+        else:
+            veredicto = "NÃO ENTRAR"
+            veredicto_cor = "#ef4444"
+            veredicto_msg = f"Score {score}/7 insuficiente. {'Direção indefinida. ' if direcao == 'INDEFINIDA' else ''}{'Janela ruim. ' if not pode_janela else ''}{'Dia bloqueado. ' if bloqueado else ''}Aguardar."
+        
+        if memoria_info and memoria_info.get("tem_alerta") and memoria_info.get("similaridade", 0) >= 70:
+            veredicto = "NÃO ENTRAR"
+            veredicto_cor = "#ef4444"
+            veredicto_msg = f"🧠 MEMÓRIA BLOQUEIA: {memoria_info['similaridade']}% similar a erro passado. {memoria_info['mensagem']}"
+        
+        # ===== SETUP ENTRY PRICES =====
+        is_compra = direcao == "COMPRA"
+        entry_price = round(preco_atual, 2)
+        stop_price = round(preco_atual - stop_pts, 2) if is_compra else round(preco_atual + stop_pts, 2)
+        alvo_price = round(preco_atual + alvo_pts, 2) if is_compra else round(preco_atual - alvo_pts, 2)
+        
+        return JSONResponse({
+            "status": "OK",
+            "ativo": ativo,
+            "hora": hora_atual,
+            "preco_atual": preco_atual,
+            "fonte_preco": fonte_preco,
+            # Resumo (visão compacta)
+            "resumo": {
+                "veredicto": veredicto,
+                "veredicto_cor": veredicto_cor,
+                "veredicto_msg": veredicto_msg,
+                "direcao": direcao,
+                "score": score,
+                "conf_label": conf_label,
+                "confianca_pct": confianca_pct,
+                "rr": f"1:{rr_ratio}",
+                "stop_pts": stop_pts,
+                "alvo_pts": alvo_pts,
+                "entry_price": entry_price,
+                "stop_price": stop_price,
+                "alvo_price": alvo_price,
+                "janela": f"{janela_nome} ({janela_qual})",
+                "tend_macro": tend,
+            },
+            # Detalhado (visão expandida)
+            "detalhado": {
+                "checklist": checklist,
+                "pros": pros,
+                "contras": contras,
+                "indicadores": {
+                    "rsi": rsi_v,
+                    "macd": macd_val,
+                    "macd_signal": signal_val,
+                    "macd_hist": macd_h,
+                    "ema9": round(ema9, 2),
+                    "ema21": round(ema21, 2),
+                    "ema50": round(ema50, 2),
+                    "atr": atr_v,
+                    "vwap": vwap,
+                    "suporte": round(suporte, 0) if suporte else None,
+                    "resistencia": round(resistencia, 0) if resistencia else None,
+                },
+                "memoria": memoria_info,
+                "estado_dia": {
+                    "ops_hoje": n_ops,
+                    "pts_hoje": round(op_state.get("total_pts", 0), 1),
+                    "losses_seq": losses_seq,
+                    "bloqueado": bloqueado,
+                },
+                "sinais_direcao": {
+                    "compra": sinais_compra,
+                    "venda": sinais_venda,
+                },
+            },
+            "timestamp": agora.strftime("%H:%M:%S"),
+        })
+    except Exception as e:
+        logger.error(f"Erro sugestão: {e}")
         import traceback; traceback.print_exc()
         return JSONResponse({"status": "ERRO", "mensagem": str(e)}, status_code=500)
 

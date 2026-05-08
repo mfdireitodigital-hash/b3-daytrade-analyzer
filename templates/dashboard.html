@@ -1233,6 +1233,7 @@
                     <button onclick="operadorLiveCheck()" style="padding:6px 14px;background:#22c55e;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:11px;font-weight:800;">ANALISAR AGORA</button>
                     <button onclick="operadorEntrar()" id="opBtnEntrar" style="padding:6px 14px;background:#6366f1;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:11px;font-weight:800;">ENTRAR NA PRÓXIMA</button>
                     <button onclick="operadorEntrar(true)" style="padding:6px 14px;background:#f59e0b;color:#000;border:none;border-radius:6px;cursor:pointer;font-size:11px;font-weight:800;">FORÇAR ENTRADA</button>
+                    <button onclick="operadorSugerir()" id="opBtnSugerir" style="padding:6px 14px;background:linear-gradient(135deg,#8b5cf6,#6366f1);color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:11px;font-weight:800;box-shadow:0 2px 8px rgba(99,102,241,0.4);">💡 SUGERIR</button>
                 </div>
             </div>
             <!-- PREÇO ATUAL EM TEMPO REAL -->
@@ -4113,6 +4114,12 @@ function simRealSetAtivo(a) {
     document.getElementById('simBtnWIN').className = a === 'WIN' ? 'btn btn-primary' : 'btn';
     document.getElementById('simBtnWDO').className = a === 'WDO' ? 'btn btn-primary' : 'btn';
     var _sra = document.getElementById('simRealAtivo'); if(_sra) _sra.textContent = a;
+    // Atualizar TUDO ao trocar ativo: preço RT + operador + replay
+    operadorLiveCheck();
+    if (typeof simRealUpdatePrice === 'function') simRealUpdatePrice();
+    // Esconder sugestão anterior (é do outro ativo)
+    var sugPanel = document.getElementById('opSugestaoPanel');
+    if (sugPanel) sugPanel.style.display = 'none';
     const marketOpen = simRealCheckMarket();
     if (marketOpen) {
         simRealAnalisar();
@@ -5306,6 +5313,174 @@ if ('serviceWorker' in navigator) {
 document.addEventListener('DOMContentLoaded', _startOperadorBackground);
 
 async function operadorEntrar(forcar) {
+    // ===== SUGESTÃO DO OPERADOR SENIOR =====
+    async function operadorSugerir() {
+        var btn = document.getElementById('opBtnSugerir');
+        if (btn) { btn.textContent = '⏳ ANALISANDO...'; btn.disabled = true; btn.style.opacity = '0.7'; }
+        
+        try {
+            var res = await fetch('/api/operador-live/sugestao?ativo=' + _opLiveAtivo);
+            var data = await res.json();
+            
+            if (data.status === 'ERRO' || data.status === 'MERCADO_FECHADO') {
+                alert(data.mensagem || data.resumo || 'Erro na sugestão');
+                return;
+            }
+            
+            var panel = document.getElementById('opSugestaoPanel');
+            if (panel) panel.style.display = 'block';
+            
+            // === RESUMO ===
+            var resumoEl = document.getElementById('opSugResumo');
+            if (resumoEl && data.resumo) {
+                var r = data.resumo;
+                var vh = '';
+                // Veredicto grande
+                vh += '<div style="text-align:center;margin-bottom:10px;">';
+                vh += '<div style="font-size:28px;font-weight:900;color:' + r.veredicto_cor + ';">' + r.veredicto + '</div>';
+                if (r.direcao && r.direcao !== 'INDEFINIDA') {
+                    vh += '<div style="font-size:16px;font-weight:800;color:' + (r.direcao==='COMPRA'?'#22c55e':'#ef4444') + ';margin-top:2px;">' + r.direcao + '</div>';
+                }
+                vh += '<div style="font-size:11px;color:var(--text-muted);margin-top:4px;">' + r.veredicto_msg + '</div>';
+                vh += '</div>';
+                // Score bar
+                var barColor = r.confianca_pct >= 70 ? '#22c55e' : r.confianca_pct >= 50 ? '#f59e0b' : '#ef4444';
+                vh += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">';
+                vh += '<span style="font-size:10px;color:var(--text-muted);min-width:60px;">Confiança</span>';
+                vh += '<div style="flex:1;height:8px;background:rgba(255,255,255,0.1);border-radius:4px;overflow:hidden;">';
+                vh += '<div style="width:' + r.confianca_pct + '%;height:100%;background:' + barColor + ';border-radius:4px;transition:width 0.5s;"></div>';
+                vh += '</div>';
+                vh += '<span style="font-size:12px;font-weight:900;color:' + barColor + ';">' + r.confianca_pct + '% (' + r.conf_label + ')</span>';
+                vh += '</div>';
+                // Stats grid
+                vh += '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;text-align:center;margin-top:8px;">';
+                vh += '<div style="background:rgba(255,255,255,0.03);border-radius:6px;padding:6px;">';
+                vh += '<div style="font-size:9px;color:var(--text-muted);">Score</div>';
+                vh += '<div style="font-size:16px;font-weight:900;color:#8b5cf6;">' + r.score + '/7</div></div>';
+                vh += '<div style="background:rgba(255,255,255,0.03);border-radius:6px;padding:6px;">';
+                vh += '<div style="font-size:9px;color:var(--text-muted);">R:R</div>';
+                vh += '<div style="font-size:16px;font-weight:900;color:#3b82f6;">' + r.rr + '</div></div>';
+                vh += '<div style="background:rgba(255,255,255,0.03);border-radius:6px;padding:6px;">';
+                vh += '<div style="font-size:9px;color:var(--text-muted);">Stop</div>';
+                vh += '<div style="font-size:16px;font-weight:900;color:#ef4444;">' + r.stop_pts + 'pts</div></div>';
+                vh += '<div style="background:rgba(255,255,255,0.03);border-radius:6px;padding:6px;">';
+                vh += '<div style="font-size:9px;color:var(--text-muted);">Alvo</div>';
+                vh += '<div style="font-size:16px;font-weight:900;color:#22c55e;">' + r.alvo_pts + 'pts</div></div>';
+                vh += '</div>';
+                // Entry prices
+                if (r.direcao && r.direcao !== 'INDEFINIDA') {
+                    vh += '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;text-align:center;margin-top:6px;font-size:10px;">';
+                    vh += '<div style="background:rgba(59,130,246,0.1);border-radius:4px;padding:4px;">Entrada: <strong>' + r.entry_price.toLocaleString('pt-BR') + '</strong></div>';
+                    vh += '<div style="background:rgba(239,68,68,0.1);border-radius:4px;padding:4px;">Stop: <strong>' + r.stop_price.toLocaleString('pt-BR') + '</strong></div>';
+                    vh += '<div style="background:rgba(34,197,94,0.1);border-radius:4px;padding:4px;">Alvo: <strong>' + r.alvo_price.toLocaleString('pt-BR') + '</strong></div>';
+                    vh += '</div>';
+                }
+                vh += '<div style="text-align:center;margin-top:6px;font-size:10px;color:var(--text-muted);">';
+                vh += 'Janela: ' + r.janela + ' | Macro: <strong>' + r.tend_macro + '</strong> | Fonte: ' + (data.fonte_preco||'RT');
+                vh += '</div>';
+                resumoEl.innerHTML = vh;
+            }
+            
+            // === DETALHADO ===
+            var detEl = document.getElementById('opSugDetalhe');
+            if (detEl && data.detalhado) {
+                var d = data.detalhado;
+                var dh = '';
+                
+                // Checklist de confluência
+                dh += '<div style="font-size:11px;font-weight:800;color:#8b5cf6;margin-bottom:6px;">📋 CHECKLIST DE CONFLUÊNCIA (Framework 7 Livros)</div>';
+                if (d.checklist) {
+                    d.checklist.forEach(function(item) {
+                        var cItem = item.ok ? '#22c55e' : '#ef4444';
+                        dh += '<div style="display:flex;align-items:flex-start;gap:6px;padding:4px 0;border-bottom:1px solid rgba(255,255,255,0.05);font-size:10px;">';
+                        dh += '<span style="font-size:13px;">' + item.status + '</span>';
+                        dh += '<div><strong style="color:' + cItem + ';">' + item.item + '</strong>';
+                        dh += '<div style="color:var(--text-muted);font-size:9px;">' + item.detalhe + '</div></div>';
+                        dh += '</div>';
+                    });
+                }
+                
+                // Prós e Contras
+                dh += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px;">';
+                dh += '<div><div style="font-size:10px;font-weight:800;color:#22c55e;margin-bottom:4px;">✅ PRÓS (' + (d.pros||[]).length + ')</div>';
+                (d.pros||[]).forEach(function(p) { dh += '<div style="font-size:9px;color:#86efac;padding:2px 0;">• ' + p + '</div>'; });
+                dh += '</div>';
+                dh += '<div><div style="font-size:10px;font-weight:800;color:#ef4444;margin-bottom:4px;">❌ CONTRAS (' + (d.contras||[]).length + ')</div>';
+                (d.contras||[]).forEach(function(c) { dh += '<div style="font-size:9px;color:#fca5a5;padding:2px 0;">• ' + c + '</div>'; });
+                dh += '</div></div>';
+                
+                // Memória
+                if (d.memoria) {
+                    var memColor = d.memoria.tem_alerta ? '#ef4444' : '#22c55e';
+                    dh += '<div style="margin-top:10px;padding:8px;background:rgba(' + (d.memoria.tem_alerta ? '239,68,68' : '34,197,94') + ',0.08);border:1px solid ' + memColor + ';border-radius:6px;">';
+                    dh += '<div style="font-size:10px;font-weight:800;color:' + memColor + ';">🧠 MEMÓRIA DE APRENDIZADO</div>';
+                    dh += '<div style="font-size:10px;color:var(--text-secondary);margin-top:2px;">' + d.memoria.mensagem + '</div>';
+                    if (d.memoria.tem_alerta && d.memoria.alertas) {
+                        d.memoria.alertas.forEach(function(a) {
+                            dh += '<div style="font-size:9px;color:#fca5a5;margin-top:3px;">⚠️ ' + (a.similaridade||0) + '% similar: ' + (a.licao||'') + '</div>';
+                        });
+                    }
+                    dh += '</div>';
+                }
+                
+                // Indicadores detalhados
+                if (d.indicadores) {
+                    var ind = d.indicadores;
+                    dh += '<div style="margin-top:10px;">';
+                    dh += '<div style="font-size:10px;font-weight:800;color:#3b82f6;margin-bottom:4px;">📊 INDICADORES TÉCNICOS</div>';
+                    dh += '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:4px;font-size:9px;">';
+                    dh += '<div style="background:rgba(255,255,255,0.03);padding:4px;border-radius:4px;">RSI: <strong style="color:' + (ind.rsi<35?'#22c55e':ind.rsi>65?'#ef4444':'#f59e0b') + ';">' + ind.rsi + '</strong></div>';
+                    dh += '<div style="background:rgba(255,255,255,0.03);padding:4px;border-radius:4px;">MACD: <strong style="color:' + (ind.macd_hist>0?'#22c55e':'#ef4444') + ';">' + ind.macd_hist + '</strong></div>';
+                    dh += '<div style="background:rgba(255,255,255,0.03);padding:4px;border-radius:4px;">ATR: <strong>' + ind.atr + '</strong></div>';
+                    dh += '<div style="background:rgba(255,255,255,0.03);padding:4px;border-radius:4px;">EMA9: <strong>' + ind.ema9 + '</strong></div>';
+                    dh += '<div style="background:rgba(255,255,255,0.03);padding:4px;border-radius:4px;">EMA21: <strong>' + ind.ema21 + '</strong></div>';
+                    dh += '<div style="background:rgba(255,255,255,0.03);padding:4px;border-radius:4px;">EMA50: <strong>' + ind.ema50 + '</strong></div>';
+                    if (ind.suporte) dh += '<div style="background:rgba(34,197,94,0.1);padding:4px;border-radius:4px;">Sup: <strong>' + ind.suporte + '</strong></div>';
+                    if (ind.resistencia) dh += '<div style="background:rgba(239,68,68,0.1);padding:4px;border-radius:4px;">Res: <strong>' + ind.resistencia + '</strong></div>';
+                    if (ind.vwap) dh += '<div style="background:rgba(99,102,241,0.1);padding:4px;border-radius:4px;">VWAP: <strong>' + ind.vwap + '</strong></div>';
+                    dh += '</div></div>';
+                }
+                
+                // Estado do dia
+                if (d.estado_dia) {
+                    dh += '<div style="margin-top:8px;font-size:9px;color:var(--text-muted);text-align:center;">';
+                    dh += 'Dia: ' + d.estado_dia.ops_hoje + ' ops | ' + d.estado_dia.pts_hoje + 'pts | Losses seq: ' + d.estado_dia.losses_seq + '/3';
+                    if (d.estado_dia.bloqueado) dh += ' | <strong style="color:#ef4444;">DIA BLOQUEADO</strong>';
+                    dh += '</div>';
+                }
+                
+                detEl.innerHTML = dh;
+            }
+            
+            // Timestamp
+            var tsEl = document.getElementById('opSugTimestamp');
+            if (tsEl) tsEl.textContent = 'Sugestão gerada às ' + (data.timestamp || new Date().toLocaleTimeString('pt-BR')) + ' | Preço: ' + (data.preco_atual||'?').toLocaleString('pt-BR');
+            
+            // Scroll to panel
+            if (panel) panel.scrollIntoView({behavior: 'smooth', block: 'center'});
+            
+        } catch(e) {
+            console.error('Erro sugestão:', e);
+            alert('Erro ao gerar sugestão: ' + e.message);
+        } finally {
+            if (btn) { btn.textContent = '💡 SUGERIR'; btn.disabled = false; btn.style.opacity = '1'; }
+        }
+    }
+    
+    function toggleSugestaoDetalhe() {
+        var det = document.getElementById('opSugDetalhe');
+        var btn = document.getElementById('opSugToggle');
+        if (det) {
+            if (det.style.display === 'none') {
+                det.style.display = 'block';
+                if (btn) btn.textContent = 'OCULTAR DETALHES';
+            } else {
+                det.style.display = 'none';
+                if (btn) btn.textContent = 'VER DETALHES';
+            }
+        }
+    }
+
     // Botão "ENTRAR NA PRÓXIMA" ou "FORÇAR ENTRADA"
     try {
         const btn = document.getElementById('opBtnEntrar');
