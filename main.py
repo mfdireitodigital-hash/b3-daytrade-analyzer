@@ -266,6 +266,13 @@ async def auto_refresh_loop():
 
             if mercado_aberto():
                 await atualizar_analises()
+                # Atualizar RT novamente depois da análise (mais fresco possível)
+                try:
+                    precos_rt2 = await app_state["provider"].obter_preco_realtime()
+                    if precos_rt2:
+                        app_state["preco_realtime"] = precos_rt2
+                except:
+                    pass
                 logger.info("Mercado aberto - dados atualizados")
             else:
                 if not app_state["analises"]:
@@ -319,7 +326,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="ANALISE B3 - 24/7",
     description="ANALISE TECNICA EM TEMPO REAL - MINI-INDICE E MINI-DOLAR DA B3",
-    version="4.0.0",
+    version="4.1.0",
     lifespan=lifespan
 )
 
@@ -330,7 +337,7 @@ templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
 
 @app.get("/api/version")
 async def api_version():
-    return {"version": "3.7.3", "build": "20260505j", "changes": "memoria_inteligente_bloqueio,aprender_erros,regras_auto"}
+    return {"version": "3.9.4", "build": "20260508a", "changes": "fix_cola_delay,rt_cache_preco,anti_cheat_5min,learning_engine,sr_rewrite,macd_volume_charts"}
 
 @app.get("/", response_class=HTMLResponse)
 async def dashboard(request: Request):
@@ -2834,17 +2841,16 @@ async def operador_live(ativo: str = Query("WIN"), max_entradas: int = Query(10)
                 _preco_check = 0
                 _high_check = 0
                 _low_check = 0
-                # Tentar preço realtime primeiro (sem delay)
-                try:
-                    from data_provider import DataProvider
-                    _dp2 = DataProvider()
-                    _rt2 = _dp2.preco_realtime.get(ativo, {})
-                    if _rt2 and _rt2.get("preco"):
-                        _preco_check = float(_rt2["preco"])
-                        _high_check = float(_rt2.get("high", _preco_check))
-                        _low_check = float(_rt2.get("low", _preco_check))
-                except:
-                    pass
+                # Preço RT do cache do provider principal
+                _rt_c = app_state.get("preco_realtime", {}).get(ativo, {})
+                if not _rt_c:
+                    _prov2 = app_state.get("provider")
+                    if _prov2:
+                        _rt_c = _prov2.preco_realtime.get(ativo, {})
+                if _rt_c and _rt_c.get("preco"):
+                    _preco_check = float(_rt_c["preco"])
+                    _high_check = float(_rt_c.get("high", _preco_check))
+                    _low_check = float(_rt_c.get("low", _preco_check))
                 # Fallback yfinance se RT falhou
                 if not _preco_check:
                     _check_dados = yf.download(ticker, period="1d", interval="5m", progress=False)
@@ -3225,33 +3231,40 @@ async def operador_live(ativo: str = Query("WIN"), max_entradas: int = Query(10)
             except Exception as _me:
                 logger.warning(f"Erro consultando memória no operador: {_me}")
         
-        # ===== OBTER PREÇO REALTIME (TradingView/Profit) =====
+        # ===== OBTER PREÇO REALTIME (do cache do provider principal) =====
         # yfinance tem delay de 5-15min, NUNCA usar para preço de entrada
-        preco_atual = c  # fallback
-        try:
-            from data_provider import DataProvider
-            _dp = DataProvider()
-            _rt_precos = {}
-            import asyncio
-            try:
-                loop = asyncio.get_event_loop()
-                if loop.is_running():
-                    import concurrent.futures
-                    with concurrent.futures.ThreadPoolExecutor() as pool:
-                        _rt_precos = pool.submit(lambda: asyncio.run(_dp.obter_preco_realtime())).result()
+        preco_atual = c  # fallback yfinance (só se RT falhar)
+        _fonte_preco = "yfinance (DEFASADO)"
+        
+        # 1. Tentar cache RT do provider (atualizado pelo auto_refresh_loop)
+        _rt_cache = app_state.get("preco_realtime", {}).get(ativo, {})
+        if _rt_cache and _rt_cache.get("preco"):
+            preco_atual = float(_rt_cache["preco"])
+            _fonte_preco = _rt_cache.get("fonte", "RT cache")
+            logger.info(f"OPERADOR: Preço RT cache {ativo} = {preco_atual} via {_fonte_preco}")
+        else:
+            # 2. Tentar do provider diretamente
+            _prov = app_state.get("provider")
+            if _prov:
+                _rt_prov = _prov.preco_realtime.get(ativo, {})
+                if _rt_prov and _rt_prov.get("preco"):
+                    preco_atual = float(_rt_prov["preco"])
+                    _fonte_preco = _rt_prov.get("fonte", "Provider RT")
+                    logger.info(f"OPERADOR: Preço provider {ativo} = {preco_atual} via {_fonte_preco}")
                 else:
-                    _rt_precos = loop.run_until_complete(_dp.obter_preco_realtime())
-            except RuntimeError:
-                _rt_precos = asyncio.run(_dp.obter_preco_realtime())
-            
-            if _rt_precos and ativo in _rt_precos:
-                _rt_info = _rt_precos[ativo]
-                _rt_preco = _rt_info.get("preco", 0)
-                if _rt_preco and _rt_preco > 0:
-                    preco_atual = _rt_preco
-                    logger.info(f"OPERADOR: Preço RT {ativo} = {preco_atual} via {_rt_info.get('fonte','?')}")
-        except Exception as _rte:
-            logger.warning(f"Erro obtendo preço RT no operador: {_rte}")
+                    # 3. Forçar busca RT assíncrona
+                    try:
+                        _rt_fresh = await _prov.obter_preco_realtime()
+                        if _rt_fresh and ativo in _rt_fresh:
+                            preco_atual = float(_rt_fresh[ativo]["preco"])
+                            _fonte_preco = _rt_fresh[ativo].get("fonte", "RT fresh")
+                            logger.info(f"OPERADOR: Preço RT fresh {ativo} = {preco_atual} via {_fonte_preco}")
+                    except Exception as _rte:
+                        logger.warning(f"Erro RT fresh: {_rte}")
+        
+        # Log de alerta se estamos usando yfinance defasado
+        if "yfinance" in _fonte_preco:
+            logger.warning(f"⚠️ OPERADOR: Usando preço DEFASADO yfinance para {ativo}! RT indisponível.")
         
         # ===== DECISÃO DO OPERADOR =====
         
@@ -3386,6 +3399,7 @@ async def operador_live(ativo: str = Query("WIN"), max_entradas: int = Query(10)
             "contrato": contrato_nome,
             "hora_atual": hora_atual,
             "preco_atual": round(preco_atual, 2),
+            "preco_fonte": _fonte_preco,
             "preco_realtime": preco_rt,
             "modo": "LIVE",
             "mercado_aberto": True,
