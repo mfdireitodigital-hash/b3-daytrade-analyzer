@@ -337,7 +337,7 @@ templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
 
 @app.get("/api/version")
 async def api_version():
-    return {"version": "4.0.0", "build": "20260508e", "changes": "fix_cola_delay,rt_cache_preco,anti_cheat_5min,learning_engine,sr_rewrite,macd_volume_charts"}
+    return {"version": "4.0.0", "build": "20260508f", "changes": "fix_cola_delay,rt_cache_preco,anti_cheat_5min,learning_engine,sr_rewrite,macd_volume_charts"}
 
 @app.get("/", response_class=HTMLResponse)
 async def dashboard(request: Request):
@@ -3601,10 +3601,10 @@ async def operador_sugestao(ativo: str = Query("WIN")):
             calcular_suportes_resistencias, analisar_tendencia_macro
         )
         
-        rsi_s = calcular_rsi(dados['close'])
+        rsi_s = calcular_rsi(dados)
         rsi_v = round(float(rsi_s.iloc[-1]), 1) if len(rsi_s) > 0 else 50
         
-        macd_line, signal, hist = calcular_macd(dados['close'])
+        macd_line, signal, hist = calcular_macd(dados)
         macd_h = round(float(hist.iloc[-1]), 2) if len(hist) > 0 else 0
         macd_val = round(float(macd_line.iloc[-1]), 2) if len(macd_line) > 0 else 0
         signal_val = round(float(signal.iloc[-1]), 2) if len(signal) > 0 else 0
