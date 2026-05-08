@@ -337,7 +337,7 @@ templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
 
 @app.get("/api/version")
 async def api_version():
-    return {"version": "3.9.4", "build": "20260508a", "changes": "fix_cola_delay,rt_cache_preco,anti_cheat_5min,learning_engine,sr_rewrite,macd_volume_charts"}
+    return {"version": "3.9.5", "build": "20260508b", "changes": "fix_cola_delay,rt_cache_preco,anti_cheat_5min,learning_engine,sr_rewrite,macd_volume_charts"}
 
 @app.get("/", response_class=HTMLResponse)
 async def dashboard(request: Request):
@@ -2980,14 +2980,22 @@ async def operador_live(ativo: str = Query("WIN"), max_entradas: int = Query(10)
         # ===== VERIFICAR MERCADO =====
         _mercado_aberto = mercado_aberto()
         if not _mercado_aberto:
+            _ops_fechado = op_state["operacoes"]
+            _valor_ponto_f = 0.20 if ativo == "WIN" else 10.00
             return JSONResponse({
                 "status": "MERCADO_FECHADO",
                 "ativo": ativo,
                 "contrato": contrato_nome,
                 "hora_atual": hora_atual,
                 "mensagem": "Mercado fechado. O operador começa às 9:15.",
-                "operacoes_dia": op_state["operacoes"],
+                "operacoes_dia": _ops_fechado,
+                "total_ops": len(_ops_fechado),
                 "total_pts_dia": op_state["total_pts"],
+                "total_rs_dia": round(op_state["total_pts"] * _valor_ponto_f, 2),
+                "win_rate_dia": round(sum(1 for op in _ops_fechado if op.get("resultado") == "WIN") / len(_ops_fechado) * 100) if _ops_fechado else 0,
+                "losses_consecutivos": op_state["losses_consecutivos"],
+                "trade_ativo": op_state.get("trade_ativo"),
+                "max_entradas": max_entradas,
                 "modo": "OFFLINE",
             })
         

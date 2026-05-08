@@ -5623,6 +5623,7 @@ async function operadorLiveCheck(forcar) {
                 opsEl.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:8px;">Nenhuma operação registrada hoje. O operador está aguardando o melhor momento.</div>';
             } else {
                 let oh = '';
+                try {
                 ops.forEach((op, i) => {
                     const isW = op.resultado === 'WIN';
                     const isOpen = !op.resultado;
@@ -5656,6 +5657,10 @@ async function operadorLiveCheck(forcar) {
                     }
                     oh += '</div>';
                 });
+                } catch(renderErr) {
+                    console.error('Erro ao renderizar ops:', renderErr);
+                    oh = '<div style="text-align:center;color:#f59e0b;padding:8px;">Erro ao exibir ' + ops.length + ' operações. Dados: ' + JSON.stringify(ops.map(o=>({t:o.tipo,h:o.hora_entrada,r:o.resultado,p:o.pts}))) + '</div>';
+                }
                 opsEl.innerHTML = oh;
             }
         }
@@ -5664,7 +5669,7 @@ async function operadorLiveCheck(forcar) {
         if (pnlEl && (ops.length > 0 || data.total_ops > 0)) {
             pnlEl.style.display = 'flex';
             let ph = '';
-            ph += '<div><div style="font-size:9px;color:var(--text-muted);">Ops</div><div style="font-size:18px;font-weight:800;">' + (data.total_ops||0) + '/' + (data.max_entradas||5) + '</div></div>';
+            ph += '<div><div style="font-size:9px;color:var(--text-muted);">Ops</div><div style="font-size:18px;font-weight:800;">' + ops.length + '/' + (data.max_entradas||5) + '</div></div>';
             ph += '<div><div style="font-size:9px;color:var(--text-muted);">Win Rate</div><div style="font-size:18px;font-weight:800;color:' + ((data.win_rate_dia||0)>=50?'#22c55e':'#ef4444') + ';">' + (data.win_rate_dia||0) + '%</div></div>';
             ph += '<div><div style="font-size:9px;color:var(--text-muted);">P&L Pts</div><div style="font-size:18px;font-weight:800;color:' + ((data.total_pts_dia||0)>=0?'#22c55e':'#ef4444') + ';">' + ((data.total_pts_dia||0)>=0?'+':'') + (data.total_pts_dia||0) + '</div></div>';
             ph += '<div><div style="font-size:9px;color:var(--text-muted);">P&L R$</div><div style="font-size:18px;font-weight:800;color:' + ((data.total_rs_dia||0)>=0?'#22c55e':'#ef4444') + ';">' + ((data.total_rs_dia||0)>=0?'+':'') + 'R$ ' + (data.total_rs_dia||0).toFixed(2) + '</div></div>';
