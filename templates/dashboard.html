@@ -1238,9 +1238,12 @@
             </div>
             <!-- PAINEL SUGESTÃO DO OPERADOR -->
             <div id="opSugestaoPanel" style="display:none;background:linear-gradient(135deg,rgba(139,92,246,0.1),rgba(99,102,241,0.1));border:2px solid #8b5cf6;border-radius:10px;padding:16px;margin-bottom:8px;">
-                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:4px;">
                     <span style="font-weight:800;font-size:13px;color:#a78bfa;">💡 SUGESTÃO DO OPERADOR SENIOR</span>
-                    <span id="opSugTimestamp" style="font-size:10px;color:#888;"></span>
+                    <div style="display:flex;align-items:center;gap:8px;">
+                        <span id="opSugTimestamp" style="font-size:10px;color:#888;"></span>
+                        <span style="font-size:9px;color:#6366f1;background:rgba(99,102,241,0.15);padding:2px 6px;border-radius:3px;">🔄 Auto 60s</span>
+                    </div>
                 </div>
                 <div id="opSugResumo" style="margin-bottom:10px;"></div>
                 <div id="opSugDetalhe" style="display:none;margin-top:10px;border-top:1px solid rgba(139,92,246,0.3);padding-top:10px;"></div>
@@ -5468,11 +5471,95 @@ async function operadorSugerir() {
         // Scroll to panel
         if (panel) panel.scrollIntoView({behavior: 'smooth', block: 'center'});
         
+        // Start auto-refresh timer (atualiza a cada 60s)
+        _startSugAutoRefresh();
+        
     } catch(e) {
         console.error('Erro sugestão:', e);
         alert('Erro ao gerar sugestão: ' + e.message);
     } finally {
         if (btn) { btn.textContent = '💡 SUGERIR'; btn.disabled = false; btn.style.opacity = '1'; }
+    }
+}
+
+// Auto-refresh da sugestão a cada 60s enquanto o painel estiver visível
+var _sugAutoTimer = null;
+function _startSugAutoRefresh() {
+    if (_sugAutoTimer) clearInterval(_sugAutoTimer);
+    _sugAutoTimer = setInterval(function() {
+        var panel = document.getElementById('opSugestaoPanel');
+        if (panel && panel.style.display !== 'none') {
+            // Refresh silencioso (sem loading no botão)
+            _sugSilentRefresh();
+        } else {
+            // Painel escondido, parar timer
+            clearInterval(_sugAutoTimer);
+            _sugAutoTimer = null;
+        }
+    }, 60000); // 60s
+}
+
+async function _sugSilentRefresh() {
+    try {
+        var res = await fetch('/api/operador-live/sugestao?ativo=' + _opLiveAtivo);
+        var data = await res.json();
+        if (data.status === 'OK') {
+            // Re-render resumo
+            var panel = document.getElementById('opSugestaoPanel');
+            var resumoEl = document.getElementById('opSugResumo');
+            var detEl = document.getElementById('opSugDetalhe');
+            var tsEl = document.getElementById('opSugTimestamp');
+            
+            if (resumoEl && data.resumo) {
+                var r = data.resumo;
+                var vh = '';
+                vh += '<div style="text-align:center;margin-bottom:10px;">';
+                vh += '<div style="font-size:28px;font-weight:900;color:' + r.veredicto_cor + ';">' + r.veredicto + '</div>';
+                if (r.direcao && r.direcao !== 'INDEFINIDA') {
+                    vh += '<div style="font-size:16px;font-weight:800;color:' + (r.direcao==='COMPRA'?'#22c55e':'#ef4444') + ';margin-top:2px;">' + r.direcao + '</div>';
+                }
+                vh += '<div style="font-size:11px;color:var(--text-muted);margin-top:4px;">' + r.veredicto_msg + '</div>';
+                vh += '</div>';
+                var barColor = r.confianca_pct >= 70 ? '#22c55e' : r.confianca_pct >= 50 ? '#f59e0b' : '#ef4444';
+                vh += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">';
+                vh += '<span style="font-size:10px;color:var(--text-muted);min-width:60px;">Confiança</span>';
+                vh += '<div style="flex:1;height:8px;background:rgba(255,255,255,0.1);border-radius:4px;overflow:hidden;">';
+                vh += '<div style="width:' + r.confianca_pct + '%;height:100%;background:' + barColor + ';border-radius:4px;transition:width 0.5s;"></div>';
+                vh += '</div>';
+                vh += '<span style="font-size:12px;font-weight:900;color:' + barColor + ';">' + r.confianca_pct + '% (' + r.conf_label + ')</span>';
+                vh += '</div>';
+                vh += '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;text-align:center;margin-top:8px;">';
+                vh += '<div style="background:rgba(255,255,255,0.03);border-radius:6px;padding:6px;"><div style="font-size:9px;color:var(--text-muted);">Score</div><div style="font-size:16px;font-weight:900;color:#8b5cf6;">' + r.score + '/7</div></div>';
+                vh += '<div style="background:rgba(255,255,255,0.03);border-radius:6px;padding:6px;"><div style="font-size:9px;color:var(--text-muted);">R:R</div><div style="font-size:16px;font-weight:900;color:#3b82f6;">' + r.rr + '</div></div>';
+                vh += '<div style="background:rgba(255,255,255,0.03);border-radius:6px;padding:6px;"><div style="font-size:9px;color:var(--text-muted);">Stop</div><div style="font-size:16px;font-weight:900;color:#ef4444;">' + r.stop_pts + 'pts</div></div>';
+                vh += '<div style="background:rgba(255,255,255,0.03);border-radius:6px;padding:6px;"><div style="font-size:9px;color:var(--text-muted);">Alvo</div><div style="font-size:16px;font-weight:900;color:#22c55e;">' + r.alvo_pts + 'pts</div></div>';
+                vh += '</div>';
+                if (r.direcao && r.direcao !== 'INDEFINIDA') {
+                    vh += '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;text-align:center;margin-top:6px;font-size:10px;">';
+                    vh += '<div style="background:rgba(59,130,246,0.1);border-radius:4px;padding:4px;">Entrada: <strong>' + r.entry_price.toLocaleString('pt-BR') + '</strong></div>';
+                    vh += '<div style="background:rgba(239,68,68,0.1);border-radius:4px;padding:4px;">Stop: <strong>' + r.stop_price.toLocaleString('pt-BR') + '</strong></div>';
+                    vh += '<div style="background:rgba(34,197,94,0.1);border-radius:4px;padding:4px;">Alvo: <strong>' + r.alvo_price.toLocaleString('pt-BR') + '</strong></div>';
+                    vh += '</div>';
+                }
+                vh += '<div style="text-align:center;margin-top:6px;font-size:10px;color:var(--text-muted);">';
+                vh += 'Janela: ' + r.janela + ' | Macro: <strong>' + r.tend_macro + '</strong> | Fonte: ' + (data.fonte_preco||'RT');
+                vh += '</div>';
+                resumoEl.innerHTML = vh;
+            }
+            if (tsEl) {
+                tsEl.textContent = 'Auto-atualizado às ' + (data.timestamp || new Date().toLocaleTimeString('pt-BR')) + ' | Preço: ' + (data.preco_atual||'?').toLocaleString('pt-BR');
+                // Flash animation
+                tsEl.style.color = '#8b5cf6';
+                setTimeout(function() { tsEl.style.color = '#888'; }, 2000);
+            }
+            // Also update detalhado if visible
+            if (detEl && detEl.style.display !== 'none' && data.detalhado) {
+                // Re-trigger full render would duplicate code - just update timestamp
+                // Full detail update happens on next manual SUGERIR click
+            }
+        }
+    } catch(e) {
+        console.error('Silent sugestão refresh error:', e);
     }
 }
 
