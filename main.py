@@ -337,7 +337,7 @@ templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
 
 @app.get("/api/version")
 async def api_version():
-    return {"version": "3.9.5", "build": "20260508b", "changes": "fix_cola_delay,rt_cache_preco,anti_cheat_5min,learning_engine,sr_rewrite,macd_volume_charts"}
+    return {"version": "3.9.6", "build": "20260508c", "changes": "fix_cola_delay,rt_cache_preco,anti_cheat_5min,learning_engine,sr_rewrite,macd_volume_charts"}
 
 @app.get("/", response_class=HTMLResponse)
 async def dashboard(request: Request):
@@ -826,6 +826,8 @@ async def get_simulacao_capital(
 
     total_pts = 0
     ops = 0
+    operacoes_lista = []
+    preco_base = analise.get("preco_atual", 130000 if ativo == "WIN" else 5700)
 
     if sinais:
         for sinal in sinais:
@@ -834,6 +836,14 @@ async def get_simulacao_capital(
                 pts = atr * 0.5
             total_pts += pts
             ops += 1
+            operacoes_lista.append({
+                "tipo": sinal.get("tipo", "COMPRA"),
+                "hora_entrada": sinal.get("hora", ""),
+                "entrada": round(preco_base, 2),
+                "pts": round(pts, 1),
+                "status": "WIN" if pts > 0 else "LOSS",
+                "motivo": sinal.get("motivo", sinal.get("tecnica", "Sinal técnico")),
+            })
     else:
         # Estimativa baseada em ATR
         random.seed(hash(f"{ativo}_{datetime.now(BRT).strftime('%Y%m%d')}"))
@@ -842,14 +852,30 @@ async def get_simulacao_capital(
         tendencia = analise.get("tendencia", "LATERAL")
         if tendencia != "LATERAL":
             taxa_acerto = 0.65
+        
+        horarios_sim = ["09:20","09:45","10:15","10:50","11:20","14:15","14:50","15:30"]
         for i in range(n_ops):
             alvo_pts = atr * random.uniform(0.4, 1.2)
-            stop_pts = atr * random.uniform(0.3, 0.6)
-            if random.random() < taxa_acerto:
+            stop_pts_calc = atr * random.uniform(0.3, 0.6)
+            is_win = random.random() < taxa_acerto
+            tipo_op = random.choice(["COMPRA", "VENDA"])
+            if is_win:
+                pts_op = round(alvo_pts, 1)
                 total_pts += alvo_pts
             else:
-                total_pts -= stop_pts
+                pts_op = round(-stop_pts_calc, 1)
+                total_pts -= stop_pts_calc
             ops += 1
+            h_idx = min(i, len(horarios_sim)-1)
+            operacoes_lista.append({
+                "tipo": tipo_op,
+                "hora_entrada": horarios_sim[h_idx],
+                "entrada": round(preco_base + random.uniform(-atr, atr), 2),
+                "pts": pts_op,
+                "status": "WIN" if is_win else "LOSS",
+                "win": is_win,
+                "motivo": f"{'Confluência técnica' if is_win else 'Stop atingido'} | ATR={round(atr,1)}",
+            })
 
     # Cálculo para a quantidade do usuário
     n = max(1, contratos)
@@ -864,6 +890,7 @@ async def get_simulacao_capital(
         "pontos_estimados": round(total_pts, 1),
         "resultado_financeiro": resultado_fin,
         "operacoes_estimadas": ops,
+        "operacoes": operacoes_lista,
         "info_contrato": {
             "nome": contrato_info.get("nome", ativo),
             "tick": tick,

@@ -3298,6 +3298,31 @@ async function carregarSimulacao() {
         html += '<div><div style="font-size:10px;color:var(--text-muted)">OPERACOES</div><div style="font-size:18px;font-weight:700;font-family:monospace">' + data.operacoes_estimadas + '</div></div>';
         html += '</div>';
         html += '<div style="font-size:10px;color:var(--text-muted);margin-top:8px;text-align:center;">' + data.info_contrato.explicacao + '</div>';
+        // Lista de operações (se disponível)
+        if (data.operacoes && data.operacoes.length > 0) {
+            html += '<div style="margin-top:10px;border-top:1px solid var(--border);padding-top:8px;">';
+            html += '<div style="font-size:10px;font-weight:700;color:var(--text-muted);margin-bottom:6px;">DETALHES DAS OPERAÇÕES:</div>';
+            data.operacoes.forEach(function(op, idx) {
+                var cOp = op.tipo === 'COMPRA' ? '#22c55e' : '#ef4444';
+                var isW = op.status === 'WIN' || op.win;
+                var cRes = isW ? '#22c55e' : '#ef4444';
+                html += '<div style="padding:6px 8px;border-left:3px solid ' + cOp + ';background:rgba(255,255,255,0.02);border-radius:4px;margin-bottom:4px;font-size:10px;">';
+                html += '<div style="display:flex;justify-content:space-between;align-items:center;">';
+                html += '<div style="display:flex;align-items:center;gap:6px;">';
+                html += '<span style="font-weight:900;color:' + cOp + ';">' + op.tipo + '</span>';
+                html += '<span style="font-family:monospace;">' + (op.hora_entrada||op.horario||'') + (op.hora_saida ? ' → '+op.hora_saida : '') + '</span>';
+                html += '<span style="color:var(--text-muted);">Entrada: ' + (op.entrada||op.preco_entrada||'?') + '</span>';
+                html += '</div>';
+                html += '<div style="display:flex;align-items:center;gap:6px;">';
+                html += '<span style="font-weight:900;color:' + cRes + ';">' + (op.status||op.resultado||'?') + '</span>';
+                html += '<span style="font-weight:800;color:' + cRes + ';">' + (op.pts>=0?'+':'') + (op.pts||0) + 'pts</span>';
+                if (op.resultado !== undefined && typeof op.resultado === 'number') html += '<span style="color:' + cRes + ';">(R$' + (op.resultado>=0?'+':'') + op.resultado.toFixed(2) + ')</span>';
+                html += '</div></div>';
+                if (op.motivo) html += '<div style="color:#a78bfa;font-size:9px;font-style:italic;margin-top:2px;">' + op.motivo + '</div>';
+                html += '</div>';
+            });
+            html += '</div>';
+        }
         html += '</div>';
         el.innerHTML = html;
     } catch(e) { console.log('Simulacao error:', e); }
