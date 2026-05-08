@@ -5676,13 +5676,17 @@ async function operadorMonitorTrade() {
                     d.preco_realtime = rtData.precos[ativo];
                 }
             } catch(e2) {}
-            // Buscar indicadores da analise (RSI, tendencia, VWAP)
-            try {
-                const anResp = await fetch('/api/analise?ativo=' + ativo);
-                const anData = await anResp.json();
-                d.analise = anData.analise || anData;
-                if (!d.preco_realtime) d.preco_realtime = anData.preco_realtime || {};
-            } catch(e3) {}
+            // Indicadores vêm do operadorLiveCheck (que roda a cada 30s)
+            // Aqui só buscamos preço RT rápido para não travar
+            if (!d.preco_realtime || !d.preco_realtime.preco) {
+                // Fallback: tentar pegar do cache do operador
+                try {
+                    const anResp = await fetch('/api/analise?ativo=' + ativo);
+                    const anData = await anResp.json();
+                    d.analise = anData.analise || anData;
+                    if (!d.preco_realtime) d.preco_realtime = anData.preco_realtime || {};
+                } catch(e3) {}
+            }
             
             const priceEl = document.getElementById('simRealLivePrice');
             const varEl = document.getElementById('simRealLiveVar');
@@ -5760,7 +5764,7 @@ async function operadorMonitorTrade() {
     function simRealStartPriceUpdates() {
         simRealUpdatePrice(); // immediate
         if (_simRealPriceInterval) clearInterval(_simRealPriceInterval);
-        _simRealPriceInterval = setInterval(simRealUpdatePrice, 10000); // every 10s
+        _simRealPriceInterval = setInterval(simRealUpdatePrice, 5000); // every 5s
     }
     
     function simRealStopPriceUpdates() {
@@ -5810,6 +5814,19 @@ async function operadorLiveCheck(forcar) {
         
         const tsEl = document.getElementById('opLiveTimestamp');
         if (tsEl) tsEl.textContent = 'Atualizado: ' + (data.timestamp || new Date().toLocaleTimeString('pt-BR'));
+        
+        // SEMPRE atualizar preço na barra com o dado do operador (que usa RT cascade)
+        if (data.preco_atual) {
+            var _pEl = document.getElementById('simRealLivePrice');
+            if (_pEl) {
+                var _prev = parseFloat(_pEl.dataset.prev || data.preco_atual);
+                _pEl.dataset.prev = data.preco_atual;
+                _pEl.style.color = data.preco_atual >= _prev ? '#22c55e' : '#ef4444';
+                _pEl.textContent = data.preco_atual.toLocaleString('pt-BR');
+            }
+            var _tEl = document.getElementById('simRealLiveTime');
+            if (_tEl) _tEl.textContent = data.timestamp || new Date().toLocaleTimeString('pt-BR');
+        }
         
         // Status dot
         const dot = document.getElementById('opLiveDot');
