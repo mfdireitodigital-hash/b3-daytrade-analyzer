@@ -2816,6 +2816,19 @@ async def operador_live(ativo: str = Query("WIN"), max_entradas: int = Query(10)
             ta_alvo = ta.get("take_profit", 0)
             ta_entrada = ta.get("preco_entrada", 0)
             
+            # MÍNIMO 5 MIN de duração antes de auto-fechar
+            # (evita close instantâneo com dados defasados do yfinance)
+            _duracao_min = 0
+            try:
+                _he = ta.get("hora_entrada", "00:00").split(":")
+                _entrada_min2 = int(_he[0]) * 60 + int(_he[1])
+                _agora_min2 = agora.hour * 60 + agora.minute
+                _duracao_min = _agora_min2 - _entrada_min2
+            except:
+                _duracao_min = 999  # se não consegue calcular, permite fechar
+            
+            _pode_fechar = _duracao_min >= 5
+            
             # Checar com preço RT se stop ou alvo foi atingido
             try:
                 _preco_check = 0
@@ -2842,7 +2855,7 @@ async def operador_live(ativo: str = Query("WIN"), max_entradas: int = Query(10)
                         _preco_check = float(_check_dados['close'].iloc[-1])
                         _high_check = float(_check_dados['high'].iloc[-1])
                         _low_check = float(_check_dados['low'].iloc[-1])
-                if _preco_check > 0:
+                if _preco_check > 0 and _pode_fechar:
                     
                     _resultado_auto = None
                     if ta_is_compra:
@@ -2883,7 +2896,7 @@ async def operador_live(ativo: str = Query("WIN"), max_entradas: int = Query(10)
                             _he_parts = ta["hora_entrada"].split(":")
                             _entrada_mins = int(_he_parts[0]) * 60 + int(_he_parts[1])
                             _agora_mins = agora.hour * 60 + agora.minute
-                            if (_agora_mins - _entrada_mins) > 30:
+                            if (_agora_mins - _entrada_mins) > 45:
                                 if ta_is_compra:
                                     _pnl = _preco_check - ta_entrada
                                 else:
@@ -2929,6 +2942,28 @@ async def operador_live(ativo: str = Query("WIN"), max_entradas: int = Query(10)
                         
                         salvar_estado_operador()
                         logger.info(f"OPERADOR AUTO-CLOSE: {_resultado_auto} {_pnl_pts}pts {ativo}")
+                        
+                        # Salvar no histórico persistente (para Relatório do Dia)
+                        try:
+                            _hoje_hist = agora.strftime("%d/%m/%Y")
+                            registrar_historico_completo(
+                                ativo=ativo,
+                                data_sessao=_hoje_hist,
+                                modo="OPERADOR",
+                                operacoes=[dict(ta)],
+                                performance={
+                                    "total_operacoes": len(op_state["operacoes"]),
+                                    "wins": sum(1 for _t in op_state["operacoes"] if _t.get("resultado") == "WIN"),
+                                    "losses": sum(1 for _t in op_state["operacoes"] if _t.get("resultado") != "WIN"),
+                                    "win_rate": round(sum(1 for _t in op_state["operacoes"] if _t.get("resultado") == "WIN") / max(len(op_state["operacoes"]),1) * 100),
+                                    "total_pts": op_state["total_pts"],
+                                    "total_rs": round(op_state["total_pts"] * valor_ponto, 2),
+                                    "fator_lucro": 0,
+                                },
+                            )
+                            logger.info(f"OPERADOR: Trade auto-close salvo no histórico")
+                        except Exception as _hist_err:
+                            logger.error(f"Erro salvando auto-close no histórico: {_hist_err}")
             except Exception as _ae:
                 logger.error(f"Erro auto-resolve trade: {_ae}")
         
@@ -5391,6 +5426,33 @@ async def relatorio_dia():
         
         # Data de hoje
         hoje_str = datetime.now(timezone(timedelta(hours=-3))).strftime("%d/%m/%Y")
+        
+        # Injetar operações do operador-live em memória (podem não estar no arquivo ainda)
+        for _op_ativo in ["WIN", "WDO"]:
+            _op_mem = app_state["operador_live"].get(_op_ativo, {})
+            _op_ops = _op_mem.get("operacoes", [])
+            if _op_ops and _op_mem.get("dia") == str(datetime.now(timezone(timedelta(hours=-3))).date()):
+                # Criar sessão virtual com as operações em memória
+                _valor_pt = 0.20 if _op_ativo == "WIN" else 10.00
+                _wins = sum(1 for o in _op_ops if o.get("resultado") == "WIN")
+                _sessao_mem = {
+                    "data": hoje_str,
+                    "modo": "OPERADOR",
+                    "ativo": _op_ativo,
+                    "id": f"operador_live_{_op_ativo}",
+                    "operacoes": _op_ops,
+                    "performance": {
+                        "total_operacoes": len(_op_ops),
+                        "wins": _wins,
+                        "losses": len(_op_ops) - _wins,
+                        "win_rate": round(_wins / max(len(_op_ops), 1) * 100),
+                        "total_pts": round(_op_mem.get("total_pts", 0), 1),
+                        "total_rs": round(_op_mem.get("total_pts", 0) * _valor_pt, 2),
+                    },
+                }
+                # Evitar duplicação: remover sessões do operador live que já existem no historico
+                historico = [h for h in historico if not (h.get("id", "").startswith(f"operador_live_{_op_ativo}"))]
+                historico.append(_sessao_mem)
         
         # Filtrar sessões de hoje - APENAS SIMULADOR REAL (não CT)
         sessoes_hoje = [s for s in historico if s.get("data") == hoje_str and s.get("modo") in ("REAL", "REPLAY", "OPERADOR")]
