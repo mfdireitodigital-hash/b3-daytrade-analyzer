@@ -337,7 +337,7 @@ templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
 
 @app.get("/api/version")
 async def api_version():
-    return {"version": "4.0.0", "build": "20260508g", "changes": "fix_cola_delay,rt_cache_preco,anti_cheat_5min,learning_engine,sr_rewrite,macd_volume_charts"}
+    return {"version": "4.0.0", "build": "20260508h", "changes": "fix_cola_delay,rt_cache_preco,anti_cheat_5min,learning_engine,sr_rewrite,macd_volume_charts"}
 
 @app.get("/", response_class=HTMLResponse)
 async def dashboard(request: Request):
@@ -3041,8 +3041,9 @@ async def operador_live(ativo: str = Query("WIN"), max_entradas: int = Query(10)
             (13*60+30, 14*60, "Pré-NY", "NORMAL", True),
             (14*60, 15*60, "Retomada NY Open", "PRIME", True),
             (15*60, 16*60+30, "Tarde Institucional", "BOA", True),
-            (16*60+30, 17*60, "Pré-Fechamento", "RUIM", True),
-            (17*60, 18*60, "Leilão Fechamento", "PROIBIDO", False),
+            (16*60+30, 17*60, "Pré-Fechamento", "NORMAL", True),
+            (17*60, 17*60+55, "Tarde Final", "RUIM", True),
+            (17*60+55, 18*60+25, "Leilão Fechamento", "PROIBIDO", False),
         ]
         for t_ini, t_fim, nome, qual, pode in JANELAS:
             if t_ini <= t_min < t_fim:
@@ -3645,8 +3646,9 @@ async def operador_sugestao(ativo: str = Query("WIN")):
             (13*60+30, 14*60, "Pré-NY", "NORMAL", True),
             (14*60, 15*60, "Retomada NY Open", "PRIME", True),
             (15*60, 16*60+30, "Tarde Institucional", "BOA", True),
-            (16*60+30, 17*60, "Pré-Fechamento", "RUIM", True),
-            (17*60, 18*60, "Leilão Fechamento", "PROIBIDO", False),
+            (16*60+30, 17*60, "Pré-Fechamento", "NORMAL", True),
+            (17*60, 17*60+55, "Tarde Final", "RUIM", True),
+            (17*60+55, 18*60+25, "Leilão Fechamento", "PROIBIDO", False),
         ]
         janela_nome = "Normal"
         janela_qual = "NORMAL"
@@ -4183,8 +4185,9 @@ async def simulador_real(ativo: str = Query("WIN"), max_entradas: int = Query(5)
             (9, 0, 9, 15, "Leilão/Primeiros 15min", "PROIBIDO"),  # Caótico demais
             (11, 30, 13, 30, "Almoço", "RUIM"),                    # Sem volume
             (12, 0, 13, 0, "Almoço Morto", "PROIBIDO"),            # Volume mínimo
-            (16, 30, 18, 0, "Pré-Fechamento", "RUIM"),             # Spreads altos
-            (17, 0, 18, 0, "Leilão Fechamento", "PROIBIDO"),       # Não operar
+            (16, 30, 17, 0, "Pré-Fechamento", "NORMAL"),            # Spreads altos
+            (17, 0, 17, 55, "Tarde Final", "RUIM"),                # Última hora
+            (17, 55, 18, 25, "Leilão Fechamento", "PROIBIDO"),     # Não operar
         ]
         
         def classificar_janela(hora_int, minuto):
@@ -5353,8 +5356,9 @@ async def treinamento_ia(ativo: str = Query("WIN")):
             (9, 0, 9, 15, "Pré-Abertura", "RUIM"),
             (11, 30, 13, 30, "Almoço", "RUIM"),
             (12, 0, 13, 0, "Almoço Morto", "PROIBIDO"),
-            (16, 30, 18, 0, "Pré-Fechamento", "RUIM"),
-            (17, 0, 18, 0, "Leilão Fechamento", "PROIBIDO"),
+            (16, 30, 17, 0, "Pré-Fechamento", "NORMAL"),
+            (17, 0, 17, 55, "Tarde Final", "RUIM"),
+            (17, 55, 18, 25, "Leilão Fechamento", "PROIBIDO"),
         ]
         def classificar_janela_ct(hora_int, minuto):
             for h_ini, m_ini, h_fim, m_fim, nome, qual in JANELAS_RUINS_CT:
