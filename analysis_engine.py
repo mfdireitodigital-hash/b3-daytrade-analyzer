@@ -1785,3 +1785,57 @@ def analisar_completo(dados: pd.DataFrame, timeframe: str, ativo: str) -> dict:
         "pivot_points": pivot_points,
         "vwap_bands": vwap_bands,
     }
+
+
+def analisar_tendencia_macro(dados: pd.DataFrame) -> dict:
+    """
+    Analisa tendência macro usando EMAs e estrutura de preço.
+    Retorna: {"tendencia": "ALTA"|"BAIXA"|"LATERAL", "forca": 0-100}
+    """
+    if len(dados) < 50:
+        return {"tendencia": "LATERAL", "forca": 0}
+    
+    close = dados['close']
+    ema9 = close.ewm(span=9, adjust=False).mean()
+    ema21 = close.ewm(span=21, adjust=False).mean()
+    ema50 = close.ewm(span=50, adjust=False).mean()
+    
+    c = float(close.iloc[-1])
+    e9 = float(ema9.iloc[-1])
+    e21 = float(ema21.iloc[-1])
+    e50 = float(ema50.iloc[-1])
+    
+    pontos_alta = 0
+    pontos_baixa = 0
+    
+    # EMA alignment
+    if e9 > e21 > e50:
+        pontos_alta += 3
+    elif e9 < e21 < e50:
+        pontos_baixa += 3
+    elif e9 > e21:
+        pontos_alta += 1
+    else:
+        pontos_baixa += 1
+    
+    # Price vs EMAs
+    if c > e9: pontos_alta += 1
+    else: pontos_baixa += 1
+    if c > e21: pontos_alta += 1
+    else: pontos_baixa += 1
+    if c > e50: pontos_alta += 1
+    else: pontos_baixa += 1
+    
+    # Recent momentum (last 10 candles)
+    if len(close) >= 10:
+        delta = float(close.iloc[-1]) - float(close.iloc[-10])
+        if delta > 0: pontos_alta += 1
+        else: pontos_baixa += 1
+    
+    total = pontos_alta + pontos_baixa
+    if pontos_alta > pontos_baixa + 2:
+        return {"tendencia": "ALTA", "forca": round(pontos_alta / total * 100)}
+    elif pontos_baixa > pontos_alta + 2:
+        return {"tendencia": "BAIXA", "forca": round(pontos_baixa / total * 100)}
+    else:
+        return {"tendencia": "LATERAL", "forca": round(max(pontos_alta, pontos_baixa) / total * 100)}

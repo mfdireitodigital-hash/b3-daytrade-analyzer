@@ -337,7 +337,7 @@ templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
 
 @app.get("/api/version")
 async def api_version():
-    return {"version": "4.0.0", "build": "20260508d", "changes": "fix_cola_delay,rt_cache_preco,anti_cheat_5min,learning_engine,sr_rewrite,macd_volume_charts"}
+    return {"version": "4.0.0", "build": "20260508e", "changes": "fix_cola_delay,rt_cache_preco,anti_cheat_5min,learning_engine,sr_rewrite,macd_volume_charts"}
 
 @app.get("/", response_class=HTMLResponse)
 async def dashboard(request: Request):
@@ -3627,14 +3627,9 @@ async def operador_sugestao(ativo: str = Query("WIN")):
             pass
         
         # S/R
-        suportes_resistencias = calcular_suportes_resistencias(dados)
-        suporte = None
-        resistencia = None
-        for sr in suportes_resistencias:
-            if sr["nivel"] < preco_atual and (suporte is None or sr["nivel"] > suporte):
-                suporte = sr["nivel"]
-            if sr["nivel"] > preco_atual and (resistencia is None or sr["nivel"] < resistencia):
-                resistencia = sr["nivel"]
+        _sups, _ress = calcular_suportes_resistencias(dados)
+        suporte = _sups[0] if _sups else None
+        resistencia = _ress[0] if _ress else None
         
         # Tendência macro
         tend_macro = analisar_tendencia_macro(dados)
