@@ -5368,7 +5368,7 @@ async function operadorSugerir() {
             vh += '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;text-align:center;margin-top:8px;">';
             vh += '<div style="background:rgba(255,255,255,0.03);border-radius:6px;padding:6px;">';
             vh += '<div style="font-size:9px;color:var(--text-muted);">Score</div>';
-            vh += '<div style="font-size:16px;font-weight:900;color:#8b5cf6;">' + r.score + '/7</div></div>';
+            vh += '<div style="font-size:16px;font-weight:900;color:#8b5cf6;">' + r.score + '/10</div></div>';
             vh += '<div style="background:rgba(255,255,255,0.03);border-radius:6px;padding:6px;">';
             vh += '<div style="font-size:9px;color:var(--text-muted);">R:R</div>';
             vh += '<div style="font-size:16px;font-weight:900;color:#3b82f6;">' + r.rr + '</div></div>';
@@ -5399,17 +5399,107 @@ async function operadorSugerir() {
             var d = data.detalhado;
             var dh = '';
             
-            // Checklist de confluência
-            dh += '<div style="font-size:11px;font-weight:800;color:#8b5cf6;margin-bottom:6px;">📋 CHECKLIST DE CONFLUÊNCIA (Framework 7 Livros)</div>';
-            if (d.checklist) {
-                d.checklist.forEach(function(item) {
-                    var cItem = item.ok ? '#22c55e' : '#ef4444';
+            // === CONVERGÊNCIA MULTI-FATOR (10 fatores) ===
+            if (d.convergencia && d.convergencia.fatores) {
+                var cv = d.convergencia;
+                dh += '<div style="font-size:11px;font-weight:800;color:#8b5cf6;margin-bottom:6px;">📋 CONVERGÊNCIA MULTI-FATOR (' + cv.ok_count + '/' + cv.fatores.length + ' fatores, ' + cv.pct + '%)</div>';
+                cv.fatores.forEach(function(f) {
+                    var cItem = f.ok ? '#22c55e' : '#ef4444';
                     dh += '<div style="display:flex;align-items:flex-start;gap:6px;padding:4px 0;border-bottom:1px solid rgba(255,255,255,0.05);font-size:10px;">';
-                    dh += '<span style="font-size:13px;">' + item.status + '</span>';
-                    dh += '<div><strong style="color:' + cItem + ';">' + item.item + '</strong>';
-                    dh += '<div style="color:var(--text-muted);font-size:9px;">' + item.detalhe + '</div></div>';
+                    dh += '<span style="font-size:13px;">' + (f.ok ? '✅' : '❌') + '</span>';
+                    dh += '<div style="flex:1;"><strong style="color:' + cItem + ';">' + f.nome + '</strong>';
+                    dh += '<div style="color:var(--text-muted);font-size:9px;">' + f.detalhe + '</div></div>';
+                    dh += '<span style="font-size:9px;color:#666;min-width:30px;text-align:right;">×' + f.peso + '</span>';
                     dh += '</div>';
                 });
+            }
+            
+            // === FLUXO AVANÇADO ===
+            if (d.fluxo) {
+                var fl = d.fluxo;
+                dh += '<div style="margin-top:10px;">';
+                dh += '<div style="font-size:11px;font-weight:800;color:#f59e0b;margin-bottom:6px;">📊 ANÁLISE DE FLUXO</div>';
+                dh += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:10px;">';
+                var agColor = fl.agressao === 'COMPRADORA' ? '#22c55e' : fl.agressao === 'VENDEDORA' ? '#ef4444' : '#f59e0b';
+                dh += '<div style="background:rgba(255,255,255,0.03);padding:6px;border-radius:6px;">Agressão: <strong style="color:' + agColor + ';">' + fl.agressao + ' ' + fl.intensidade + '%</strong></div>';
+                dh += '<div style="background:rgba(255,255,255,0.03);padding:6px;border-radius:6px;">Compra: ' + (fl.ratio_compra*100).toFixed(0) + '% | Venda: ' + (fl.ratio_venda*100).toFixed(0) + '%</div>';
+                dh += '</div>';
+                if (fl.absorcao && fl.absorcao.detectado) {
+                    dh += '<div style="margin-top:4px;padding:6px;background:rgba(245,158,11,0.1);border:1px solid #f59e0b;border-radius:6px;font-size:9px;">';
+                    dh += '🛡️ <strong>ABSORÇÃO:</strong> ' + fl.absorcao.descricao + ' (' + fl.absorcao.forca + ')';
+                    dh += '</div>';
+                }
+                if (fl.defesa && fl.defesa.detectado && fl.defesa.mais_forte) {
+                    dh += '<div style="margin-top:4px;padding:6px;background:rgba(59,130,246,0.1);border:1px solid #3b82f6;border-radius:6px;font-size:9px;">';
+                    dh += '🏰 <strong>DEFESA:</strong> ' + fl.defesa.mais_forte.descricao;
+                    dh += '</div>';
+                }
+                if (fl.mudanca_comportamento && fl.mudanca_comportamento.detectado) {
+                    dh += '<div style="margin-top:4px;padding:6px;background:rgba(239,68,68,0.1);border:1px solid #ef4444;border-radius:6px;font-size:9px;">';
+                    dh += '⚡ <strong>MUDANÇA:</strong> ' + (fl.mudanca_comportamento.descricoes||[]).join(' | ');
+                    dh += '</div>';
+                }
+                dh += '</div>';
+            }
+            
+            // === VAP ===
+            if (d.vap && d.vap.poc) {
+                dh += '<div style="margin-top:10px;">';
+                dh += '<div style="font-size:11px;font-weight:800;color:#6366f1;margin-bottom:6px;">📈 VOLUME AT PRICE (VAP)</div>';
+                dh += '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;font-size:10px;">';
+                dh += '<div style="background:rgba(99,102,241,0.1);padding:6px;border-radius:6px;text-align:center;"><div style="font-size:8px;color:var(--text-muted);">POC</div><strong>' + d.vap.poc.toLocaleString('pt-BR') + '</strong></div>';
+                dh += '<div style="background:rgba(34,197,94,0.1);padding:6px;border-radius:6px;text-align:center;"><div style="font-size:8px;color:var(--text-muted);">VA Low</div><strong>' + d.vap.va_low.toLocaleString('pt-BR') + '</strong></div>';
+                dh += '<div style="background:rgba(239,68,68,0.1);padding:6px;border-radius:6px;text-align:center;"><div style="font-size:8px;color:var(--text-muted);">VA High</div><strong>' + d.vap.va_high.toLocaleString('pt-BR') + '</strong></div>';
+                dh += '</div>';
+                if (d.vap.zonas_liquidez && d.vap.zonas_liquidez.length > 0) {
+                    dh += '<div style="margin-top:4px;font-size:9px;color:var(--text-muted);">';
+                    d.vap.zonas_liquidez.slice(0,3).forEach(function(z) {
+                        var zIcon = z.tipo === 'HIGH_LIQUIDITY' ? '🟢' : '🔴';
+                        dh += '<div>' + zIcon + ' ' + z.descricao + '</div>';
+                    });
+                    dh += '</div>';
+                }
+                dh += '</div>';
+            }
+            
+            // === FIBONACCI MULTI-TF ===
+            if (d.fibonacci) {
+                dh += '<div style="margin-top:10px;">';
+                dh += '<div style="font-size:11px;font-weight:800;color:#eab308;margin-bottom:6px;">🔢 FIBONACCI MULTI-TIMEFRAME</div>';
+                ['tf_1h', 'tf_15m', 'tf_5m'].forEach(function(tf) {
+                    var fib = d.fibonacci[tf];
+                    if (!fib) return;
+                    var tfLabel = tf === 'tf_1h' ? '1H' : tf === 'tf_15m' ? '15M' : '5M';
+                    dh += '<div style="font-size:9px;margin-top:4px;"><strong style="color:#eab308;">' + tfLabel + ' (' + fib.tendencia + ')</strong>: ';
+                    var rets = fib.retracoes || {};
+                    Object.keys(rets).forEach(function(k) { dh += k + '=' + rets[k].toLocaleString('pt-BR') + ' '; });
+                    dh += '</div>';
+                });
+                if (d.fibonacci.confluencias && d.fibonacci.confluencias.length > 0) {
+                    dh += '<div style="margin-top:4px;padding:6px;background:rgba(234,179,8,0.1);border:1px solid #eab308;border-radius:6px;font-size:9px;">';
+                    dh += '⭐ <strong>CONFLUÊNCIAS FIBO:</strong><br>';
+                    d.fibonacci.confluencias.slice(0,3).forEach(function(cf) {
+                        dh += cf.descricao + '<br>';
+                    });
+                    dh += '</div>';
+                }
+                dh += '</div>';
+            }
+            
+            // === CONTEXTO DE MERCADO ===
+            if (d.contexto) {
+                var ctx = d.contexto;
+                dh += '<div style="margin-top:10px;">';
+                dh += '<div style="font-size:11px;font-weight:800;color:#14b8a6;margin-bottom:6px;">🌐 CONTEXTO DE MERCADO</div>';
+                dh += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:10px;">';
+                dh += '<div style="background:rgba(255,255,255,0.03);padding:6px;border-radius:6px;">Fase: <strong>' + ctx.fase + '</strong></div>';
+                dh += '<div style="background:rgba(255,255,255,0.03);padding:6px;border-radius:6px;">Momentum: <strong>' + ctx.momentum + '</strong></div>';
+                dh += '<div style="background:rgba(255,255,255,0.03);padding:6px;border-radius:6px;">Tend 15m: <strong style="color:' + (ctx.tendencia_15m==='ALTA'?'#22c55e':ctx.tendencia_15m==='BAIXA'?'#ef4444':'#f59e0b') + ';">' + ctx.tendencia_15m + '</strong></div>';
+                dh += '<div style="background:rgba(255,255,255,0.03);padding:6px;border-radius:6px;">Tend 1h: <strong style="color:' + (ctx.tendencia_1h==='ALTA'?'#22c55e':ctx.tendencia_1h==='BAIXA'?'#ef4444':'#f59e0b') + ';">' + ctx.tendencia_1h + '</strong></div>';
+                dh += '</div>';
+                if (ctx.exaustao) dh += '<div style="margin-top:4px;padding:4px 8px;background:rgba(239,68,68,0.1);border-radius:4px;font-size:9px;color:#fca5a5;">⚠️ EXAUSTÃO detectada - momentum desacelerando</div>';
+                dh += '<div style="font-size:9px;color:var(--text-muted);margin-top:4px;">' + (ctx.descricao || '') + '</div>';
+                dh += '</div>';
             }
             
             // Prós e Contras
@@ -5529,7 +5619,7 @@ async function _sugSilentRefresh() {
                 vh += '<span style="font-size:12px;font-weight:900;color:' + barColor + ';">' + r.confianca_pct + '% (' + r.conf_label + ')</span>';
                 vh += '</div>';
                 vh += '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;text-align:center;margin-top:8px;">';
-                vh += '<div style="background:rgba(255,255,255,0.03);border-radius:6px;padding:6px;"><div style="font-size:9px;color:var(--text-muted);">Score</div><div style="font-size:16px;font-weight:900;color:#8b5cf6;">' + r.score + '/7</div></div>';
+                vh += '<div style="background:rgba(255,255,255,0.03);border-radius:6px;padding:6px;"><div style="font-size:9px;color:var(--text-muted);">Score</div><div style="font-size:16px;font-weight:900;color:#8b5cf6;">' + r.score + '/10</div></div>';
                 vh += '<div style="background:rgba(255,255,255,0.03);border-radius:6px;padding:6px;"><div style="font-size:9px;color:var(--text-muted);">R:R</div><div style="font-size:16px;font-weight:900;color:#3b82f6;">' + r.rr + '</div></div>';
                 vh += '<div style="background:rgba(255,255,255,0.03);border-radius:6px;padding:6px;"><div style="font-size:9px;color:var(--text-muted);">Stop</div><div style="font-size:16px;font-weight:900;color:#ef4444;">' + r.stop_pts + 'pts</div></div>';
                 vh += '<div style="background:rgba(255,255,255,0.03);border-radius:6px;padding:6px;"><div style="font-size:9px;color:var(--text-muted);">Alvo</div><div style="font-size:16px;font-weight:900;color:#22c55e;">' + r.alvo_pts + 'pts</div></div>';

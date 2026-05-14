@@ -1839,3 +1839,874 @@ def analisar_tendencia_macro(dados: pd.DataFrame) -> dict:
         return {"tendencia": "BAIXA", "forca": round(pontos_baixa / total * 100)}
     else:
         return {"tendencia": "LATERAL", "forca": round(max(pontos_alta, pontos_baixa) / total * 100)}
+
+
+# =====================================================
+# ANÁLISE AVANÇADA DE FLUXO v2.0
+# VAP, Book de Ofertas, Absorção, Liquidez, Multi-TF
+# Baseado em: Bellafiore, Leandro Paz, Portal do Trader
+# =====================================================
+
+def calcular_vap(dados: pd.DataFrame, bins: int = 30) -> dict:
+    """
+    Volume at Price (VAP) - Perfil de Volume
+    Identifica POC, Value Area, zonas de alta/baixa liquidez.
+    
+    POC = Point of Control (preço com mais volume negociado)
+    VA = Value Area (70% do volume - onde o mercado mais operou)
+    """
+    if len(dados) < 10:
+        return {"poc": 0, "va_high": 0, "va_low": 0, "perfil": [], "zonas_liquidez": []}
+    
+    price_min = float(dados['low'].min())
+    price_max = float(dados['high'].max())
+    if price_max == price_min:
+        return {"poc": price_min, "va_high": price_min, "va_low": price_min, "perfil": [], "zonas_liquidez": []}
+    
+    step = (price_max - price_min) / bins
+    perfil = []
+    
+    for i in range(bins):
+        level_low = price_min + i * step
+        level_high = level_low + step
+        level_mid = (level_low + level_high) / 2
+        
+        # Volume que passou por este nível de preço
+        vol_at_level = 0
+        buy_vol = 0
+        sell_vol = 0
+        
+        for _, row in dados.iterrows():
+            r_high = float(row['high'])
+            r_low = float(row['low'])
+            r_close = float(row['close'])
+            r_open = float(row['open'])
+            r_vol = float(row.get('volume', 0))
+            
+            if r_low <= level_high and r_high >= level_low:
+                # Proporção do candle que intersecta este nível
+                candle_range = r_high - r_low if r_high > r_low else 1
+                overlap_low = max(r_low, level_low)
+                overlap_high = min(r_high, level_high)
+                proportion = (overlap_high - overlap_low) / candle_range
+                vol_contrib = r_vol * proportion
+                
+                vol_at_level += vol_contrib
+                if r_close >= r_open:
+                    buy_vol += vol_contrib
+                else:
+                    sell_vol += vol_contrib
+        
+        perfil.append({
+            "preco": round(level_mid, 2),
+            "preco_low": round(level_low, 2),
+            "preco_high": round(level_high, 2),
+            "volume": round(vol_at_level, 0),
+            "vol_compra": round(buy_vol, 0),
+            "vol_venda": round(sell_vol, 0),
+            "delta": round(buy_vol - sell_vol, 0),
+        })
+    
+    # POC - nível com maior volume
+    if not perfil:
+        return {"poc": 0, "va_high": 0, "va_low": 0, "perfil": [], "zonas_liquidez": []}
+    
+    poc_level = max(perfil, key=lambda x: x["volume"])
+    poc = poc_level["preco"]
+    
+    # Value Area (70% do volume total)
+    total_vol = sum(p["volume"] for p in perfil)
+    if total_vol == 0:
+        return {"poc": poc, "va_high": price_max, "va_low": price_min, "perfil": perfil, "zonas_liquidez": []}
+    
+    va_target = total_vol * 0.70
+    sorted_by_vol = sorted(perfil, key=lambda x: x["volume"], reverse=True)
+    va_vol = 0
+    va_prices = []
+    for p in sorted_by_vol:
+        va_vol += p["volume"]
+        va_prices.append(p["preco"])
+        if va_vol >= va_target:
+            break
+    
+    va_high = max(va_prices) if va_prices else price_max
+    va_low = min(va_prices) if va_prices else price_min
+    
+    # Zonas de liquidez (gaps no perfil = baixo volume = liquidez thin)
+    avg_vol = total_vol / bins if bins > 0 else 1
+    zonas_liquidez = []
+    for p in perfil:
+        if p["volume"] < avg_vol * 0.3:
+            zonas_liquidez.append({
+                "tipo": "LOW_LIQUIDITY",
+                "preco": p["preco"],
+                "descricao": f"Baixa liquidez em {p['preco']:.2f} - preço pode acelerar",
+            })
+        elif p["volume"] > avg_vol * 2.0:
+            zonas_liquidez.append({
+                "tipo": "HIGH_LIQUIDITY",
+                "preco": p["preco"],
+                "descricao": f"Alta concentração em {p['preco']:.2f} - possível S/R de fluxo",
+            })
+    
+    return {
+        "poc": round(poc, 2),
+        "va_high": round(va_high, 2),
+        "va_low": round(va_low, 2),
+        "total_volume": round(total_vol, 0),
+        "perfil": perfil,
+        "zonas_liquidez": zonas_liquidez,
+    }
+
+
+def analisar_book_ofertas(dados: pd.DataFrame, lookback: int = 20) -> dict:
+    """
+    Análise do Book de Ofertas simulado.
+    
+    Como não temos book real (L2 data), inferimos a partir de:
+    - Sombras dos candles (wicks) = rejeição de preço = ofertas defendendo
+    - Volume vs movimento de preço = absorção
+    - Sequência de candles = agressão direcional
+    
+    Baseado em: Leandro Paz, Portal do Trader (Caio Sasaki)
+    """
+    if len(dados) < lookback:
+        return {"agressao": "NEUTRO", "intensidade": 0, "absorcao": None, "defesa": None}
+    
+    recent = dados.tail(lookback)
+    
+    # --- Análise de Agressão ---
+    compra_agressiva = 0
+    venda_agressiva = 0
+    
+    for _, row in recent.iterrows():
+        o, h, l, c = float(row['open']), float(row['high']), float(row['low']), float(row['close'])
+        body = abs(c - o)
+        total_range = h - l if h > l else 0.001
+        upper_wick = h - max(o, c)
+        lower_wick = min(o, c) - l
+        
+        # Candle com corpo grande e pouca sombra = agressão
+        body_ratio = body / total_range
+        
+        if c > o:  # bullish
+            if body_ratio > 0.6:
+                compra_agressiva += 1 + (body_ratio - 0.6)
+            if lower_wick > body * 0.5:
+                compra_agressiva += 0.5  # Martelo = compradores defendendo
+        else:  # bearish
+            if body_ratio > 0.6:
+                venda_agressiva += 1 + (body_ratio - 0.6)
+            if upper_wick > body * 0.5:
+                venda_agressiva += 0.5  # Estrela cadente = vendedores defendendo
+    
+    total_agressao = compra_agressiva + venda_agressiva
+    if total_agressao == 0:
+        total_agressao = 1
+    
+    ratio_compra = compra_agressiva / total_agressao
+    ratio_venda = venda_agressiva / total_agressao
+    
+    if ratio_compra > 0.65:
+        agressao = "COMPRADORA"
+        intensidade = round(ratio_compra * 100)
+    elif ratio_venda > 0.65:
+        agressao = "VENDEDORA"
+        intensidade = round(ratio_venda * 100)
+    else:
+        agressao = "EQUILIBRIO"
+        intensidade = 50
+    
+    # --- Análise de Absorção ---
+    absorcao = _detectar_absorcao(dados, lookback)
+    
+    # --- Análise de Defesa de Preço ---
+    defesa = _detectar_defesa_preco(dados, lookback)
+    
+    # --- Mudança de comportamento ---
+    mudanca = _detectar_mudanca_comportamento(dados, lookback)
+    
+    return {
+        "agressao": agressao,
+        "intensidade": intensidade,
+        "ratio_compra": round(ratio_compra, 2),
+        "ratio_venda": round(ratio_venda, 2),
+        "compra_agressiva": round(compra_agressiva, 1),
+        "venda_agressiva": round(venda_agressiva, 1),
+        "absorcao": absorcao,
+        "defesa": defesa,
+        "mudanca_comportamento": mudanca,
+    }
+
+
+def _detectar_absorcao(dados: pd.DataFrame, lookback: int = 10) -> dict:
+    """
+    Detecta absorção: muito volume/agressão mas preço NÃO anda.
+    = alguém grande absorvendo a pressão contrária.
+    Sinal forte de reversão iminente.
+    """
+    if len(dados) < lookback:
+        return None
+    
+    recent = dados.tail(lookback)
+    volumes = recent['volume'].values.astype(float)
+    closes = recent['close'].values.astype(float)
+    
+    if len(volumes) < 5 or volumes.mean() == 0:
+        return None
+    
+    # Últimas 3 velas com volume alto mas preço estagnado
+    ultimas3_vol = volumes[-3:]
+    vol_medio = volumes[:-3].mean() if len(volumes) > 3 else volumes.mean()
+    
+    if vol_medio == 0:
+        return None
+    
+    vol_alto = all(v > vol_medio * 1.3 for v in ultimas3_vol)
+    preco_range = abs(closes[-1] - closes[-3]) if len(closes) >= 3 else 0
+    atr_approx = np.mean(np.abs(np.diff(closes))) if len(closes) > 1 else 1
+    preco_parado = preco_range < atr_approx * 0.5
+    
+    if vol_alto and preco_parado:
+        # Determinar quem está absorvendo
+        bull_candles = sum(1 for i in range(-3, 0) if closes[i] >= float(recent['open'].iloc[i]))
+        if bull_candles >= 2:
+            return {
+                "detectado": True,
+                "tipo": "COMPRADORES_ABSORVENDO",
+                "descricao": "Volume alto + preço parado = compradores absorvendo vendas. Reversão para ALTA provável.",
+                "forca": "FORTE" if all(v > vol_medio * 2 for v in ultimas3_vol) else "MODERADA",
+            }
+        else:
+            return {
+                "detectado": True,
+                "tipo": "VENDEDORES_ABSORVENDO",
+                "descricao": "Volume alto + preço parado = vendedores absorvendo compras. Reversão para BAIXA provável.",
+                "forca": "FORTE" if all(v > vol_medio * 2 for v in ultimas3_vol) else "MODERADA",
+            }
+    
+    return {"detectado": False}
+
+
+def _detectar_defesa_preco(dados: pd.DataFrame, lookback: int = 20) -> dict:
+    """
+    Detecta defesa de preço: nível testado múltiplas vezes sem romper.
+    = grandes players defendendo um preço (iceberg orders).
+    """
+    if len(dados) < lookback:
+        return None
+    
+    recent = dados.tail(lookback)
+    lows = recent['low'].values.astype(float)
+    highs = recent['high'].values.astype(float)
+    closes = recent['close'].values.astype(float)
+    
+    atr = np.mean(np.abs(np.diff(closes))) if len(closes) > 1 else 1
+    tolerancia = atr * 0.3
+    
+    # Verificar defesa de suporte (múltiplos lows similares)
+    sup_clusters = []
+    for i in range(len(lows)):
+        encontrou = False
+        for cluster in sup_clusters:
+            if abs(lows[i] - cluster["nivel"]) < tolerancia:
+                cluster["toques"] += 1
+                cluster["nivel"] = (cluster["nivel"] * (cluster["toques"] - 1) + lows[i]) / cluster["toques"]
+                encontrou = True
+                break
+        if not encontrou:
+            sup_clusters.append({"nivel": lows[i], "toques": 1, "tipo": "SUPORTE"})
+    
+    # Verificar defesa de resistência
+    res_clusters = []
+    for i in range(len(highs)):
+        encontrou = False
+        for cluster in res_clusters:
+            if abs(highs[i] - cluster["nivel"]) < tolerancia:
+                cluster["toques"] += 1
+                cluster["nivel"] = (cluster["nivel"] * (cluster["toques"] - 1) + highs[i]) / cluster["toques"]
+                encontrou = True
+                break
+        if not encontrou:
+            res_clusters.append({"nivel": highs[i], "toques": 1, "tipo": "RESISTENCIA"})
+    
+    # Encontrar defesas fortes (3+ toques)
+    defesas = []
+    for cluster in sup_clusters + res_clusters:
+        if cluster["toques"] >= 3:
+            defesas.append({
+                "nivel": round(cluster["nivel"], 2),
+                "tipo": cluster["tipo"],
+                "toques": cluster["toques"],
+                "descricao": f"{cluster['tipo']} defendido {cluster['toques']}x em {round(cluster['nivel'],2)} - player grande",
+            })
+    
+    if defesas:
+        return {
+            "detectado": True,
+            "defesas": sorted(defesas, key=lambda x: x["toques"], reverse=True),
+            "mais_forte": defesas[0] if defesas else None,
+        }
+    
+    return {"detectado": False, "defesas": []}
+
+
+def _detectar_mudanca_comportamento(dados: pd.DataFrame, lookback: int = 20) -> dict:
+    """
+    Detecta mudança de comportamento dos participantes:
+    - Sequência de candles muda de direção
+    - Volume muda de perfil (de baixo para alto ou vice-versa)
+    - Volatilidade muda abruptamente
+    """
+    if len(dados) < lookback:
+        return {"detectado": False}
+    
+    recent = dados.tail(lookback)
+    closes = recent['close'].values.astype(float)
+    volumes = recent['volume'].values.astype(float)
+    
+    half = lookback // 2
+    
+    # Mudança de direção
+    primeira_metade = closes[:half]
+    segunda_metade = closes[half:]
+    
+    dir1 = "ALTA" if primeira_metade[-1] > primeira_metade[0] else "BAIXA"
+    dir2 = "ALTA" if segunda_metade[-1] > segunda_metade[0] else "BAIXA"
+    
+    mudou_direcao = dir1 != dir2
+    
+    # Mudança de volume
+    vol1 = volumes[:half].mean() if volumes[:half].mean() > 0 else 1
+    vol2 = volumes[half:].mean()
+    vol_change = vol2 / vol1
+    
+    mudou_volume = vol_change > 1.5 or vol_change < 0.5
+    
+    # Mudança de volatilidade
+    ranges1 = np.abs(np.diff(closes[:half]))
+    ranges2 = np.abs(np.diff(closes[half:]))
+    vol1_avg = ranges1.mean() if len(ranges1) > 0 else 1
+    vol2_avg = ranges2.mean() if len(ranges2) > 0 else 1
+    volatilidade_change = vol2_avg / vol1_avg if vol1_avg > 0 else 1
+    
+    mudou_volatilidade = volatilidade_change > 1.8 or volatilidade_change < 0.4
+    
+    detectado = mudou_direcao or mudou_volume or mudou_volatilidade
+    
+    descricoes = []
+    if mudou_direcao:
+        descricoes.append(f"Direção mudou de {dir1} para {dir2}")
+    if mudou_volume:
+        descricoes.append(f"Volume {'aumentou' if vol_change > 1 else 'diminuiu'} {round(vol_change, 1)}x")
+    if mudou_volatilidade:
+        descricoes.append(f"Volatilidade {'expandiu' if volatilidade_change > 1 else 'contraiu'} {round(volatilidade_change, 1)}x")
+    
+    return {
+        "detectado": detectado,
+        "mudou_direcao": mudou_direcao,
+        "direcao_anterior": dir1 if mudou_direcao else None,
+        "direcao_atual": dir2 if mudou_direcao else None,
+        "mudou_volume": mudou_volume,
+        "vol_change_ratio": round(vol_change, 2),
+        "mudou_volatilidade": mudou_volatilidade,
+        "volatilidade_change": round(volatilidade_change, 2),
+        "descricoes": descricoes,
+    }
+
+
+def calcular_fibonacci_multi_tf(dados_5m: pd.DataFrame, dados_15m: pd.DataFrame = None, dados_1h: pd.DataFrame = None) -> dict:
+    """
+    Fibonacci em múltiplos timeframes para encontrar confluências.
+    Usa topos e fundos de REVERSÃO (não qualquer topo/fundo).
+    
+    Retorna níveis de retração e extensão por TF + zonas de confluência.
+    """
+    result = {"tf_5m": None, "tf_15m": None, "tf_1h": None, "confluencias": []}
+    
+    # Calcular Fibo para cada TF disponível
+    for label, df in [("tf_5m", dados_5m), ("tf_15m", dados_15m), ("tf_1h", dados_1h)]:
+        if df is None or len(df) < 20:
+            continue
+        
+        # Encontrar topos e fundos de reversão significativos
+        highs = df['high'].values.astype(float)
+        lows = df['low'].values.astype(float)
+        
+        # Swing highs/lows com lookback proporcional ao TF
+        swing_lookback = 5 if label == "tf_5m" else 8 if label == "tf_15m" else 10
+        
+        swing_highs = []
+        swing_lows = []
+        
+        for i in range(swing_lookback, len(highs) - swing_lookback):
+            if highs[i] == max(highs[i-swing_lookback:i+swing_lookback+1]):
+                swing_highs.append((i, highs[i]))
+            if lows[i] == min(lows[i-swing_lookback:i+swing_lookback+1]):
+                swing_lows.append((i, lows[i]))
+        
+        if not swing_highs or not swing_lows:
+            continue
+        
+        # Usar o swing high e swing low mais recentes e significativos
+        last_high_idx, last_high = swing_highs[-1]
+        last_low_idx, last_low = swing_lows[-1]
+        
+        diff = last_high - last_low
+        if diff <= 0:
+            continue
+        
+        # Determinar tendência pelo swing mais recente
+        if last_high_idx > last_low_idx:
+            tendencia = "ALTA"
+            fib_levels = {
+                "topo": round(last_high, 2),
+                "fundo": round(last_low, 2),
+                "retracoes": {
+                    "23.6": round(last_high - diff * 0.236, 2),
+                    "38.2": round(last_high - diff * 0.382, 2),
+                    "50.0": round(last_high - diff * 0.500, 2),
+                    "61.8": round(last_high - diff * 0.618, 2),
+                    "78.6": round(last_high - diff * 0.786, 2),
+                },
+                "extensoes": {
+                    "127.2": round(last_high + diff * 0.272, 2),
+                    "161.8": round(last_high + diff * 0.618, 2),
+                    "261.8": round(last_high + diff * 1.618, 2),
+                },
+                "tendencia": tendencia,
+            }
+        else:
+            tendencia = "BAIXA"
+            fib_levels = {
+                "topo": round(last_high, 2),
+                "fundo": round(last_low, 2),
+                "retracoes": {
+                    "23.6": round(last_low + diff * 0.236, 2),
+                    "38.2": round(last_low + diff * 0.382, 2),
+                    "50.0": round(last_low + diff * 0.500, 2),
+                    "61.8": round(last_low + diff * 0.618, 2),
+                    "78.6": round(last_low + diff * 0.786, 2),
+                },
+                "extensoes": {
+                    "127.2": round(last_low - diff * 0.272, 2),
+                    "161.8": round(last_low - diff * 0.618, 2),
+                    "261.8": round(last_low - diff * 1.618, 2),
+                },
+                "tendencia": tendencia,
+            }
+        
+        result[label] = fib_levels
+    
+    # Encontrar confluências entre TFs (mesmo nível em TFs diferentes)
+    all_levels = []
+    for tf_key in ["tf_5m", "tf_15m", "tf_1h"]:
+        fib = result.get(tf_key)
+        if not fib:
+            continue
+        for nome, preco in fib.get("retracoes", {}).items():
+            all_levels.append({"tf": tf_key, "tipo": f"Retração {nome}%", "preco": preco})
+        for nome, preco in fib.get("extensoes", {}).items():
+            all_levels.append({"tf": tf_key, "tipo": f"Extensão {nome}%", "preco": preco})
+    
+    # Agrupar por proximidade
+    if all_levels:
+        atr_approx = abs(all_levels[0]["preco"]) * 0.001  # ~0.1% tolerância
+        confluencias = []
+        used = set()
+        
+        for i, l1 in enumerate(all_levels):
+            if i in used:
+                continue
+            group = [l1]
+            used.add(i)
+            for j, l2 in enumerate(all_levels):
+                if j in used or j == i:
+                    continue
+                if abs(l1["preco"] - l2["preco"]) < atr_approx:
+                    group.append(l2)
+                    used.add(j)
+            
+            if len(group) >= 2:  # Confluência = mesmo nível em 2+ TFs
+                avg_preco = sum(g["preco"] for g in group) / len(group)
+                tfs = list(set(g["tf"] for g in group))
+                tipos = [g["tipo"] for g in group]
+                confluencias.append({
+                    "preco": round(avg_preco, 2),
+                    "tfs": tfs,
+                    "tipos": tipos,
+                    "forca": len(group),
+                    "descricao": f"Confluência Fibo {round(avg_preco,2)}: {', '.join(tipos)} em {', '.join(tfs)}",
+                })
+        
+        result["confluencias"] = sorted(confluencias, key=lambda x: x["forca"], reverse=True)
+    
+    return result
+
+
+def analisar_contexto_mercado(dados: pd.DataFrame, dados_15m: pd.DataFrame = None, dados_1h: pd.DataFrame = None) -> dict:
+    """
+    Análise de contexto COMPLETA do mercado antes de qualquer entrada.
+    
+    Combina:
+    1. Tendência macro (15m e 1h)
+    2. Fase do mercado (acumulação, distribuição, tendência, range)
+    3. Momentum e exaustão
+    4. Correlação fluxo vs estrutura
+    """
+    result = {
+        "fase": "INDEFINIDA",
+        "momentum": "NEUTRO",
+        "exaustao": False,
+        "contexto_favoravel": False,
+        "descricao": "",
+        "tendencia_15m": "LATERAL",
+        "tendencia_1h": "LATERAL",
+        "sr_15m": [],
+        "sr_1h": [],
+    }
+    
+    if len(dados) < 20:
+        return result
+    
+    closes = dados['close'].values.astype(float)
+    volumes = dados['volume'].values.astype(float)
+    highs = dados['high'].values.astype(float)
+    lows = dados['low'].values.astype(float)
+    
+    # --- Fase do mercado ---
+    ema20 = pd.Series(closes).ewm(span=20, adjust=False).mean().values
+    ema50 = pd.Series(closes).ewm(span=50, adjust=False).mean().values if len(closes) >= 50 else ema20
+    
+    # Bollinger Width como proxy de volatilidade
+    bb_middle = pd.Series(closes).rolling(20).mean()
+    bb_std = pd.Series(closes).rolling(20).std()
+    bb_width = (bb_std * 2 / bb_middle).iloc[-1] if len(bb_middle) >= 20 else 0
+    
+    # ADX simplificado (tendência vs range)
+    price_changes = np.abs(np.diff(closes))
+    avg_change = price_changes[-10:].mean() if len(price_changes) >= 10 else 0
+    avg_change_old = price_changes[-20:-10].mean() if len(price_changes) >= 20 else avg_change
+    
+    trending = avg_change > avg_change_old * 1.3 if avg_change_old > 0 else False
+    
+    # Classificação de fase
+    if bb_width < 0.005 and not trending:
+        result["fase"] = "ACUMULAÇÃO/DISTRIBUIÇÃO"
+        result["descricao"] = "Mercado comprimido (Bollinger squeeze) - explosão iminente"
+    elif trending and closes[-1] > ema20[-1]:
+        result["fase"] = "TENDÊNCIA DE ALTA"
+        result["descricao"] = "Mercado em tendência de alta com momentum crescente"
+    elif trending and closes[-1] < ema20[-1]:
+        result["fase"] = "TENDÊNCIA DE BAIXA"
+        result["descricao"] = "Mercado em tendência de baixa com momentum crescente"
+    else:
+        result["fase"] = "RANGE"
+        result["descricao"] = "Mercado lateralizado - operar nos extremos"
+    
+    # --- Momentum ---
+    if len(closes) >= 10:
+        mom_5 = (closes[-1] / closes[-5] - 1) * 100 if closes[-5] > 0 else 0
+        mom_10 = (closes[-1] / closes[-10] - 1) * 100 if closes[-10] > 0 else 0
+        
+        if mom_5 > 0.3 and mom_10 > 0.3:
+            result["momentum"] = "ALTA_FORTE"
+        elif mom_5 > 0.1:
+            result["momentum"] = "ALTA"
+        elif mom_5 < -0.3 and mom_10 < -0.3:
+            result["momentum"] = "BAIXA_FORTE"
+        elif mom_5 < -0.1:
+            result["momentum"] = "BAIXA"
+        
+        # Exaustão: momentum desacelerando
+        if len(closes) >= 15:
+            mom_5_ant = (closes[-6] / closes[-11] - 1) * 100 if closes[-11] > 0 else 0
+            if abs(mom_5) < abs(mom_5_ant) * 0.5 and abs(mom_5_ant) > 0.1:
+                result["exaustao"] = True
+                result["descricao"] += " | EXAUSTÃO detectada - momentum desacelerando"
+    
+    # --- Tendência 15m ---
+    if dados_15m is not None and len(dados_15m) >= 20:
+        c15 = dados_15m['close'].values.astype(float)
+        ema9_15 = pd.Series(c15).ewm(span=9, adjust=False).mean().values
+        ema21_15 = pd.Series(c15).ewm(span=21, adjust=False).mean().values
+        if ema9_15[-1] > ema21_15[-1]:
+            result["tendencia_15m"] = "ALTA"
+        elif ema9_15[-1] < ema21_15[-1]:
+            result["tendencia_15m"] = "BAIXA"
+        
+        # S/R no 15m
+        from analysis_engine import calcular_suportes_resistencias
+        try:
+            s15, r15 = calcular_suportes_resistencias(dados_15m)
+            result["sr_15m"] = [{"tipo": "S", "preco": round(x, 2)} for x in s15[:3]] + \
+                              [{"tipo": "R", "preco": round(x, 2)} for x in r15[:3]]
+        except:
+            pass
+    
+    # --- Tendência 1h ---
+    if dados_1h is not None and len(dados_1h) >= 20:
+        c1h = dados_1h['close'].values.astype(float)
+        ema9_1h = pd.Series(c1h).ewm(span=9, adjust=False).mean().values
+        ema21_1h = pd.Series(c1h).ewm(span=21, adjust=False).mean().values
+        if ema9_1h[-1] > ema21_1h[-1]:
+            result["tendencia_1h"] = "ALTA"
+        elif ema9_1h[-1] < ema21_1h[-1]:
+            result["tendencia_1h"] = "BAIXA"
+        
+        try:
+            s1h, r1h = calcular_suportes_resistencias(dados_1h)
+            result["sr_1h"] = [{"tipo": "S", "preco": round(x, 2)} for x in s1h[:3]] + \
+                              [{"tipo": "R", "preco": round(x, 2)} for x in r1h[:3]]
+        except:
+            pass
+    
+    # --- Contexto favorável? ---
+    # Favorável quando tendência + momentum + não exausto + não em squeeze
+    if result["fase"] in ("TENDÊNCIA DE ALTA", "TENDÊNCIA DE BAIXA") and \
+       result["momentum"] in ("ALTA_FORTE", "ALTA", "BAIXA_FORTE", "BAIXA") and \
+       not result["exaustao"]:
+        result["contexto_favoravel"] = True
+    
+    return result
+
+
+def avaliar_convergencia_completa(
+    fluxo: dict,
+    contexto: dict,
+    vap: dict,
+    fib_multi: dict,
+    rsi: float,
+    macd_h: float,
+    tend_macro: str,
+    direcao: str,
+    preco_atual: float,
+) -> dict:
+    """
+    CONVERGÊNCIA MULTI-FATOR OBRIGATÓRIA
+    
+    Baseado nos livros:
+    - Trading in the Zone (Douglas): probabilidade, não certeza
+    - One Good Trade (Bellafiore): PlayBook = convergência
+    - Come Into My Trading Room (Elder): Triple Screen
+    - Axiomas de Zurique: não entrar sem convicção
+    
+    Avalia 10 fatores e exige mínimo de 6 para entrada.
+    Retorna score, detalhes, e veredicto.
+    """
+    fatores = []
+    score = 0
+    
+    # 1. FLUXO: Agressão direcional confirma?
+    fluxo_ok = False
+    if direcao == "COMPRA" and fluxo.get("agressao") == "COMPRADORA":
+        fluxo_ok = True
+    elif direcao == "VENDA" and fluxo.get("agressao") == "VENDEDORA":
+        fluxo_ok = True
+    fatores.append({
+        "nome": "Fluxo/Agressão",
+        "ok": fluxo_ok,
+        "detalhe": f"Agressão {fluxo.get('agressao', '?')} ({fluxo.get('intensidade', 0)}%) - {'confirma' if fluxo_ok else 'não confirma'} {direcao}",
+        "peso": 1.5,
+    })
+    if fluxo_ok: score += 1.5
+    
+    # 2. ABSORÇÃO: Tem absorção a favor?
+    absorcao_ok = False
+    abs_info = fluxo.get("absorcao", {})
+    if abs_info and abs_info.get("detectado"):
+        if direcao == "COMPRA" and "COMPRADORES" in abs_info.get("tipo", ""):
+            absorcao_ok = True
+        elif direcao == "VENDA" and "VENDEDORES" in abs_info.get("tipo", ""):
+            absorcao_ok = True
+    fatores.append({
+        "nome": "Absorção",
+        "ok": absorcao_ok,
+        "detalhe": abs_info.get("descricao", "Sem absorção detectada") if abs_info and abs_info.get("detectado") else "Sem absorção",
+        "peso": 1.0,
+    })
+    if absorcao_ok: score += 1.0
+    
+    # 3. CONTEXTO MACRO: Tendência do TF maior confirma?
+    contexto_ok = False
+    if direcao == "COMPRA" and tend_macro == "ALTA":
+        contexto_ok = True
+    elif direcao == "VENDA" and tend_macro == "BAIXA":
+        contexto_ok = True
+    fatores.append({
+        "nome": "Contexto Macro",
+        "ok": contexto_ok,
+        "detalhe": f"Tendência macro: {tend_macro} - {'alinhado' if contexto_ok else 'contra'} {direcao}",
+        "peso": 1.5,
+    })
+    if contexto_ok: score += 1.5
+    
+    # 4. VAP/POC: Preço em zona favorável?
+    vap_ok = False
+    if vap and vap.get("poc"):
+        poc = vap["poc"]
+        va_h = vap.get("va_high", poc)
+        va_l = vap.get("va_low", poc)
+        
+        if direcao == "COMPRA" and preco_atual <= poc:
+            vap_ok = True  # Comprando abaixo do POC (desconto)
+        elif direcao == "VENDA" and preco_atual >= poc:
+            vap_ok = True  # Vendendo acima do POC (prêmio)
+        elif va_l <= preco_atual <= va_h:
+            pass  # Dentro da VA = neutro
+        
+    fatores.append({
+        "nome": "VAP/Volume Profile",
+        "ok": vap_ok,
+        "detalhe": f"POC: {vap.get('poc', '?')} | VA: {vap.get('va_low', '?')}-{vap.get('va_high', '?')} | Preço: {preco_atual}" if vap else "VAP indisponível",
+        "peso": 1.0,
+    })
+    if vap_ok: score += 1.0
+    
+    # 5. FIBONACCI: Preço em zona de retração/extensão?
+    fib_ok = False
+    fib_detalhe = "Sem dados Fibonacci"
+    if fib_multi:
+        # Verificar se preço está próximo de alguma retração
+        for tf_key in ["tf_1h", "tf_15m", "tf_5m"]:
+            fib_tf = fib_multi.get(tf_key)
+            if not fib_tf:
+                continue
+            retracoes = fib_tf.get("retracoes", {})
+            for nome, nivel in retracoes.items():
+                dist_pct = abs(preco_atual - nivel) / preco_atual * 100 if preco_atual > 0 else 999
+                if dist_pct < 0.15:  # Dentro de 0.15% do nível Fibo
+                    fib_ok = True
+                    fib_detalhe = f"Preço na retração {nome}% do {tf_key} ({nivel})"
+                    break
+            if fib_ok:
+                break
+        
+        # Confluências Fibo multi-TF são ainda mais fortes
+        for conf in fib_multi.get("confluencias", []):
+            dist_pct = abs(preco_atual - conf["preco"]) / preco_atual * 100 if preco_atual > 0 else 999
+            if dist_pct < 0.2:
+                fib_ok = True
+                fib_detalhe = f"CONFLUÊNCIA FIBO: {conf['descricao']}"
+                score += 0.5  # Bônus por confluência multi-TF
+                break
+    
+    fatores.append({
+        "nome": "Fibonacci Multi-TF",
+        "ok": fib_ok,
+        "detalhe": fib_detalhe,
+        "peso": 1.0,
+    })
+    if fib_ok: score += 1.0
+    
+    # 6. INDICADORES: RSI + MACD confirmam?
+    ind_ok = False
+    if direcao == "COMPRA":
+        ind_ok = rsi < 65 and macd_h > 0
+    elif direcao == "VENDA":
+        ind_ok = rsi > 35 and macd_h < 0
+    fatores.append({
+        "nome": "Indicadores (RSI+MACD)",
+        "ok": ind_ok,
+        "detalhe": f"RSI={rsi} MACD hist={macd_h} - {'confirma' if ind_ok else 'não confirma'} {direcao}",
+        "peso": 1.0,
+    })
+    if ind_ok: score += 1.0
+    
+    # 7. DEFESA DE PREÇO: Tem defesa no nível?
+    defesa_ok = False
+    defesa_info = fluxo.get("defesa", {})
+    if defesa_info and defesa_info.get("detectado"):
+        mais_forte = defesa_info.get("mais_forte", {})
+        if mais_forte:
+            if direcao == "COMPRA" and mais_forte.get("tipo") == "SUPORTE":
+                defesa_ok = True
+            elif direcao == "VENDA" and mais_forte.get("tipo") == "RESISTENCIA":
+                defesa_ok = True
+    fatores.append({
+        "nome": "Defesa de Preço",
+        "ok": defesa_ok,
+        "detalhe": defesa_info.get("mais_forte", {}).get("descricao", "Sem defesa detectada") if defesa_info and defesa_info.get("detectado") else "Sem defesa",
+        "peso": 0.5,
+    })
+    if defesa_ok: score += 0.5
+    
+    # 8. FASE DO MERCADO: Contexto favorável?
+    fase_ok = contexto.get("contexto_favoravel", False)
+    fatores.append({
+        "nome": "Fase/Momentum",
+        "ok": fase_ok,
+        "detalhe": f"{contexto.get('fase', '?')} | Mom: {contexto.get('momentum', '?')} | {'EXAUSTÃO' if contexto.get('exaustao') else 'OK'}",
+        "peso": 1.0,
+    })
+    if fase_ok: score += 1.0
+    
+    # 9. LIQUIDEZ: Não está em zona de baixa liquidez?
+    liq_ok = True  # Default OK
+    if vap:
+        for zona in vap.get("zonas_liquidez", []):
+            if zona["tipo"] == "LOW_LIQUIDITY":
+                dist = abs(preco_atual - zona["preco"])
+                if dist < preco_atual * 0.001:
+                    liq_ok = False
+                    break
+    fatores.append({
+        "nome": "Liquidez",
+        "ok": liq_ok,
+        "detalhe": "Zona de liquidez adequada" if liq_ok else "CUIDADO: zona de baixa liquidez - slippage provável",
+        "peso": 0.5,
+    })
+    if liq_ok: score += 0.5
+    
+    # 10. MUDANÇA DE COMPORTAMENTO: Não houve reversão recente?
+    mudanca = fluxo.get("mudanca_comportamento", {})
+    mud_ok = True
+    if mudanca.get("detectado"):
+        # Se mudou de direção E a nova direção é contra nosso trade
+        if mudanca.get("mudou_direcao"):
+            nova_dir = mudanca.get("direcao_atual", "")
+            if (direcao == "COMPRA" and nova_dir == "BAIXA") or \
+               (direcao == "VENDA" and nova_dir == "ALTA"):
+                mud_ok = False
+    fatores.append({
+        "nome": "Estabilidade do Fluxo",
+        "ok": mud_ok,
+        "detalhe": "; ".join(mudanca.get("descricoes", ["Fluxo estável"])) if mudanca.get("detectado") else "Fluxo estável",
+        "peso": 0.5,
+    })
+    if mud_ok: score += 0.5
+    
+    # --- VEREDICTO ---
+    max_score = sum(f["peso"] for f in fatores)
+    pct = round(score / max_score * 100) if max_score > 0 else 0
+    
+    ok_count = sum(1 for f in fatores if f["ok"])
+    
+    if pct >= 75 and ok_count >= 7:
+        veredicto = "ENTRADA_FORTE"
+        nivel = "A+"
+    elif pct >= 60 and ok_count >= 6:
+        veredicto = "ENTRADA"
+        nivel = "A"
+    elif pct >= 50 and ok_count >= 5:
+        veredicto = "CAUTELA"
+        nivel = "B+"
+    elif pct >= 40 and ok_count >= 4:
+        veredicto = "ESPERAR"
+        nivel = "B"
+    else:
+        veredicto = "NÃO_ENTRAR"
+        nivel = "C"
+    
+    return {
+        "score": round(score, 1),
+        "max_score": round(max_score, 1),
+        "pct": pct,
+        "ok_count": ok_count,
+        "total_fatores": len(fatores),
+        "fatores": fatores,
+        "veredicto": veredicto,
+        "nivel": nivel,
+        "pros": [f["detalhe"] for f in fatores if f["ok"]],
+        "contras": [f["detalhe"] for f in fatores if not f["ok"]],
+    }

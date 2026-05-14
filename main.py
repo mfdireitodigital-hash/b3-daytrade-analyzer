@@ -337,7 +337,7 @@ templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
 
 @app.get("/api/version")
 async def api_version():
-    return {"version": "4.0.0", "build": "20260508k", "changes": "fix_cola_delay,rt_cache_preco,anti_cheat_5min,learning_engine,sr_rewrite,macd_volume_charts"}
+    return {"version": "4.0.0", "build": "20260515a", "changes": "fix_cola_delay,rt_cache_preco,anti_cheat_5min,learning_engine,sr_rewrite,macd_volume_charts"}
 
 @app.get("/", response_class=HTMLResponse)
 async def dashboard(request: Request):
@@ -3363,9 +3363,21 @@ async def operador_live(ativo: str = Query("WIN"), max_entradas: int = Query(10)
                     "conf_label": conf_label,
                     "score": score,
                     "rsi": rsi_v,
+                    "macd_hist": macd_h,
                     "tend_macro": tend_macro["tendencia"],
+                    "ativo": ativo,
                     "motivos": motivos_operar[:5],
-                    "resultado": None,  # Ainda aberto
+                    "motivos_nao_operar": motivos_nao_operar[:3],
+                    "contexto_entrada": {
+                        "ema9": ema9,
+                        "ema21": ema21,
+                        "atr": atr_v,
+                        "tendencia_curta": tend,
+                        "vwap": vwap if 'vwap' in dir() else None,
+                        "suporte": round(suporte, 0) if suporte else None,
+                        "resistencia": round(resistencia, 0) if resistencia else None,
+                    },
+                    "resultado": None,
                     "pts": 0,
                     "hora_saida": None,
                     "preco_saida": None,
@@ -3530,18 +3542,17 @@ async def operador_live(ativo: str = Query("WIN"), max_entradas: int = Query(10)
 @app.get("/api/operador-live/sugestao")
 async def operador_sugestao(ativo: str = Query("WIN")):
     """
-    SUGESTÃO DO OPERADOR SENIOR
+    SUGESTÃO DO OPERADOR SENIOR v2.0
     
-    Analisa o momento atual em PROFUNDIDADE e dá um parecer completo:
-    - Checklist de confluência (7 pontos do framework)
-    - Memória de erros passados (CT + replay)
-    - Análise macro + micro
-    - Prós e contras da entrada
-    - R:R calculado
-    - Veredicto final com % de confiança
+    Análise COMPLETA com convergência multi-fator:
+    - VAP (Volume at Price) + POC + Value Area
+    - Book de ofertas simulado (agressão, absorção, defesa)
+    - Multi-timeframe (5m operacional + 15m/1h contexto)
+    - Fibonacci multi-TF com confluências
+    - Convergência obrigatória: fluxo + estrutura + volume + liquidez + price action
+    - Memória de erros passados
     
-    Diferente do endpoint principal que auto-opera, este é CONSULTIVO:
-    o trader pede a opinião do operador e decide se segue ou não.
+    Framework: Douglas + Bellafiore + Elder + Murphy + Axiomas de Zurique
     """
     try:
         from datetime import timezone, timedelta
@@ -3567,21 +3578,43 @@ async def operador_sugestao(ativo: str = Query("WIN")):
                 "confianca": 0,
             })
         
-        # Obter dados
+        # ===== OBTER DADOS MULTI-TIMEFRAME =====
         import yfinance as yf
-        dados = yf.download(ticker, period="5d", interval="5m", progress=False)
-        if dados.empty:
+        
+        # 5min (operacional)
+        dados_5m = yf.download(ticker, period="5d", interval="5m", progress=False)
+        if dados_5m.empty:
             return JSONResponse({"status": "ERRO", "mensagem": "Sem dados disponíveis"})
-        if isinstance(dados.columns, pd.MultiIndex):
-            dados.columns = dados.columns.get_level_values(0)
-        dados.columns = [c.lower() for c in dados.columns]
+        if isinstance(dados_5m.columns, pd.MultiIndex):
+            dados_5m.columns = dados_5m.columns.get_level_values(0)
+        dados_5m.columns = [c.lower() for c in dados_5m.columns]
+        
+        # 15min (contexto intermediário)
+        dados_15m = yf.download(ticker, period="5d", interval="15m", progress=False)
+        if not dados_15m.empty:
+            if isinstance(dados_15m.columns, pd.MultiIndex):
+                dados_15m.columns = dados_15m.columns.get_level_values(0)
+            dados_15m.columns = [c.lower() for c in dados_15m.columns]
+        else:
+            dados_15m = None
+        
+        # 1h (contexto macro)
+        dados_1h = yf.download(ticker, period="1mo", interval="1h", progress=False)
+        if not dados_1h.empty:
+            if isinstance(dados_1h.columns, pd.MultiIndex):
+                dados_1h.columns = dados_1h.columns.get_level_values(0)
+            dados_1h.columns = [c.lower() for c in dados_1h.columns]
+        else:
+            dados_1h = None
+        
+        dados = dados_5m  # Operacional é 5m
         
         c = float(dados['close'].iloc[-1])
         h = float(dados['high'].iloc[-1])
         l = float(dados['low'].iloc[-1])
         o = float(dados['open'].iloc[-1])
         
-        # ===== PREÇO RT (mesmo cascade do operador principal) =====
+        # ===== PREÇO RT =====
         preco_atual = c
         fonte_preco = "yfinance"
         _rt_cache = app_state.get("preco_realtime", {}).get(ativo, {})
@@ -3596,10 +3629,13 @@ async def operador_sugestao(ativo: str = Query("WIN")):
                     preco_atual = float(_rt_prov["preco"])
                     fonte_preco = _rt_prov.get("fonte", "Provider RT")
         
-        # ===== INDICADORES =====
+        # ===== INDICADORES CLÁSSICOS (5m) =====
         from analysis_engine import (
             calcular_rsi, calcular_macd, calcular_atr_series,
-            calcular_suportes_resistencias, analisar_tendencia_macro
+            calcular_suportes_resistencias,
+            calcular_vap, analisar_book_ofertas,
+            calcular_fibonacci_multi_tf, analisar_contexto_mercado,
+            avaliar_convergencia_completa,
         )
         
         rsi_s = calcular_rsi(dados)
@@ -3623,18 +3659,97 @@ async def operador_sugestao(ativo: str = Query("WIN")):
             today_data = dados[dados.index.date == dados.index[-1].date()]
             if len(today_data) > 0:
                 tp = (today_data['high'] + today_data['low'] + today_data['close']) / 3
-                vwap = round(float((tp * today_data['volume']).cumsum() / today_data['volume'].cumsum().replace(0, 1)).iloc[-1] if today_data['volume'].sum() > 0 else float(tp.mean()), 2)
+                cum_vol = today_data['volume'].cumsum().replace(0, 1)
+                vwap = round(float((tp * today_data['volume']).cumsum().iloc[-1] / cum_vol.iloc[-1]), 2)
         except:
             pass
         
-        # S/R
+        # S/R (5m)
         _sups, _ress = calcular_suportes_resistencias(dados)
         suporte = _sups[0] if _sups else None
         resistencia = _ress[0] if _ress else None
         
+        # ===== NOVAS ANÁLISES AVANÇADAS =====
+        
+        # 1. VAP - Volume at Price (últimas 100 velas 5m)
+        vap_window = dados.tail(100)
+        vap_data = calcular_vap(vap_window, bins=25)
+        
+        # 2. Book de Ofertas simulado
+        fluxo_data = analisar_book_ofertas(dados, lookback=20)
+        
+        # 3. Fibonacci Multi-Timeframe
+        fib_multi = calcular_fibonacci_multi_tf(dados_5m, dados_15m, dados_1h)
+        
+        # 4. Contexto de mercado (multi-TF)
+        contexto = analisar_contexto_mercado(dados, dados_15m, dados_1h)
+        
+        # ===== TENDÊNCIA MACRO (Elder T1 - usa 1h se disponível) =====
+        # Determinar direção pela convergência dos indicadores
+        tend = contexto.get("tendencia_1h", "LATERAL")
+        if tend == "LATERAL":
+            tend = contexto.get("tendencia_15m", "LATERAL")
+        if tend == "LATERAL":
+            if ema9 > ema21 and preco_atual > ema50:
+                tend = "ALTA"
+            elif ema9 < ema21 and preco_atual < ema50:
+                tend = "BAIXA"
+        
+        # ===== DIREÇÃO SUGERIDA =====
+        sinais_compra = 0
+        sinais_venda = 0
+        
         # Tendência macro
-        tend_macro = analisar_tendencia_macro(dados)
-        tend = tend_macro.get("tendencia", "LATERAL")
+        if tend == "ALTA": sinais_compra += 2
+        elif tend == "BAIXA": sinais_venda += 2
+        
+        # RSI
+        if rsi_v < 40: sinais_compra += 1
+        elif rsi_v > 60: sinais_venda += 1
+        
+        # MACD
+        if macd_h > 0: sinais_compra += 1
+        elif macd_h < 0: sinais_venda += 1
+        
+        # EMAs
+        if ema9 > ema21: sinais_compra += 1
+        else: sinais_venda += 1
+        
+        # EMA50
+        if preco_atual > ema50: sinais_compra += 1
+        else: sinais_venda += 1
+        
+        # Fluxo
+        if fluxo_data.get("agressao") == "COMPRADORA": sinais_compra += 1.5
+        elif fluxo_data.get("agressao") == "VENDEDORA": sinais_venda += 1.5
+        
+        # Contexto
+        if contexto.get("tendencia_15m") == "ALTA": sinais_compra += 1
+        elif contexto.get("tendencia_15m") == "BAIXA": sinais_venda += 1
+        
+        if sinais_compra > sinais_venda + 1.5:
+            direcao = "COMPRA"
+        elif sinais_venda > sinais_compra + 1.5:
+            direcao = "VENDA"
+        else:
+            direcao = "INDEFINIDA"
+        
+        # ===== CONVERGÊNCIA MULTI-FATOR (10 fatores) =====
+        convergencia = avaliar_convergencia_completa(
+            fluxo=fluxo_data,
+            contexto=contexto,
+            vap=vap_data,
+            fib_multi=fib_multi,
+            rsi=rsi_v,
+            macd_h=macd_h,
+            tend_macro=tend,
+            direcao=direcao if direcao != "INDEFINIDA" else "COMPRA",
+            preco_atual=preco_atual,
+        )
+        
+        score = convergencia["ok_count"]
+        conf_label = convergencia["nivel"]
+        confianca_pct = convergencia["pct"]
         
         # ===== JANELA DE OPERAÇÃO =====
         JANELAS = [
@@ -3660,169 +3775,22 @@ async def operador_sugestao(ativo: str = Query("WIN")):
                 pode_janela = j_pode
                 break
         
-        # ===== CHECKLIST DE CONFLUÊNCIA (7 PONTOS - Framework dos livros) =====
-        checklist = []
-        score = 0
-        
-        # 1. Tendência TF+ (Murphy/Elder)
-        tf_ok = tend in ("ALTA", "BAIXA")
-        checklist.append({
-            "item": "Tendência TF+ (Murphy/Elder)",
-            "status": "✅" if tf_ok else "❌",
-            "detalhe": f"Macro: {tend} (força {tend_macro.get('forca', 0)})",
-            "ok": tf_ok
-        })
-        if tf_ok: score += 1
-        
-        # 2. S/R relevante (Murphy)
-        sr_ok = False
-        sr_detalhe = "Sem S/R próximo"
-        if suporte and resistencia:
-            dist_sup = abs(preco_atual - suporte)
-            dist_res = abs(resistencia - preco_atual)
-            prox_sr = min(dist_sup, dist_res)
-            tolerancia = atr_v * 0.5
-            if prox_sr <= tolerancia:
-                sr_ok = True
-                sr_detalhe = f"Próximo de {'Suporte' if dist_sup < dist_res else 'Resistência'} ({round(prox_sr, 0)}pts, ATR*0.5={round(tolerancia,0)})"
-            else:
-                sr_detalhe = f"Sup={round(suporte,0)} Res={round(resistencia,0)} (distante: {round(prox_sr,0)}pts)"
-        checklist.append({
-            "item": "S/R relevante (Murphy)",
-            "status": "✅" if sr_ok else "❌",
-            "detalhe": sr_detalhe,
-            "ok": sr_ok
-        })
-        if sr_ok: score += 1
-        
-        # 3. Volume/Fluxo (Bellafiore)
-        vol_ok = False
-        vol_detalhe = "Volume indisponível (yfinance proxy)"
-        try:
-            vol_atual = float(dados['volume'].iloc[-1])
-            vol_media = float(dados['volume'].iloc[-20:].mean())
-            if vol_atual > 0 and vol_media > 0:
-                vol_ratio = vol_atual / vol_media
-                vol_ok = vol_ratio > 1.0
-                vol_detalhe = f"Volume {round(vol_ratio, 1)}x média ({'+' if vol_ok else '-'})"
-            else:
-                # Fallback: range candle vs ATR
-                candle_range = h - l
-                vol_ok = candle_range > atr_v * 0.3
-                vol_detalhe = f"Range candle: {round(candle_range, 1)} vs ATR*0.3={round(atr_v*0.3, 1)} ({'ativo' if vol_ok else 'fraco'})"
-        except:
-            pass
-        checklist.append({
-            "item": "Volume/Fluxo (Bellafiore)",
-            "status": "✅" if vol_ok else "⚠️",
-            "detalhe": vol_detalhe,
-            "ok": vol_ok
-        })
-        if vol_ok: score += 1
-        
-        # 4. Indicadores confirmam (Murphy)
-        ind_confirmam = 0
-        ind_detalhes = []
-        # RSI
-        if rsi_v < 35:
-            ind_confirmam += 1
-            ind_detalhes.append(f"RSI={rsi_v} (sobrevendido → compra)")
-        elif rsi_v > 65:
-            ind_confirmam += 1
-            ind_detalhes.append(f"RSI={rsi_v} (sobrecomprado → venda)")
-        else:
-            ind_detalhes.append(f"RSI={rsi_v} (neutro)")
-        # MACD
-        if macd_h > 0:
-            ind_confirmam += 1
-            ind_detalhes.append(f"MACD hist={macd_h} (positivo → compra)")
-        elif macd_h < 0:
-            ind_confirmam += 1
-            ind_detalhes.append(f"MACD hist={macd_h} (negativo → venda)")
-        # EMAs
-        if ema9 > ema21:
-            ind_confirmam += 1
-            ind_detalhes.append(f"EMA9>{'>'}EMA21 (alta)")
-        else:
-            ind_confirmam += 1
-            ind_detalhes.append(f"EMA9<EMA21 (baixa)")
-        
-        ind_ok = ind_confirmam >= 2
-        checklist.append({
-            "item": "Indicadores (Murphy)",
-            "status": "✅" if ind_ok else "❌",
-            "detalhe": " | ".join(ind_detalhes),
-            "ok": ind_ok
-        })
-        if ind_ok: score += 1
-        
-        # 5. Catalisador (Bellafiore PlayBook)
-        cat_ok = janela_qual in ("PRIME", "BOA")
-        checklist.append({
-            "item": "Catalisador/Janela (Bellafiore)",
-            "status": "✅" if cat_ok else "❌",
-            "detalhe": f"Janela: {janela_nome} ({janela_qual})",
-            "ok": cat_ok
-        })
-        if cat_ok: score += 1
-        
-        # 6. Risco definido (Elder/Douglas)
-        stop_pts = round(atr_v * 0.8, 0) if ativo == "WIN" else round(atr_v * 0.8, 2)
-        rr_ratio = 2.0
-        alvo_pts = round(stop_pts * rr_ratio, 0) if ativo == "WIN" else round(stop_pts * rr_ratio, 2)
-        rr_ok = True  # Sempre definimos risco
-        rr_detalhe = f"Stop: {stop_pts}pts | Alvo: {alvo_pts}pts | R:R 1:{rr_ratio}"
-        if ativo == "WIN":
-            risco_rs = round(stop_pts * valor_ponto, 2)
-            alvo_rs = round(alvo_pts * valor_ponto, 2)
-            rr_detalhe += f" | Risco: R${risco_rs} | Potencial: R${alvo_rs}"
-        checklist.append({
-            "item": "Risco definido (Elder/Douglas)",
-            "status": "✅" if rr_ok else "❌",
-            "detalhe": rr_detalhe,
-            "ok": rr_ok
-        })
-        if rr_ok: score += 1
-        
-        # 7. Estado mental/Dia (Douglas/Tendler)
+        # ===== ESTADO DO DIA (Douglas/Tendler) =====
         op_state = app_state["operador_live"][ativo]
         n_ops = len(op_state["operacoes"])
         losses_seq = op_state.get("losses_consecutivos", 0)
         bloqueado = op_state.get("dia_bloqueado", False)
         mental_ok = not bloqueado and losses_seq < 3 and n_ops < 10
-        mental_detalhe = f"Ops hoje: {n_ops} | Losses seq: {losses_seq}/3 | {'BLOQUEADO' if bloqueado else 'OK'}"
-        checklist.append({
-            "item": "Estado do dia (Douglas/Tendler)",
-            "status": "✅" if mental_ok else "❌",
-            "detalhe": mental_detalhe,
-            "ok": mental_ok
-        })
-        if mental_ok: score += 1
         
-        # ===== DIREÇÃO SUGERIDA =====
-        sinais_compra = 0
-        sinais_venda = 0
-        if tend == "ALTA": sinais_compra += 2
-        elif tend == "BAIXA": sinais_venda += 2
-        if rsi_v < 40: sinais_compra += 1
-        elif rsi_v > 60: sinais_venda += 1
-        if macd_h > 0: sinais_compra += 1
-        elif macd_h < 0: sinais_venda += 1
-        if ema9 > ema21: sinais_compra += 1
-        else: sinais_venda += 1
-        if preco_atual > ema50: sinais_compra += 1
-        else: sinais_venda += 1
+        # ===== RISCO (Elder 3Ms) =====
+        stop_pts = round(atr_v * 0.8, 0) if ativo == "WIN" else round(atr_v * 0.8, 2)
+        rr_ratio = 2.5 if conf_label in ("A+", "A") else 2.0
+        alvo_pts = round(stop_pts * rr_ratio, 0) if ativo == "WIN" else round(stop_pts * rr_ratio, 2)
         
-        if sinais_compra > sinais_venda + 1:
-            direcao = "COMPRA"
-        elif sinais_venda > sinais_compra + 1:
-            direcao = "VENDA"
-        else:
-            direcao = "INDEFINIDA"
-        
-        # ===== CONFIANÇA =====
-        conf_label = "A+" if score >= 6 else "A" if score == 5 else "B+" if score == 4 else "B" if score == 3 else "C" if score == 2 else "D"
-        confianca_pct = round(score / 7 * 100)
+        is_compra = direcao == "COMPRA"
+        entry_price = round(preco_atual, 2)
+        stop_price = round(preco_atual - stop_pts, 2) if is_compra else round(preco_atual + stop_pts, 2)
+        alvo_price = round(preco_atual + alvo_pts, 2) if is_compra else round(preco_atual - alvo_pts, 2)
         
         # ===== CONSULTAR MEMÓRIA =====
         memoria_info = None
@@ -3853,51 +3821,42 @@ async def operador_sugestao(ativo: str = Query("WIN")):
         except Exception as me:
             memoria_info = {"tem_alerta": False, "mensagem": f"Memória indisponível: {me}"}
         
-        # ===== PRÓS E CONTRAS =====
-        pros = []
-        contras = []
-        for item in checklist:
-            if item["ok"]:
-                pros.append(item["detalhe"])
-            else:
-                contras.append(f"{item['item']}: {item['detalhe']}")
-        
-        # ===== VEREDICTO =====
-        if score >= 5 and direcao != "INDEFINIDA" and pode_janela and not bloqueado:
+        # ===== VEREDICTO FINAL =====
+        if convergencia["veredicto"] in ("ENTRADA_FORTE", "ENTRADA") and direcao != "INDEFINIDA" and pode_janela and mental_ok:
             veredicto = "ENTRAR"
             veredicto_cor = "#22c55e"
-            veredicto_msg = f"Setup {conf_label} ({score}/7) com confluência forte. {direcao} recomendada."
-        elif score >= 4 and direcao != "INDEFINIDA" and pode_janela:
+            veredicto_msg = f"Convergência {conf_label} ({score}/{convergencia['total_fatores']} fatores, {confianca_pct}%). {direcao} recomendada com {convergencia['veredicto']}."
+        elif convergencia["veredicto"] == "CAUTELA" and direcao != "INDEFINIDA" and pode_janela:
             veredicto = "ENTRAR COM CAUTELA"
             veredicto_cor = "#f59e0b"
-            veredicto_msg = f"Setup {conf_label} ({score}/7) razoável. {direcao} possível com sizing reduzido."
-        elif score >= 3 and direcao != "INDEFINIDA":
+            veredicto_msg = f"Convergência {conf_label} ({score}/{convergencia['total_fatores']}, {confianca_pct}%). {direcao} possível com sizing reduzido."
+        elif convergencia["veredicto"] == "ESPERAR":
             veredicto = "ESPERAR"
             veredicto_cor = "#f59e0b"
-            veredicto_msg = f"Setup {conf_label} ({score}/7) fraco. Faltam confluências. Aguardar melhor momento."
+            veredicto_msg = f"Score {score}/{convergencia['total_fatores']} ({confianca_pct}%). Faltam confluências. Aguardar."
         else:
             veredicto = "NÃO ENTRAR"
             veredicto_cor = "#ef4444"
-            veredicto_msg = f"Score {score}/7 insuficiente. {'Direção indefinida. ' if direcao == 'INDEFINIDA' else ''}{'Janela ruim. ' if not pode_janela else ''}{'Dia bloqueado. ' if bloqueado else ''}Aguardar."
+            veredicto_msg = f"Score {score}/{convergencia['total_fatores']} ({confianca_pct}%) insuficiente. {'Direção indefinida. ' if direcao == 'INDEFINIDA' else ''}{'Janela ruim. ' if not pode_janela else ''}{'Dia bloqueado. ' if bloqueado else ''}Aguardar."
+        
+        if not mental_ok:
+            veredicto = "NÃO ENTRAR"
+            veredicto_cor = "#ef4444"
+            veredicto_msg = f"{'DIA BLOQUEADO' if bloqueado else f'{losses_seq} losses seguidos' if losses_seq >= 3 else f'{n_ops} ops (limite)'}. Parar de operar."
         
         if memoria_info and memoria_info.get("tem_alerta") and memoria_info.get("similaridade", 0) >= 70:
             veredicto = "NÃO ENTRAR"
             veredicto_cor = "#ef4444"
             veredicto_msg = f"🧠 MEMÓRIA BLOQUEIA: {memoria_info['similaridade']}% similar a erro passado. {memoria_info['mensagem']}"
         
-        # ===== SETUP ENTRY PRICES =====
-        is_compra = direcao == "COMPRA"
-        entry_price = round(preco_atual, 2)
-        stop_price = round(preco_atual - stop_pts, 2) if is_compra else round(preco_atual + stop_pts, 2)
-        alvo_price = round(preco_atual + alvo_pts, 2) if is_compra else round(preco_atual - alvo_pts, 2)
-        
+        # ===== MONTAR RESPOSTA =====
         return JSONResponse({
             "status": "OK",
             "ativo": ativo,
             "hora": hora_atual,
             "preco_atual": preco_atual,
             "fonte_preco": fonte_preco,
-            # Resumo (visão compacta)
+            # Resumo compacto
             "resumo": {
                 "veredicto": veredicto,
                 "veredicto_cor": veredicto_cor,
@@ -3915,11 +3874,56 @@ async def operador_sugestao(ativo: str = Query("WIN")):
                 "janela": f"{janela_nome} ({janela_qual})",
                 "tend_macro": tend,
             },
-            # Detalhado (visão expandida)
+            # Detalhado expandido
             "detalhado": {
-                "checklist": checklist,
-                "pros": pros,
-                "contras": contras,
+                # Convergência multi-fator (novo!)
+                "convergencia": {
+                    "fatores": convergencia["fatores"],
+                    "score": convergencia["score"],
+                    "max_score": convergencia["max_score"],
+                    "pct": convergencia["pct"],
+                    "veredicto_engine": convergencia["veredicto"],
+                    "nivel": convergencia["nivel"],
+                },
+                "pros": convergencia["pros"],
+                "contras": convergencia["contras"],
+                # Fluxo avançado (novo!)
+                "fluxo": {
+                    "agressao": fluxo_data.get("agressao"),
+                    "intensidade": fluxo_data.get("intensidade"),
+                    "ratio_compra": fluxo_data.get("ratio_compra"),
+                    "ratio_venda": fluxo_data.get("ratio_venda"),
+                    "absorcao": fluxo_data.get("absorcao"),
+                    "defesa": fluxo_data.get("defesa"),
+                    "mudanca_comportamento": fluxo_data.get("mudanca_comportamento"),
+                },
+                # VAP (novo!)
+                "vap": {
+                    "poc": vap_data.get("poc"),
+                    "va_high": vap_data.get("va_high"),
+                    "va_low": vap_data.get("va_low"),
+                    "zonas_liquidez": vap_data.get("zonas_liquidez", [])[:5],
+                },
+                # Fibonacci multi-TF (novo!)
+                "fibonacci": {
+                    "tf_5m": fib_multi.get("tf_5m"),
+                    "tf_15m": fib_multi.get("tf_15m"),
+                    "tf_1h": fib_multi.get("tf_1h"),
+                    "confluencias": fib_multi.get("confluencias", [])[:5],
+                },
+                # Contexto mercado (novo!)
+                "contexto": {
+                    "fase": contexto.get("fase"),
+                    "momentum": contexto.get("momentum"),
+                    "exaustao": contexto.get("exaustao"),
+                    "contexto_favoravel": contexto.get("contexto_favoravel"),
+                    "tendencia_15m": contexto.get("tendencia_15m"),
+                    "tendencia_1h": contexto.get("tendencia_1h"),
+                    "sr_15m": contexto.get("sr_15m", []),
+                    "sr_1h": contexto.get("sr_1h", []),
+                    "descricao": contexto.get("descricao"),
+                },
+                # Indicadores clássicos
                 "indicadores": {
                     "rsi": rsi_v,
                     "macd": macd_val,
@@ -3939,6 +3943,7 @@ async def operador_sugestao(ativo: str = Query("WIN")):
                     "pts_hoje": round(op_state.get("total_pts", 0), 1),
                     "losses_seq": losses_seq,
                     "bloqueado": bloqueado,
+                    "mental_ok": mental_ok,
                 },
                 "sinais_direcao": {
                     "compra": sinais_compra,
@@ -3951,7 +3956,6 @@ async def operador_sugestao(ativo: str = Query("WIN")):
         logger.error(f"Erro sugestão: {e}")
         import traceback; traceback.print_exc()
         return JSONResponse({"status": "ERRO", "mensagem": str(e)}, status_code=500)
-
 
 @app.post("/api/operador-live/registrar")
 async def operador_registrar_trade(request: Request):
@@ -5888,6 +5892,78 @@ async def get_historico_simulador(ativo: str = Query(None), limite: int = Query(
 
 
 
+
+def _gerar_motivo_loss(op: dict) -> str:
+    """
+    Gera análise detalhada do motivo de loss.
+    Avalia: por que entrou, o que invalidou, o que deveria ter feito.
+    """
+    motivos_entrada = op.get("motivos", [])
+    tipo = op.get("tipo", "?")
+    score = op.get("score", 0)
+    conf = op.get("conf_label", "?")
+    janela = op.get("janela", "?")
+    tend = op.get("tend_macro", "?")
+    pts = op.get("pts", 0)
+    preco_entrada = op.get("preco_entrada", 0)
+    stop = op.get("stop_loss", 0)
+    alvo = op.get("take_profit", 0)
+    estrategia = op.get("estrategia", "?")
+    
+    # Análise do motivo
+    motivo_parts = []
+    
+    # 1. Por que entrou
+    motivo_parts.append(f"ENTRADA: {tipo} @ {preco_entrada} ({estrategia}, {conf} {score}/7)")
+    if motivos_entrada:
+        motivo_parts.append(f"Confluências: {'; '.join(str(m) for m in motivos_entrada[:3])}")
+    
+    # 2. O que invalidou
+    invalidadores = []
+    
+    # Contra tendência?
+    if tipo == "COMPRA" and tend == "BAIXA":
+        invalidadores.append("CONTRA TENDÊNCIA macro (compra em baixa)")
+    elif tipo == "VENDA" and tend == "ALTA":
+        invalidadores.append("CONTRA TENDÊNCIA macro (venda em alta)")
+    
+    # Score baixo?
+    if score <= 3:
+        invalidadores.append(f"Score fraco ({score}/7) - faltavam confluências")
+    
+    # Janela ruim?
+    if janela and ("RUIM" in str(janela) or "Almoço" in str(janela)):
+        invalidadores.append(f"Janela desfavorável ({janela})")
+    
+    # Stop muito curto?
+    if stop and preco_entrada:
+        stop_dist = abs(preco_entrada - stop)
+        if stop_dist > 0 and abs(pts) > 0:
+            if abs(pts) <= stop_dist * 1.1:
+                invalidadores.append("Stop atingido - possível stop muito curto ou volatilidade")
+    
+    # Setup forçado?
+    if conf and "FORÇADO" in str(conf):
+        invalidadores.append("Entrada FORÇADA pelo operador (sem confluência natural)")
+    
+    if invalidadores:
+        motivo_parts.append(f"INVALIDADORES: {'; '.join(invalidadores)}")
+    else:
+        motivo_parts.append("INVALIDADOR: Mercado moveu contra a posição (stop técnico atingido)")
+    
+    # 3. Lição
+    if score <= 3:
+        motivo_parts.append("LIÇÃO: Não entrar com score ≤3. Aguardar mais confluências (Douglas: cada momento é único)")
+    elif "CONTRA TENDÊNCIA" in " ".join(invalidadores):
+        motivo_parts.append("LIÇÃO: Elder proíbe entrada contra T1. Só operar a favor da tendência macro")
+    elif "FORÇADO" in str(conf):
+        motivo_parts.append("LIÇÃO: Entradas forçadas têm win rate baixo. Paciência é a chave (Axiomas: não insista)")
+    else:
+        motivo_parts.append("LIÇÃO: Stop técnico faz parte. Revisar se o R:R estava adequado e se o fluxo confirmava")
+    
+    return " | ".join(motivo_parts)
+
+
 @app.get("/api/relatorio-dia")
 async def relatorio_dia():
     """
@@ -6146,13 +6222,27 @@ async def relatorio_dia():
             "memoria": mem_info,
             "historico_7d": historico_7d,
             "operacoes": [{
-                "tipo": op.get("tipo"), "hora_entrada": op.get("hora_entrada"),
-                "hora_saida": op.get("hora_saida"), "resultado": op.get("resultado"),
-                "pts": op.get("pts"), "resultado_rs": op.get("resultado_rs"),
-                "score": op.get("score"), "conf_label": op.get("conf_label"),
-                "modo": op.get("modo"), "ativo": op.get("ativo"),
-                "motivos": op.get("motivos", [])[:3],
-                "detalhes_perda": op.get("detalhes_perda", "")[:150],
+                "ativo": op.get("ativo", "?"),
+                "tipo": op.get("tipo", "?"),
+                "hora_entrada": op.get("hora_entrada", "?"),
+                "hora_saida": op.get("hora_saida", "?"),
+                "preco_entrada": op.get("preco_entrada", 0),
+                "preco_saida": op.get("preco_saida", 0),
+                "stop_loss": op.get("stop_loss", 0),
+                "take_profit": op.get("take_profit", 0),
+                "resultado": op.get("resultado", "?"),
+                "pts": op.get("pts", 0),
+                "resultado_rs": op.get("resultado_rs", 0),
+                "rr": op.get("rr", "?"),
+                "score": op.get("score", 0),
+                "conf_label": op.get("conf_label", "?"),
+                "estrategia": op.get("estrategia", "?"),
+                "janela": op.get("janela", "?"),
+                "tend_macro": op.get("tend_macro", "?"),
+                "modo": op.get("modo", "?"),
+                "motivos": op.get("motivos", [])[:5],
+                "motivo_loss": _gerar_motivo_loss(op) if op.get("resultado") == "LOSS" else None,
+                "detalhes_perda": op.get("detalhes_perda", "")[:300],
                 "detalhes_vitoria": op.get("detalhes_vitoria", "")[:150],
             } for op in todas_ops],
         }
